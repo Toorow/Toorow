@@ -6,13 +6,6 @@
     "dark": "/toorow_logo_horizontal_light.png"
   },
   "favicon": "/favicon.ico",
-  "font": {
-    "family": "Plus Jakarta Sans",
-    "headings": {
-      "family": "Lexend",
-      "weight": 800
-    }
-  },
   "colors": {
     "primary": "#FF99C8",
     "light": "#F7CAD0",

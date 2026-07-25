@@ -2,44 +2,45 @@
   "$schema": "https://mintlify.com/schema.json",
   "name": "Toorow",
   "logo": {
-    "light": "/toorow_logo_horizontal_dark.webp",
-    "dark": "/toorow_logo_horizontal_light.webp"
+    "light": "/toorow_logo_horizontal_dark.png",
+    "dark": "/toorow_logo_horizontal_light.png"
   },
   "favicon": "/favicon.ico",
-  "font": {
-    "family": "Plus Jakarta Sans",
-    "headings": {
-      "family": "Lexend",
-      "weight": 800
-    }
-  },
   "colors": {
-    "primary": "#4f46e5",
-    "light": "#818cf8",
-    "dark": "#312e81"
+    "primary": "#FF99C8",
+    "light": "#F7CAD0",
+    "dark": "#F77FB4"
   },
-  "tabs": [
+  "topbarLinks": [
     {
-      "name": "Cloud (Managed)",
-      "url": "cloud-hosting"
-    },
-    {
-      "name": "Self-Hosted",
-      "url": "self-hosting"
+      "name": "Website",
+      "url": "https://toorow.com"
     }
   ],
+  "topbarCtaButton": {
+    "name": "Open console",
+    "url": "https://app.toorow.com"
+  },
   "navigation": [
     {
-      "group": "Getting Started",
+      "group": "Product Overview",
       "pages": [
         "index",
-        "introduction",
-        "prerequisites",
-        "quickstart"
+        "introduction"
       ]
     },
     {
-      "group": "AI Agents & MCP",
+      "group": "Core Features & Analytics",
+      "pages": [
+        "universal-datastreams",
+        "file-source-ingestion",
+        "semantic-layer",
+        "anomaly-detection-method",
+        "agentic-daily-insights"
+      ]
+    },
+    {
+      "group": "AI Agents & MCP Protocol",
       "pages": [
         "mcp-host-integration",
         "agent-context",
@@ -49,32 +50,20 @@
       ]
     },
     {
-      "group": "Architecture & Security",
+      "group": "Self-Hosted Deployment",
       "pages": [
+        "self-hosting",
+        "quickstart",
+        "prerequisites",
+        "cloud-hosting"
+      ]
+    },
+    {
+      "group": "Self-Hosted Engineering & Connectors",
+      "pages": [
+        "adding-a-connector",
         "constraints",
         "repository-boundary"
-      ]
-    },
-    {
-      "group": "Deployment & Hosting",
-      "pages": [
-        "cloud-hosting",
-        "self-hosting"
-      ]
-    },
-    {
-      "group": "Core Features & Analytics",
-      "pages": [
-        "universal-datastreams",
-        "semantic-layer",
-        "anomaly-detection-method",
-        "agentic-daily-insights"
-      ]
-    },
-    {
-      "group": "Connector Development",
-      "pages": [
-        "adding-a-connector"
       ]
     }
   ]
