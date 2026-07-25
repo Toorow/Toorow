@@ -7,6 +7,52 @@ The **Semantic Layer** is toorow's central data modeling boundary. It transforms
 
 ---
 
+## Data Lineage & Model Flow
+
+```mermaid
+flowchart TD
+    subgraph Raw Landings
+        A1[raw_google_analytics]
+        A2[raw_meta_ads]
+        A3[raw_shopify]
+    end
+
+    subgraph Staging Models
+        B1[stg_ga4_daily]
+        B2[stg_meta_ads_daily]
+        B3[stg_shopify_daily]
+    end
+
+    subgraph Canonical Marts
+        C1[fact_daily_kpi<br/>Additive Metrics Only]
+    end
+
+    subgraph dbt Semantic Views
+        D1[semantic_ctr]
+        D2[semantic_cpa]
+        D3[semantic_roas]
+        D4[semantic_avg_position]
+    end
+
+    subgraph Serving Layer
+        E1[DuckDB Read-Through Cache]
+        E2[FastMCP Server]
+    end
+
+    A1 -->|QUALIFY pull_id DESC| B1
+    A2 -->|QUALIFY pull_id DESC| B2
+    A3 -->|QUALIFY pull_id DESC| B3
+
+    B1 & B2 & B3 -->|UNION ALL Harmonization| C1
+
+    C1 -->|On-The-Fly Ratios| D1 & D2 & D3 & D4
+
+    C1 & D1 & D2 & D3 & D4 --> E1
+    E1 --> E2
+```
+
+---
+
 ## 1. Canonical Daily Fact Surface (`fact_daily_kpi`)
 
 `fact_daily_kpi` is the canonical daily fact table. All additive daily marketing metrics across GA4, Meta Ads, Search Console, TikTok, LinkedIn, Shopify, Stripe, and Mailgun are harmonized into this single model.

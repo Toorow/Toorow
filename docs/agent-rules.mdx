@@ -1,28 +1,51 @@
 ---
-title: Agent Rules & System Instructions
-description: Invariants and system instructions for AI agents consuming toorow FastMCP data tools.
+title: Agent Rules & System Invariants (AD-1 to AD-32)
+description: System instructions and non-negotiable architectural invariants for AI agents consuming toorow FastMCP data tools.
 ---
 
-When interacting with **toorow**, AI agents must adhere to strict behavioral rules to ensure data accuracy, tenant isolation, and non-causal provenance.
+When interacting with **toorow**, AI agents must adhere to strict behavioral rules and architectural invariants to ensure data accuracy, tenant isolation, and non-causal provenance.
 
 ---
 
-## Core Agent Rules
+## Core Operational Rules for AI Agents
 
 ### Rule 1: Always Discover Capabilities First
 Before constructing queries or requesting custom metric/dimension combinations, agents **must** inspect source metadata using `get_source_capabilities(project_id, connection_ref_id)`. Never guess column names or supported grains.
 
-### Rule 2: Never Aggregate Non-Additive Metrics Directly
+### Rule 2: Never Aggregate Non-Additive Metrics Directly (AD-4)
 Ratio metrics (CTR, CPA, ROAS, Average Position) are non-additive. Agents must **never** perform direct `SUM()` operations over ratio metrics in `fact_daily_kpi` (AD-4). Always query calculated semantic ratio views (`semantic_ctr`, `semantic_cpa`, `semantic_roas`, `semantic_avg_position`).
 
 ### Rule 3: Enforce Tenant & Project Scoping (AD-5)
 Every tool invocation must supply an explicit `project_id`. Agents must never attempt cross-tenant reads or bypass the organization-rooted AD-5 resource graph.
 
-### Rule 4: Preserve `structuredContent` for MCP App UI Rendering
+### Rule 4: Preserve `structuredContent` for MCP App UI Rendering (AD-1)
 When generating responses, present a concise text summary (≤ 30 lines) while preserving the full `structuredContent` payload in the tool output. This enables host interfaces to render interactive **MCP App UI widgets (`ui/widgets/`)**.
 
 ### Rule 5: Non-Causal Phrasing for Context Events (AD-9)
 When annotating anomalies with `context_events`, agents must state events as **candidate context** only. Prohibited causal phrasing includes: `"caused by"`, `"due to"`, `"because of"`, `"en raison de"`.
+
+---
+
+## Architectural Invariants Reference (AD-1 to AD-32 Summary)
+
+| Invariant | Name | Rule Summary |
+|---|---|---|
+| **AD-1** | FastMCP Dual-Channel Model | Tools return short LLM text summary + full `structuredContent` JSON payload. |
+| **AD-2** | Microkernel Isolation | Source logic lives strictly in `server/modules/<source>/`. `server/core/` is 100% source-agnostic. |
+| **AD-3** | Secret Isolation | Tokens and secrets are owned by Nango/Secret Manager. Core code never emits secrets. |
+| **AD-4** | Non-Additive Safety | Ratio metrics are computed on-the-fly via dbt semantic ratio views; never stored directly. |
+| **AD-5** | Tenant Access Graph | Organization-rooted multi-tenant isolation enforced at DB and warehouse query level. |
+| **AD-6** | Desktop Admin Viewport | Admin console targets 1280px+ viewports (1440x900 canonical). No mobile view supported. |
+| **AD-7** | Monotonic Ingestion ULID | Every extraction generates an append-only ULID `pull_id` for complete provenance. |
+| **AD-8** | Joint-Grain Preservation | Raw landings preserve full metric + date + breakdown dimension + value grain. |
+| **AD-9** | Non-Causal Provenance | Context events are listed as candidate context; causal assertion language is prohibited. |
+| **AD-10** | Currency Harmonization | Ad spend and revenue are harmonized to project target currency via Frankfurter FX engine. |
+| **AD-11** | Zero-Telemetry Default | Self-hosted instances contain zero phone-home tracking; telemetry is strictly opt-in. |
+| **AD-12** | Read-Through Cache | DuckDB ephemeral cache accelerates agent queries with rolling 30-day snapshot. |
+| **AD-13** | Trace Feedback Loop | Agent analysis traces capture user +1/-1 rating for evaluation benchmarking. |
+| **AD-14** | Module Auto-Discovery | Connectors are registered at boot by inspecting `server/modules/*/manifest.json`. |
+| **AD-15** | Golden-Pull Conformance | Every connector passes 4-layer conformance testing before release. |
+| **AD-32** | Public Allow-List Boundary | Export projection strictly enforced via `distribution/public-app.toml`. |
 
 ---
 
@@ -32,13 +55,7 @@ When annotating anomalies with `context_events`, agents must state events as **c
   <Card title="Agent Tools Reference" icon="wrench" href="/agent-tools">
     Inspect FastMCP tool definitions and parameter schemas.
   </Card>
-  <Card title="MCP App Use Cases" icon="layer-group" href="/use-cases-library">
-    See how agent rules drive interactive MCP App UI widgets.
-  </Card>
   <Card title="Platform Constraints" icon="shield-check" href="/constraints">
-    Review full security invariants (AD-1 to AD-32).
-  </Card>
-  <Card title="Agent Context" icon="database" href="/agent-context">
-    Learn how metadata and context events are structured.
+    Review security rules and pre-live checklists.
   </Card>
 </CardGroup>

@@ -7,6 +7,42 @@ description: Architecture and workflows for managing real-data ingestion pipelin
 
 ---
 
+## Ingestion Pipeline Architecture
+
+```mermaid
+flowchart LR
+    subgraph Data Sources
+        API[API Connectors<br/>GA4, Meta, Stripe]
+        EXT[External BigQuery]
+        FEED[Managed Feeds<br/>CSV, Excel, Google Sheets]
+    end
+
+    subgraph Queue & Worker Layer
+        Q[toorow Queue Worker]
+        RL[Rate Limit & Retry]
+    end
+
+    subgraph Raw Storage
+        ULID[ULID pull_id Generation]
+        RAW[(Raw BigQuery Datasets<br/>raw_*)]
+    end
+
+    subgraph Staging & Governance
+        DBT[dbt Staging Models]
+        DQ[5 Universal DQ Monitors]
+        MART[(fact_daily_kpi)]
+    end
+
+    API --> Q
+    EXT --> Q
+    FEED --> Q
+
+    Q --> RL --> ULID --> RAW
+    RAW --> DBT --> DQ --> MART
+```
+
+---
+
 ## 1. Supported Ingestion Sources
 
 toorow unifies three distinct categories of data sources into one governed stream:

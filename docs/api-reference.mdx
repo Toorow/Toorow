@@ -1,0 +1,131 @@
+---
+title: Administration REST API Reference
+description: Complete REST API reference for toorow administration, datastreams, authentication, context events, and system management.
+---
+
+In addition to the **FastMCP HTTP interface** for AI agents, **toorow** exposes a comprehensive **REST API** for system administration, project configuration, and custom integrations.
+
+---
+
+## 1. Authentication & Security
+
+All REST API requests require authentication depending on the configured `TOOROW_AUTH_MODE`:
+- **`oauth` (Production)**: Pass a Bearer JWT token in the `Authorization` header: `Authorization: Bearer <token>`.
+- **`static` (QA/Dev)**: Pass the static secret token: `Authorization: Bearer <TOOROW_STATIC_TOKEN>`.
+
+---
+
+## 2. Core API Endpoints
+
+### Datastreams & Flow Management (`/api/flows`)
+Implemented in `server/core/flows_api.py`.
+
+```http
+GET /api/flows?project_id=default
+```
+Returns all configured datastreams and report definitions for a project.
+
+```http
+POST /api/flows/upsert
+Content-Type: application/json
+
+{
+  "project_id": "default",
+  "kind": "datastream",
+  "definition": {
+    "connection_ref_id": "ga4_main",
+    "provider": "google-analytics",
+    "cadence": "daily"
+  }
+}
+```
+Creates or updates a datastream configuration after validating schema constraints.
+
+---
+
+### Inbound Credentials & Connectors (`/api/credentials`)
+Implemented in `server/core/inbound_credentials_api.py`.
+
+```http
+GET /api/credentials/list?project_id=default
+```
+Lists active connector connection statuses and Nango integration links.
+
+```http
+POST /api/credentials/verify
+Content-Type: application/json
+
+{
+  "project_id": "default",
+  "provider": "meta-ads",
+  "connection_ref_id": "meta_prod"
+}
+```
+Triggers an immediate OAuth token check and API connectivity test.
+
+---
+
+### Business Context Events (`/api/context`)
+Implemented in `server/core/context_api.py`.
+
+```http
+GET /api/context/events?project_id=default
+```
+Lists registered business context events (promotional launches, site redesigns, checkout updates).
+
+```http
+POST /api/context/events
+Content-Type: application/json
+
+{
+  "project_id": "default",
+  "event_type": "checkout_migration",
+  "title": "Stripe API v2 Migration",
+  "description": "Upgraded checkout payment processing backend.",
+  "event_date": "2026-07-14"
+}
+```
+Registers a new context event for anomaly correlation.
+
+---
+
+### Data Quality & Auditing (`/api/dq`)
+Implemented in `server/core/dq_api.py`.
+
+```http
+GET /api/dq/status?project_id=default
+```
+Retrieves system-wide data quality health metrics and monitor check ledgers.
+
+---
+
+### Currency & FX Management (`/api/money`)
+Implemented in `server/core/money_api.py`.
+
+```http
+GET /api/money/rates?base=EUR
+```
+Retrieves current exchange rates used for multi-currency ad spend harmonization.
+
+---
+
+### Organization & Account Governance (`/api/org`)
+Implemented in `server/core/org_plan_api.py` and `server/core/super_admin.py`.
+
+```http
+GET /api/org/settings
+```
+Returns organization settings, entitlement limits, and member access roles.
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="FastMCP Agent Tools" icon="wrench" href="/agent-tools">
+    Inspect FastMCP tools exposed to AI agents.
+  </Card>
+  <Card title="Data Quality" icon="shield-check" href="/data-quality">
+    Learn about automated DQ surveillance monitors.
+  </Card>
+</CardGroup>

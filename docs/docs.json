@@ -44,7 +44,8 @@
             "pages": [
               "index",
               "introduction",
-              "supported-connectors"
+              "supported-connectors",
+              "changelog"
             ]
           },
           {
@@ -53,6 +54,7 @@
               "universal-datastreams",
               "file-source-ingestion",
               "semantic-layer",
+              "data-quality",
               "anomaly-detection-method",
               "agentic-daily-insights"
             ]
@@ -65,6 +67,12 @@
               "agent-tools",
               "agent-rules",
               "use-cases-library"
+            ]
+          },
+          {
+            "group": "API Reference",
+            "pages": [
+              "api-reference"
             ]
           }
         ]

@@ -1,0 +1,24 @@
+---
+title: Product Changelog & Release Notes
+description: Track updates, new connector releases, and architecture enhancements in toorow.
+---
+
+## Release History
+
+### v1.4.0 — 2026-07-25
+- **37 Connector Modules**: Full support for Google Analytics 4, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, Klaviyo, Amazon Ads, DV360, Search Console, Mailgun, and 26 additional platforms.
+- **File-Source Ingestion Engine**: Support for uploading and emailing messy media plans, audience panels, and TGI extracts with automatic grain explosion and plan-vs-actual reconciliation.
+- **FastMCP HTTP Transport**: Streamable HTTP transport supporting dual-channel output (`text` + `structuredContent`) for interactive MCP App UI widgets (`ui/widgets/`).
+- **5 Universal DQ Monitors**: Automated background surveillance for volume anomalies, timeliness, duplicate grain rows, schema drift, and date format compliance.
+
+---
+
+### v1.3.0 — 2026-07-10
+- **dbt Semantic Ratio Views**: Introduced non-additive metric safeguards (`semantic_ctr`, `semantic_cpa`, `semantic_roas`, `semantic_avg_position`) eliminating false direct sums over ratio measures.
+- **Z-Score Anomaly Engine**: Trailing 30-day baseline calculation for identifying statistically significant metric spikes and dips.
+- **Non-Causal Context Citations**: Enforced AD-9 non-causal language rules when annotating anomalies with registered context events.
+
+---
+
+### v1.0.0 — 2026-05-01
+- **Initial Core Release**: FastMCP microkernel server, PostgreSQL project governance, BigQuery analytical warehouse integration, and Nango OAuth broker setup.

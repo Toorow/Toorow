@@ -1,13 +1,13 @@
 ---
 title: FastMCP Agent Tools Reference
-description: Exhaustive technical reference for FastMCP tools exposed to AI agents in toorow.
+description: Exhaustive technical reference for all FastMCP tools exposed to AI agents in toorow.
 ---
 
-This document provides a technical reference for all **FastMCP tools** mounted on the **toorow** microkernel server (`server/core/main.py`).
+This document provides an exhaustive technical reference for all **FastMCP tools** mounted on the **toorow** microkernel server (`server/core/main.py`).
 
 ---
 
-## 1. Analytics & Reporting Tools
+## 1. Core Analytics & Data Tools
 
 ### `get_daily_report`
 Fetches canonical daily marketing metrics across all active connectors for a project.
@@ -20,22 +20,102 @@ get_daily_report(
     date_to: str = ""
 ) -> dict
 ```
-- **Returns**: FastMCP dual-channel envelope (short LLM text summary + `structuredContent` payload for MCP App widgets).
+
+#### JSON Response Schema (`structuredContent`)
+```json
+{
+  "project_id": "default",
+  "report_profile": "daily",
+  "date_range": { "from": "2026-07-01", "to": "2026-07-25" },
+  "provenance": {
+    "pull_id": "01J3M4K5N6P7Q8R9S0T1V2W3X4",
+    "loaded_at": "2026-07-25T02:15:00Z"
+  },
+  "metrics": [
+    {
+      "date": "2026-07-24",
+      "connector": "google-analytics",
+      "impressions": 45200,
+      "clicks": 3120,
+      "spend": 0.0,
+      "conversions": 280,
+      "revenue": 14200.50,
+      "ctr": 0.069,
+      "cpa": 0.0,
+      "roas": null
+    },
+    {
+      "date": "2026-07-24",
+      "connector": "meta-ads",
+      "impressions": 128000,
+      "clicks": 4200,
+      "spend": 1850.00,
+      "conversions": 190,
+      "revenue": 8900.00,
+      "ctr": 0.0328,
+      "cpa": 9.73,
+      "roas": 4.81
+    }
+  ]
+}
+```
+
+---
 
 ### `<source>_report`
-Source-specific report tools auto-discovered at boot (e.g. `google_analytics_report`, `meta_ads_report`, `mailgun_report`).
+Source-specific report tools auto-discovered at server startup:
+- `google_analytics_report(project_id, date_from, date_to)`
+- `meta_ads_report(project_id, date_from, date_to)`
+- `tiktok_ads_report(project_id, date_from, date_to)`
+- `linkedin_ads_report(project_id, date_from, date_to)`
+- `shopify_report(project_id, date_from, date_to)`
+- `stripe_report(project_id, date_from, date_to)`
+- `mailgun_report(project_id, date_from, date_to)`
 
 ---
 
 ## 2. Intelligence & Surveillance Tools
 
 ### `get_morning_briefing`
-Synthesizes the latest nightly briefing for an AI agent.
+Synthesizes the latest nightly morning briefing for an AI agent.
 
 ```python
 get_morning_briefing(project_id: str = "default") -> dict
 ```
-- **Returns**: Daily KPI deltas, flagged anomalies (`anomalies_daily`), and active candidate context events (`context_events`).
+
+#### JSON Response Schema
+```json
+{
+  "briefing_date": "2026-07-25",
+  "project_id": "default",
+  "summary_text": "Overall performance is stable. Meta Ads spend increased by 8% with a 12% rise in conversions. GA4 organic conversions experienced a 15% drop on July 24.",
+  "kpi_deltas": {
+    "total_spend": { "current": 3450.00, "previous": 3200.00, "delta_pct": 7.81 },
+    "total_conversions": { "current": 640, "previous": 610, "delta_pct": 4.91 },
+    "total_revenue": { "current": 28400.00, "previous": 26900.00, "delta_pct": 5.57 }
+  },
+  "flagged_anomalies": [
+    {
+      "date": "2026-07-24",
+      "connector": "google-analytics",
+      "metric": "conversions",
+      "observed": 280,
+      "rolling_mean": 380.5,
+      "zscore": -3.21,
+      "severity": "warning",
+      "candidate_context": [
+        {
+          "event_type": "checkout_migration",
+          "title": "Stripe API v2 Migration",
+          "date": "2026-07-24"
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
 
 ### `get_source_capabilities`
 Inspects source metadata, available fields, supported grains, and filter bounds.
@@ -46,17 +126,27 @@ get_source_capabilities(
     connection_ref_id: str
 ) -> dict
 ```
-- **Returns**: Authoritative capability descriptor (schema version `1.2`).
 
 ---
 
-## 3. Governed Flow Management Tools
+## 3. Governed Flow & Configuration Tools
 
-### `flows_list` & `flows_get`
-Lists or retrieves active datastreams and report configurations for a project.
+### `flows_list`
+Lists active datastreams and report configurations.
+
+```python
+flows_list(project_id: str = "default") -> list[dict]
+```
+
+### `flows_get`
+Retrieves a specific datastream or report definition by ID.
+
+```python
+flows_get(project_id: str, flow_id: str) -> dict
+```
 
 ### `flows_upsert`
-Creates or updates a datastream or report configuration in a governed, audited manner.
+Creates or updates a datastream configuration.
 
 ```python
 flows_upsert(
@@ -65,14 +155,31 @@ flows_upsert(
     definition: dict
 ) -> dict
 ```
-- **Guardrails**: Calls `validate_flow()` before database writes. Rejects unvalidated keys (`access_token`, `secret`) to enforce AD-3 security.
 
 ---
 
-## 4. Observability & Feedback Tools
+## 4. Connector Management & Verification Tools
+
+### `connector_activate`
+Activates an auto-discovered connector module for a project.
+
+```python
+connector_activate(project_id: str, provider: str) -> dict
+```
+
+### `connector_verify`
+Runs immediate health checks and golden-pull validation for a connector connection.
+
+```python
+connector_verify(project_id: str, connection_ref_id: str) -> dict
+```
+
+---
+
+## 5. Observability & Feedback Tools
 
 ### `submit_feedback`
-Submits user rating (+1 / -1) and optional commentary on an agent analysis trace (AD-13).
+Submits user rating (+1 / -1) and commentary on an agent analysis trace (AD-13).
 
 ```python
 submit_feedback(
@@ -92,11 +199,5 @@ submit_feedback(
   </Card>
   <Card title="MCP App Use Cases" icon="layer-group" href="/use-cases-library">
     Explore interactive MCP App UI widgets powered by tool outputs.
-  </Card>
-  <Card title="MCP Host Integration" icon="network-wired" href="/mcp-host-integration">
-    Connect external LLM clients to toorow's FastMCP server.
-  </Card>
-  <Card title="Agent Context" icon="database" href="/agent-context">
-    Inspect schema discovery and context event integration.
   </Card>
 </CardGroup>
