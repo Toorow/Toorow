@@ -1,0 +1,81 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Toorow",
+  "logo": {
+    "light": "/public/toorow_logo_horizontal_dark.png",
+    "dark": "/public/toorow_logo_horizontal_light.png"
+  },
+  "favicon": "/public/favicon.ico",
+  "font": {
+    "family": "Plus Jakarta Sans",
+    "headings": {
+      "family": "Lexend",
+      "weight": 800
+    }
+  },
+  "colors": {
+    "primary": "#4f46e5",
+    "light": "#818cf8",
+    "dark": "#312e81"
+  },
+  "tabs": [
+    {
+      "name": "Cloud (Managed)",
+      "url": "cloud-hosting"
+    },
+    {
+      "name": "Self-Hosted",
+      "url": "self-hosting"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "index",
+        "introduction",
+        "prerequisites",
+        "quickstart"
+      ]
+    },
+    {
+      "group": "AI Agents & MCP",
+      "pages": [
+        "mcp-host-integration",
+        "agent-context",
+        "agent-tools",
+        "agent-rules",
+        "use-cases-library"
+      ]
+    },
+    {
+      "group": "Architecture & Security",
+      "pages": [
+        "constraints",
+        "repository-boundary"
+      ]
+    },
+    {
+      "group": "Deployment & Hosting",
+      "pages": [
+        "cloud-hosting",
+        "self-hosting"
+      ]
+    },
+    {
+      "group": "Core Features & Analytics",
+      "pages": [
+        "universal-datastreams",
+        "semantic-layer",
+        "anomaly-detection-method",
+        "agentic-daily-insights"
+      ]
+    },
+    {
+      "group": "Connector Development",
+      "pages": [
+        "adding-a-connector"
+      ]
+    }
+  ]
+}
