@@ -13,7 +13,13 @@
     "dark": "/toorow_logo_horizontal_light.png"
   },
   "fonts": {
-    "family": "Plus Jakarta Sans"
+    "heading": {
+      "family": "Lexend",
+      "weight": 800
+    },
+    "body": {
+      "family": "Plus Jakarta Sans"
+    }
   },
   "navbar": {
     "links": [
