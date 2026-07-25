@@ -1,13 +1,29 @@
 {
   "$schema": "https://mintlify.com/schema.json",
   "name": "Toorow",
+  "logo": {
+    "light": "/toorow_logo_horizontal_dark.webp",
+    "dark": "/toorow_logo_horizontal_dark.webp"
+  },
   "favicon": "/favicon.ico",
-  "logo": "/toorow_logo_horizontal_dark.webp",
+  "font": {
+    "family": "Inter"
+  },
   "colors": {
     "primary": "#4f46e5",
     "light": "#818cf8",
     "dark": "#312e81"
   },
+  "tabs": [
+    {
+      "name": "Cloud (Managed)",
+      "url": "cloud-hosting"
+    },
+    {
+      "name": "Self-Hosted",
+      "url": "self-hosting"
+    }
+  ],
   "navigation": [
     {
       "group": "Getting Started",

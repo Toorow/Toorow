@@ -1,0 +1,69 @@
+---
+title: File-Source Ingestion (Media Plans, Panels, TGI)
+description: How toorow turns messy, human-maintained files — media plans, audience panels, TGI extracts — into standardized, reconcilable data, whether they arrive by upload or by email.
+---
+
+Not all data comes from an API. Plans and offline measurement arrive as **files**: a media plan workbook, an audience **panel** export, a **TGI** extract. These files are human-maintained — columns get renamed, calculations get invented, empty rows and merged cells creep in, and the France file rarely matches the Germany one. **File-Source Ingestion** is the toorow layer that turns any such file into standardized, canonical data at the right grain, and places it correctly so it can be **reconciled** against your API-sourced actuals.
+
+Upload and inbound email are the **same pipeline** — a file dropped in the UI and a file emailed to a datastream address are ingested identically.
+
+---
+
+## 1. The template is what you want, not what the file looks like
+
+A datastream declares a **template**: the canonical fields to recover, the grain (e.g. daily), and where the data sits in your matrix. The template is the invariant; the variable file is mapped **onto** it. Two differently-laid-out files (FR vs DE) mapped to the same template yield the **same** canonical fields.
+
+A template is realized one of two ways:
+
+| Path | When | How |
+|---|---|---|
+| **Catalog / saved template** | The file matches a known shape (e.g. an offline-media plan), or you reuse a template you saved | A declarative contract maps the file to canonical fields |
+| **LLM-built adaptation** | A file no template covers (a bespoke workbook) | Your AI assistant writes a small adaptation script, tests it on a sample, and you confirm the result before it locks |
+
+Either way, the result is **locked as a versioned template** and replayed identically on every later file — by upload or by email.
+
+---
+
+## 2. Placement in the matrix — planned vs actual vs extrapolated
+
+A file only becomes useful when toorow knows **where it belongs**. Every file source declares a class and its coordinates (metric / dimension / period):
+
+| Class | Meaning | Typical source |
+|---|---|---|
+| **Planned** | Intended/booked, before the fact | Media plan |
+| **Actual / Observed** | Measured after the fact | API connectors; audience panels |
+| **Extrapolated** | Sample projected to a population | TGI extracts |
+
+This placement is what lets toorow put a media plan (planned) next to your connector data (actual) and compute **plan-vs-actual variance**. A file with no declared class is refused rather than landing as orphan data.
+
+---
+
+## 3. Robust to messy, drifting files
+
+Recognition is **tolerant** — it maps columns by meaning, with a confidence score, not by position or exact name. It:
+
+- ignores added columns, empty rows, line breaks, and subtotal/total rows;
+- re-attaches renamed or differently-languaged columns;
+- detects the header even when it is not the first row, and reads a top `label: value` metadata block;
+- handles **several variants in one datastream** — a declared cell (e.g. a `FR` marker) or the filename becomes a **market/country dimension**, so France and Germany land on the same canonical fields.
+
+When the file needs restructuring to reach the grain — for example a per-line date range exploded into **daily** rows — toorow spreads the values deterministically (sum-preserving, to the cent), so planned data lines up with daily actuals.
+
+---
+
+## 4. Standardization is controlled — nothing is silently dropped
+
+Before a template locks, a **validation gate** checks that every required canonical field was recovered at the right grain. If a required field is missing or a mapping is ambiguous, toorow **flags it for you to confirm** — you see the mapping result and the gate in the interface. You (optionally with your AI assistant) resolve it; only then does the template lock. On later files, benign drift (an added column) still lands; a required field that genuinely disappears flags for re-confirmation.
+
+<Note>
+File-Source Ingestion stops at **standardized canonical rows**. Business metrics, currency conversion, and reconciliation itself run downstream in the modeled layer — this layer's job is to recover the right data, at the right grain, correctly placed.
+</Note>
+
+---
+
+## 5. In short
+
+1. Declare a template — pick a catalog one, save your own, or let your AI assistant build an adaptation.
+2. Send the file — upload it or email it to the datastream address (same result).
+3. toorow recognizes, reshapes to grain, validates the required fields, and places it in your matrix.
+4. It reconciles against your actuals — the plan and the observed sit side by side.
