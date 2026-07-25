@@ -10,7 +10,7 @@
     "family": "Plus Jakarta Sans",
     "headings": {
       "family": "Lexend",
-      "weight": 600
+      "weight": 800
     }
   },
   "colors": {
@@ -20,26 +20,28 @@
   },
   "tabs": [
     {
-      "name": "Cloud (Managed)",
-      "url": "cloud-hosting"
-    },
-    {
       "name": "Self-Hosted",
       "url": "self-hosting"
     }
   ],
   "navigation": [
     {
-      "group": "Cloud (Managed)",
+      "group": "Getting Started",
       "pages": [
         "index",
         "introduction",
-        "quickstart",
-        "cloud-hosting",
-        "universal-datastreams",
-        "semantic-layer",
-        "anomaly-detection-method",
-        "agentic-daily-insights",
+        "quickstart"
+      ]
+    },
+    {
+      "group": "Cloud & Hosting Architecture",
+      "pages": [
+        "cloud-hosting"
+      ]
+    },
+    {
+      "group": "AI Agents & MCP",
+      "pages": [
         "mcp-host-integration",
         "agent-context",
         "agent-tools",
@@ -48,13 +50,27 @@
       ]
     },
     {
-      "group": "Self-Hosted Instance",
+      "group": "Core Analytics & Datastreams",
+      "pages": [
+        "universal-datastreams",
+        "semantic-layer",
+        "anomaly-detection-method",
+        "agentic-daily-insights"
+      ]
+    },
+    {
+      "group": "Architecture & Security",
+      "pages": [
+        "repository-boundary"
+      ]
+    },
+    {
+      "group": "Self-Hosted & Engineering",
       "pages": [
         "self-hosting",
         "prerequisites",
         "constraints",
-        "adding-a-connector",
-        "repository-boundary"
+        "adding-a-connector"
       ]
     }
   ]
