@@ -10,7 +10,7 @@
     "family": "Plus Jakarta Sans",
     "headings": {
       "family": "Lexend",
-      "weight": 500
+      "weight": 700
     }
   },
   "colors": {
@@ -20,40 +20,17 @@
   },
   "navigation": [
     {
-      "group": "Getting Started",
+      "group": "Cloud (Managed)",
       "pages": [
         "index",
         "introduction",
-        "prerequisites",
-        "quickstart"
-      ]
-    },
-    {
-      "group": "AI Agents & MCP",
-      "pages": [
+        "quickstart",
+        "cloud-hosting",
         "mcp-host-integration",
         "agent-context",
         "agent-tools",
         "agent-rules",
-        "use-cases-library"
-      ]
-    },
-    {
-      "group": "Cloud (Managed)",
-      "pages": [
-        "cloud-hosting"
-      ]
-    },
-    {
-      "group": "Self-Hosted",
-      "pages": [
-        "self-hosting",
-        "constraints"
-      ]
-    },
-    {
-      "group": "Core Features & Analytics",
-      "pages": [
+        "use-cases-library",
         "universal-datastreams",
         "semantic-layer",
         "anomaly-detection-method",
@@ -61,8 +38,11 @@
       ]
     },
     {
-      "group": "Connector Development",
+      "group": "Self-Hosted",
       "pages": [
+        "self-hosting",
+        "prerequisites",
+        "constraints",
         "adding-a-connector",
         "repository-boundary"
       ]
