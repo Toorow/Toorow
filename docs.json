@@ -14,9 +14,19 @@
     }
   },
   "colors": {
-    "primary": "#4f46e5",
-    "light": "#818cf8",
-    "dark": "#312e81"
+    "primary": "#FF99C8",
+    "light": "#F7CAD0",
+    "dark": "#F77FB4"
+  },
+  "topbarLinks": [
+    {
+      "name": "Website",
+      "url": "https://toorow.com"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Open console",
+    "url": "https://app.toorow.com"
   },
   "tabs": [
     {
