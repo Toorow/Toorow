@@ -1,0 +1,33 @@
+---
+title: Changelog
+description: Product updates, new features, and fixes shipped to toorow.
+---
+
+<Update label="July 25, 2026" description="Phase A launch — v2026.07.12">
+
+Toorow's first public release is here. This week we shipped the foundation of the platform: a governed MCP server, universal ingestion, anomaly surveillance, and automated agent briefings.
+
+### New features
+
+- **MCP server for AI agents.** Toorow now runs as a FastMCP server exposing audited data tools to Claude Desktop, Cursor, and any MCP-compatible LLM host. Agents call typed tools instead of hitting raw SQL, so every answer is scoped, provenanced, and safe to trust. See [MCP host & agent integration](/mcp-host-integration).
+- **Universal datastreams.** One unified pipeline for API connectors (GA4, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, Mailgun), external BigQuery objects, and managed CSV / Excel / Sheets feeds. Every pull is immutable, versioned by `pull_id`, and preserves the full joint grain. See [Universal datastreams](/universal-datastreams).
+- **File-source ingestion for media plans, panels, and TGI.** Drop a workbook in the UI or email it to a datastream address — toorow maps messy, human-maintained files onto a versioned canonical template, so FR and DE files land as the same fields and reconcile against your API actuals. See [File-source ingestion](/file-source-ingestion).
+- **OAuth via Nango.** Connect data sources through a managed OAuth layer instead of pasting long-lived tokens. Credentials are stored per tenant and rotated automatically.
+- **Anomaly detection out of the box.** Nightly z-score surveillance on a 30-day rolling window flags metric shifts per project, connector, and dimension, with an anti-double-count guard that picks a single canonical breakdown so totals stay honest. See [Anomaly detection method](/anomaly-detection-method).
+- **Agentic daily insights.** The scheduler runs at 02:00 local, pulls data, rebuilds marts, checks freshness and anomalies, and synthesizes a morning briefing your agents can retrieve via `get_morning_briefing(project_id)`. Register business context events (launches, migrations, price changes) and toorow correlates them against flagged anomalies automatically. See [Agentic daily insights](/agentic-daily-insights).
+- **Semantic layer.** Metrics like CPA, CTR, and average position are defined once as canonical dbt models and reused across every agent, dashboard, and report — no more definitions drifting between teams. See [Semantic layer](/semantic-layer).
+- **Multi-tenancy with per-tenant encryption.** Cross-project isolation is enforced at the data layer, and each tenant's secrets are encrypted with its own key.
+- **Admin console.** Manage projects, datastreams, connectors, users, and context events from one place.
+
+### Updates
+
+- **Cloud (Managed) deployment now live.** `app.toorow.com` runs on GCP Cloud Run in `europe-west1` with scale-to-zero, so idle instances cost nothing. See [Cloud hosting](/cloud-hosting).
+- **Self-hosted deployment path.** Bring your own GCP project and run the full stack yourself, including connector engineering. See [Self-hosting](/self-hosting) and [Adding a connector](/adding-a-connector).
+- **Report pack, queue, and tracing.** Ingestion runs go through a durable queue with distributed tracing and an alerting hook, so failures surface instead of silently retrying forever.
+
+### Fixes
+
+- Hardened the production deploy workflow with a CI gate and stricter auth defaults.
+- Added a Docker `HEALTHCHECK`, pinned `uv`, and shipped a contributor runbook so self-hosted setups start cleanly.
+
+</Update>
