@@ -1,0 +1,54 @@
+---
+title: Agentic Daily Insights & Briefings
+description: How toorow synthesizes morning briefings, context events, and narrative insights for AI agents via FastMCP.
+---
+
+**toorow** is designed from the ground up to empower AI agents with trustworthy, audited marketing insights. The **Agentic Daily Insights** framework provides automated morning briefings, context event annotations, and narrative summaries.
+
+---
+
+## 1. Automated Morning Briefings
+
+The nightly scheduler (`SCHEDULER_ENABLED=true`) triggers an automated evaluation loop at 02:00 local time:
+
+1. **Daily Ingestion & Mart Build**: Executes datastream pulls and runs dbt models to update canonical marts.
+2. **Quality & Anomaly Checks**: Evaluates data freshness, volume checks, and z-score anomaly detectors.
+3. **Briefing Synthesis**: Compiles daily KPI deltas, flagged anomalies, and active business context into a structured morning briefing.
+
+AI agents can query the latest morning briefing using the core MCP tool `get_morning_briefing(project_id)`.
+
+---
+
+## 2. Business Context Events
+
+Marketing performance fluctuations rarely occur in a vacuum. toorow allows teams to register **Context Events** (e.g., website redesigns, PR announcements, price changes, ad campaign launches).
+
+When an agent analyzes metric anomalies, toorow correlates performance shifts against registered context events, providing instant explanatory context (e.g., *"Conversions dropped 25% on July 14, coinciding with a scheduled checkout gateway migration"*).
+
+---
+
+## 3. FastMCP Dual-Channel Response Model
+
+Every MCP data tool in toorow enforces a dual-channel output model (AD-1):
+
+- **Text Channel**: A concise, structured narrative text summary (≤ 30 lines) optimized for insertion directly into the LLM context window.
+- **Structured Content Channel (`structuredContent`)**: A complete JSON envelope containing raw metric arrays, data provenance, freshness timestamps, and quality alerts, rendered visually by MCP App widgets in compatible host interfaces.
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Semantic Layer" icon="layer-group" href="/semantic-layer">
+    Review canonical marts and ratio calculations supporting agent queries.
+  </Card>
+  <Card title="Anomaly Detection" icon="chart-line" href="/anomaly-detection-method">
+    Understand z-score thresholds and severity levels for anomaly alerts.
+  </Card>
+  <Card title="Security Constraints" icon="shield-check" href="/constraints">
+    Examine FastMCP dual-channel response rules and AD-5 tenant isolation.
+  </Card>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Test MCP tool responses locally with the FastMCP dev server.
+  </Card>
+</CardGroup>

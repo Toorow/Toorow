@@ -1,0 +1,82 @@
+---
+title: MCP App & Agent Use Cases Library
+description: Interactive workflows demonstrating how AI agents trigger tools that render embedded MCP App UI widgets directly inside host client interfaces.
+---
+
+Unlike traditional AI tools that return plain text or raw JSON wall-of-responses, **toorow** features an **MCP App architecture**. When an AI agent executes a toorow FastMCP tool, the host client receives a dual-channel payload that renders **interactive React/TypeScript UI widgets (`ui/widgets/`)** directly inside the chat window.
+
+---
+
+## The MCP App Dual-Channel Architecture
+
+```
++-----------------------------------------------------------------------------------+
+|  AI AGENT CHAT INTERFACE (Claude Desktop / Cursor / Antigravity Host)             |
+|                                                                                   |
+|  User Prompt: "Show me this week's performance and any anomalies across channels"  |
+|                                                                                   |
+|  +-----------------------------------------------------------------------------+  |
+|  |  LLM TEXT CHANNEL (Leans Summary <= 30 lines)                               |  |
+|  |  "Overall spend was €12,450 (+8%), generating 1,420 conversions. Meta ROAS   |  |
+|  |   improved to 3.8x, while GA4 conversions dipped 12% on July 14..."          |  |
+|  +-----------------------------------------------------------------------------+  |
+|                                                                                   |
+|  +-----------------------------------------------------------------------------+  |
+|  |  EMBEDDED MCP APP UI WIDGET (ui/widgets/daily-report)                       |  |
+|  |  [ Interactive Performance Chart | Metric Selector | Anomaly Inspector ]    |  |
+|  |  - Meta Ads:    €5,200 | 680 conv | ROAS 3.8x [Sparkline: ↗]                |  |
+|  |  - GA4 Organic:     0  | 410 conv | CPA  €0.00 [Sparkline: ↘]                |  |
+|  |  - TikTok Ads:  €3,100 | 210 conv | ROAS 2.1x [Sparkline: →]                |  |
+|  |  * Click any row to inspect underlying pull provenance or context events       |  |
+|  +-----------------------------------------------------------------------------+  |
++-----------------------------------------------------------------------------------+
+```
+
+---
+
+## Featured MCP App Use Cases
+
+### 1. Executive Morning Briefing App
+- **User Intent**: *"Give me my morning marketing briefing."*
+- **Agent Action**: Executes `get_morning_briefing(project_id)`.
+- **MCP App UI Experience**: Renders an interactive **Morning Briefing Widget**. The executive can toggle date ranges, inspect daily metric deltas, and review flagged anomaly spikes with one click.
+
+---
+
+### 2. Multi-Channel Marketing Attribution & ROI App
+- **User Intent**: *"Compare ROI and spend efficiency between Meta Ads, TikTok, and GA4."*
+- **Agent Action**: Executes `get_daily_report(report_profile="cross_channel")`.
+- **MCP App UI Experience**: Renders a **Cross-Channel Performance Matrix Widget**. Displays side-by-side spend, CPA, and ROAS visualizations computed directly from dbt semantic ratio views (`semantic_roas`, `semantic_cpa`).
+
+---
+
+### 3. Anomaly Root-Cause Inspector App
+- **User Intent**: *"Why did GA4 conversions drop on July 14?"*
+- **Agent Action**: Executes `get_daily_report` + queries `context_events`.
+- **MCP App UI Experience**: Renders an **Anomaly Inspector Widget**. Visually correlates the conversion dip on July 14 with a registered context event (*"Payment Gateway Migration v2"*), allowing the user to drill down into raw pull provenance (`pull_id`).
+
+---
+
+### 4. Interactive Datastream & Mapping Manager App
+- **User Intent**: *"Show me all connected datastreams and mapping statuses."*
+- **Agent Action**: Executes `flows_list()`.
+- **MCP App UI Experience**: Renders an **Admin Datastream Manager Widget**. Enables administrators and agents to inspect datastream health, verify target field mappings (`app.target_fields`), and trigger on-demand backfills.
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="MCP Host Integration" icon="network-wired" href="/mcp-host-integration">
+    Connect your favorite MCP host client to render toorow MCP App widgets.
+  </Card>
+  <Card title="Agent Tools Reference" icon="wrench" href="/agent-tools">
+    Inspect the FastMCP tools powering MCP App UI payloads.
+  </Card>
+  <Card title="Agent Rules" icon="scroll" href="/agent-rules">
+    Learn how to write LLM rules that preserve `structuredContent`.
+  </Card>
+  <Card title="Semantic Layer" icon="layer-group" href="/semantic-layer">
+    Explore the canonical dbt marts feeding MCP App charts.
+  </Card>
+</CardGroup>

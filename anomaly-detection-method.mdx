@@ -1,0 +1,81 @@
+---
+title: Anomaly Detection Method
+description: Methodology for tracking marketing performance anomalies using rolling stats, z-scores, and candidate context events.
+---
+
+This document describes the anomaly surveillance methodology implemented in **toorow**.
+
+---
+
+## 1. Simple Z-Score Methodology
+
+For each `(project_id, connector, metric, date)` tuple, toorow computes a standard z-score:
+
+```
+zscore = (observed_value - rolling_mean) / rolling_stddev
+```
+
+Where:
+- `rolling_mean` and `rolling_stddev` are calculated over a trailing 30-day window (`ANOMALY_BASELINE_WINDOW=29`, 29 preceding days + current row).
+- Source data is sourced from `fact_daily_kpi` totals using single-canonical-dimension selection to prevent double-counting.
+
+The exact SQL transformations are implemented in `dbt/models/marts/metric_baselines.sql` and `dbt/models/marts/anomalies_daily.sql`.
+
+---
+
+## 2. Anti-Double-Count Guard
+
+`fact_daily_kpi` contains parallel breakdown dimension series (e.g. `device_category` and `country`) that independently total the day's activity. Summing across all breakdown rows directly would produce values 2–5x too large.
+
+`metric_baselines.sql` enforces the `canonical_dim` pattern to select ONE breakdown dimension per `(project, connector, metric)` deterministically (`MIN(breakdown_dimension)`), aggregating exclusively over that dimension's rows.
+
+---
+
+## 3. Thresholds & Severity Levels
+
+An anomaly is flagged whenever `|zscore| >= ANOMALY_Z_THRESHOLD` (default 3.0):
+
+| Z-Score Range | Severity Level | Alert Action |
+|---|---|---|
+| `3.0 &lt;= |z| &lt; 5.0` | **Warning** | Logged to anomaly ledger and highlighted in briefings. |
+| `|z| &gt;= 5.0` | **Error** | High-severity notification dispatched to administrators and AI agents. |
+
+---
+
+## 4. Context Event Citations (AD-9)
+
+Anomalies **never assert causality** (AD-9 requirement). When context events exist for an anomaly date, they are listed strictly as **candidate context**.
+
+Prohibited causal phrases in generated messages:
+- `"caused by"`, `"due to"`, `"because of"`, `"en raison de"`, `"causé par"`.
+
+Enforced by unit test `test_causal_language_absent` in `server/tests/core/test_anomaly_alerts.py`.
+
+---
+
+## 5. Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `ANOMALY_ALERTS_ENABLED` | `false` | Master switch for anomaly evaluator thread. |
+| `ANOMALY_Z_THRESHOLD` | `3.0` | Z-score threshold for flagging anomalies. |
+| `ANOMALY_BASELINE_WINDOW` | `29` | Trailing window in days (29 preceding + current = 30 days). |
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Agentic Daily Insights" icon="sparkles" href="/agentic-daily-insights">
+    Learn how AI agents ingest anomaly notifications during morning briefings.
+  </Card>
+  <Card title="Semantic Layer" icon="layer-group" href="/semantic-layer">
+    Explore the canonical marts providing baseline metric data.
+  </Card>
+  <Card title="Security & Constraints" icon="shield-check" href="/constraints">
+    Review AD-9 non-black-box provenance invariants.
+  </Card>
+  <Card title="Self-Hosting Guide" icon="server" href="/self-hosting">
+    Configure `ANOMALY_ALERTS_ENABLED` in your `.env` deployment environment.
+  </Card>
+</CardGroup>

@@ -1,0 +1,136 @@
+---
+title: Quickstart
+description: Install and run toorow locally using uv, pnpm, and optional Docker infrastructure.
+---
+
+This guide provides a rapid developer setup for running **toorow** in a local sandbox environment.
+
+<Note>
+For production container deployments on Google Cloud or custom infrastructure, see the [Self-Hosting Guide](/self-hosting) and [Cloud Hosting Architecture](/cloud-hosting).
+</Note>
+
+## Prerequisites
+
+Before running the commands below, ensure your local machine has the following tools installed:
+- Python **3.12**
+- [uv](https://docs.astral.sh/uv/) package manager
+- Node.js **22.x or higher**
+- pnpm **9.x** (`corepack enable`)
+- Docker Desktop with Compose (optional, for local Nango and Postgres)
+
+See the full [Prerequisites Guide](/prerequisites) for detailed service and tool specifications.
+
+---
+
+## 1. Clone & Install Dependencies
+
+```bash
+git clone <repository-url> toorow
+cd toorow
+
+# Install Python backend packages with uv
+uv sync --all-packages --frozen
+
+# Install UI workspace packages with pnpm
+pnpm -C ui install --frozen-lockfile
+pnpm -C ui build:tokens
+```
+
+---
+
+## 2. Environment Configuration
+
+Copy the default environment template:
+
+```bash
+cp .env.example .env
+```
+
+By default, `.env.example` configures `TOOROW_AUTH_MODE=static` with local defaults suitable for offline development.
+
+<Warning>
+The Python server process reads environment variables directly upon boot. Updating `.env` requires restarting the server process.
+</Warning>
+
+---
+
+## 3. Run the FastMCP Server
+
+Start the local server backend:
+
+```bash
+uv run --package toorow-server python -m core.main
+```
+
+The FastMCP HTTP endpoint will be available at `http://localhost:8000/mcp`.
+
+To specify a custom port (e.g. PowerShell):
+
+```powershell
+$env:PORT = "8000"
+uv run --package toorow-server python -m core.main
+```
+
+---
+
+## 4. Run the Admin Console
+
+Start the React Admin Console in development mode with Hot Module Replacement (HMR):
+
+```bash
+pnpm -C ui --filter @toorow/admin dev
+```
+
+The Vite dev server will launch at `http://localhost:5174` and automatically proxy `/api` requests to the FastMCP backend at `http://localhost:8000`.
+
+---
+
+## 5. (Optional) Launch Local Nango & PostgreSQL Stack
+
+To test OAuth connection flows, multi-project governance, and full database persistence locally:
+
+```bash
+cp infra/nango/.env.example infra/nango/.env
+python -c "import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"
+```
+
+Paste the generated key into `infra/nango/.env` under `NANGO_ENCRYPTION_KEY`, then start the stack:
+
+```bash
+docker compose --env-file infra/nango/.env -f infra/nango/docker-compose.yml up -d
+```
+
+---
+
+## 6. Verify Installation
+
+Run the automated test suite to confirm your local setup:
+
+```bash
+# Code quality and unit tests
+uv run ruff check server
+uv run pytest server/tests -q
+pnpm -C ui --filter @toorow/admin test
+
+# Run local analytics loop simulation without cloud credentials
+uv run python server/modules/google-analytics/seeds/run_local_loop.py
+```
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Prerequisites" icon="list-check" href="/prerequisites">
+    Review account requirements and local tooling details.
+  </Card>
+  <Card title="Self-Hosting Guide" icon="server" href="/self-hosting">
+    Examine full `.env` parameters and production container deployment steps.
+  </Card>
+  <Card title="Security & Constraints" icon="shield-check" href="/constraints">
+    Learn about pre-live security checklists and architectural invariants.
+  </Card>
+  <Card title="Adding a Connector" icon="plug" href="/adding-a-connector">
+    Build a custom connector module conforming to platform standards.
+  </Card>
+</CardGroup>

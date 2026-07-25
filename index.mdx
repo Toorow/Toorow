@@ -1,0 +1,34 @@
+# Project Documentation Index
+
+Welcome to the **toorow** technical documentation index for maintainers, developers, and platform engineers.
+
+## Core Documentation Surfaces
+
+- **[Introduction](./introduction.mdx)** — Product overview, value pillars, and strategic direction.
+- **[Prerequisites](./prerequisites.mdx)** — Account requirements, GCP infrastructure, and local dev tooling.
+- **[Quickstart](./quickstart.mdx)** — Step-by-step local setup for rapid evaluation and testing.
+- **[Platform Constraints & Security](./constraints.mdx)** — Security checklists, zero-telemetry rules, and architectural invariants.
+- **[Cloud Hosting Architecture](./cloud-hosting.mdx)** — Maintainers' production GCP Cloud Run and scale-to-zero layout.
+- **[Self-Hosting & `.env` Reference](./self-hosting.mdx)** — Deploying toorow on custom stacks and exhaustive environment variable reference.
+
+## AI Agents & MCP Integration
+
+- **[MCP Host Integration](./mcp-host-integration.mdx)** — Connecting internal platform agents and external LLM client hosts (Claude Desktop, Cursor).
+- **[Agent Context](./agent-context.mdx)** — Schema discovery (`get_source_capabilities`) and business context event annotations.
+- **[Agent Tools Reference](./agent-tools.mdx)** — FastMCP tool definitions and parameter schemas.
+- **[Agent Rules](./agent-rules.mdx)** — System instructions and behavioral invariants for LLMs.
+- **[MCP App Use Cases Library](./use-cases-library.mdx)** — Interactive workflows and embedded MCP App UI widgets (`ui/widgets/`).
+
+## Architecture & Project Context
+
+- [Durable Project Context](./project-context.md) — Canonical architectural invariants, runtime specifications, and repository structure.
+- [Product Direction](./product-direction.md) — Strategic roadmap and product design goals.
+- [Working Method](./working-method.md) — Engineering standards, commit discipline, and verification workflow.
+- [Repository Boundary](./repository-boundary.md) — Public application projection vs. private workspace rules.
+
+## Technical & Connector Guides
+
+- [Adding a Connector](./adding-a-connector.md) — Extensibility contract and Mailgun step-by-step walkthrough.
+- [Universal Datastreams](./universal-datastreams.mdx) — Ingestion pipelines, Joint Grain preservation, and versioned operations.
+- [Semantic Layer & Marts](./semantic-layer.mdx) — Daily fact surface, dbt ratio views, and DuckDB read-through cache.
+- [Anomaly Detection Method](./anomaly-detection-method.mdx) — Surveillance methodology, baseline calculations, and z-score alert thresholds.
