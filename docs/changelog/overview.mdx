@@ -1,0 +1,26 @@
+---
+title: Changelog
+description: Weekly release notes for Toorow — new features, product updates, connector additions, and bug fixes across the MCP control plane.
+---
+
+<Update label="July 25, 2026" description="Launch week">
+
+Toorow is now live: a sovereign MCP control plane for governed marketing analytics. This is the first release. Highlights of what shipped this week:
+
+## New features
+
+- **Universal Datastreams ingestion.** A single governed pipeline for API connectors, external BigQuery objects, and managed CSV/Google Sheets feeds — with journaled `pull_id`s, retries, quotas, and per-provider circuit breakers. See [Universal Datastreams](/universal-datastreams).
+- **Semantic layer with canonical marts.** Metrics from GA4, Search Console, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, Klaviyo, and Mailgun are harmonized into a single `fact_daily_kpi` surface, with dbt semantic ratio views (CTR, CPA, ROAS, average position). See [Semantic Layer](/semantic-layer).
+- **MCP host integration.** Toorow runs as a FastMCP server that plugs into Claude Desktop, Cursor, and internal agents. Agents receive a text summary alongside a `structuredContent` payload that renders interactive React widgets in the host UI. See [MCP Host Integration](/mcp-host-integration).
+- **Agentic Daily Insights & morning briefings.** A nightly scheduler produces automated briefings, annotates context events, and generates narrative summaries for agents. See [Agentic Daily Insights](/agentic-daily-insights).
+- **Anomaly detection.** Rolling z-score surveillance over `(project, connector, metric, date)` tuples, with candidate context events attached to flagged points. See [Anomaly Detection](/anomaly-detection-method).
+- **Use cases library.** A gallery of end-to-end agent workflows and the embedded UI widgets they render, so you can see what to expect inside your host client. See [Use Cases Library](/use-cases-library).
+- **Cloud and self-hosted deployments.** Managed Google Cloud Run deployment with scale-to-zero, plus a full self-hosting path with an exhaustive `.env` reference. See [Cloud Hosting](/cloud-hosting) and [Self-Hosting](/self-hosting).
+- **Extensible connector modules.** Add a new source by dropping a manifest, `connector.py`, dbt staging model, and golden-pull fixtures — no changes to the core required. See [Add a connector](/adding-a-connector).
+
+## Updates
+
+- **Agent governance surface.** Agent context discovery, tool definitions, and behavioral rules are now documented end-to-end. See [Agent Context](/agent-context), [Agent Tools](/agent-tools), and [Agent Rules](/agent-rules).
+- **Multi-tenant isolation.** Inbound identity, provider OAuth scopes, and dataset access are strictly isolated per project. See [Repository Boundary](/repository-boundary) and [Constraints](/constraints).
+
+</Update>
