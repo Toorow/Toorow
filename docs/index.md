@@ -25,7 +25,6 @@ Welcome to the **toorow** technical documentation index for maintainers, develop
 - [Product Direction](./product-direction.md) — Strategic roadmap and product design goals.
 - [Working Method](./working-method.md) — Engineering standards, commit discipline, and verification workflow.
 - [Repository Boundary](./repository-boundary.md) — Public application projection vs. private workspace rules.
-- [Development Guide](./development-guide.md) — Internal developer guides and environment procedures.
 
 ## Technical & Connector Guides
 
