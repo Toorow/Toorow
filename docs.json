@@ -46,6 +46,7 @@
       "group": "Core Features & Analytics",
       "pages": [
         "universal-datastreams",
+        "file-source-ingestion",
         "semantic-layer",
         "anomaly-detection-method",
         "agentic-daily-insights"
