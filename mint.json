@@ -3,7 +3,7 @@
   "name": "Toorow",
   "logo": {
     "light": "/toorow_logo_horizontal_dark.webp",
-    "dark": "/toorow_logo_horizontal_light.webp"
+    "dark": "/toorow_logo_horizontal_dark.webp"
   },
   "favicon": "/favicon.ico",
   "font": {
