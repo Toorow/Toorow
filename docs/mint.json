@@ -3,11 +3,15 @@
   "name": "Toorow",
   "logo": {
     "light": "/toorow_logo_horizontal_dark.webp",
-    "dark": "/toorow_logo_horizontal_dark.webp"
+    "dark": "/toorow_logo_horizontal_light.webp"
   },
   "favicon": "/favicon.ico",
   "font": {
-    "family": "Inter"
+    "family": "Plus Jakarta Sans",
+    "headings": {
+      "family": "Lexend",
+      "weight": 800
+    }
   },
   "colors": {
     "primary": "#4f46e5",
