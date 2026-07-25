@@ -1,0 +1,39 @@
+---
+title: Changelog
+description: Product updates and releases for Toorow.
+---
+
+<Update label="July 25, 2026" description="v2026.07.12">
+
+Nothing new shipped to production this week. See below for the previous release.
+
+</Update>
+
+<Update label="July 12, 2026" description="v2026.07.12 — Phase A general availability">
+
+Phase A is complete. Toorow is now usable end-to-end as a sovereign MCP control plane for governed marketing analytics.
+
+### New features
+
+- **MCP server for agents.** Agents can now query unified marketing metrics through the Model Context Protocol, with short text summaries plus a structured payload for rich widgets. See [MCP host integration](/mcp-host-integration).
+- **Connector catalog.** First-party connectors ship for Google Analytics 4, Google Search Console, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, Klaviyo, and GitHub, plus a generic connector for custom sources. See [Universal datastreams](/universal-datastreams) and [Adding a connector](/adding-a-connector).
+- **OAuth account linking.** Each user links their own provider accounts through Nango; tokens are isolated per tenant, encrypted at rest, and refreshed automatically for both scheduled and interactive runs.
+- **Semantic marts via dbt.** Concepts like *cost*, *sessions*, and *conversions* now mean the same thing across every source, harmonized through canonical dbt models. See the [semantic layer](/semantic-layer).
+- **Anomaly detection.** Baselines and alerts flag unexpected movements on daily KPIs. See [anomaly detection](/anomaly-detection-method).
+- **Agentic daily insights.** A scheduled report pack summarizes what changed for each project every day. See [agentic daily insights](/agentic-daily-insights).
+- **Admin console.** A first-class UI for managing tenants, connections, syncs, and health.
+- **Cloud and self-hosted deployment.** Ship on managed Cloud Run or on your own infrastructure. See [cloud hosting](/cloud-hosting) and [self-hosting](/self-hosting).
+
+### Updates
+
+- **Multi-tenant isolation hardened.** Per-tenant encryption and strict cross-project isolation are enforced at the resource-graph level. See [repository boundary](/repository-boundary) and [constraints](/constraints).
+- **Observability.** Tracing, connection health, and sync performance are surfaced across the admin console and structured logs.
+- **Governance and audit.** Every tool call is bound to the authorizing user (on-behalf-of) and recorded in an audit trail.
+
+### Fixes
+
+- **Production deployment gates.** The deploy workflow now requires a green CI run and hardened production authentication defaults.
+- **Container health checks.** Server images include a `HEALTHCHECK` so orchestrators can detect unhealthy instances.
+- **Safer defaults.** `.env.example` ships with authentication enabled by default to prevent accidental open deployments.
+
+</Update>
