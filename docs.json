@@ -28,28 +28,12 @@
     "name": "Open console",
     "url": "https://app.toorow.com"
   },
-  "tabs": [
-    {
-      "name": "Self-Hosted",
-      "url": "self-hosting"
-    }
-  ],
   "navigation": [
     {
-      "group": "Overview",
+      "group": "Product Overview",
       "pages": [
         "index",
         "introduction"
-      ]
-    },
-    {
-      "group": "AI Agents & MCP",
-      "pages": [
-        "mcp-host-integration",
-        "agent-context",
-        "agent-tools",
-        "agent-rules",
-        "use-cases-library"
       ]
     },
     {
@@ -63,16 +47,26 @@
       ]
     },
     {
-      "group": "Installation & Setup",
+      "group": "AI Agents & MCP Protocol",
       "pages": [
+        "mcp-host-integration",
+        "agent-context",
+        "agent-tools",
+        "agent-rules",
+        "use-cases-library"
+      ]
+    },
+    {
+      "group": "Self-Hosted Deployment",
+      "pages": [
+        "self-hosting",
         "quickstart",
         "prerequisites",
-        "self-hosting",
         "cloud-hosting"
       ]
     },
     {
-      "group": "Infrastructure & Security",
+      "group": "Security & Governance",
       "pages": [
         "constraints",
         "repository-boundary"
