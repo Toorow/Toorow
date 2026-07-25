@@ -15,7 +15,6 @@ import { OrgThemeProvider } from "./shell/orgTheme";
 import ApplicationShell from "./shell/ApplicationShell";
 import JoinOrg from "./shell/pages/JoinOrg";
 import CreateOrg from "./shell/pages/CreateOrg";
-import AuthGate from "./shell/AuthGate";
 
 function isOnboardingPath(p: string): boolean {
   return p.startsWith("/invite") || p.startsWith("/onboarding") || p.startsWith("/create-org");
@@ -51,16 +50,14 @@ function ScopedShell() {
 }
 
 export default function App() {
-  const inner = isOnboardingPath(window.location.pathname) ? (
-    <OnboardingApp />
-  ) : (
+  if (isOnboardingPath(window.location.pathname)) {
+    return <OnboardingApp />;
+  }
+  return (
     <RouterProvider defaultProject="default">
       <ScopeProvider>
         <ScopedShell />
       </ScopeProvider>
     </RouterProvider>
   );
-  // Per-user Google Sign-In: populates localStorage.api_token with a Google ID
-  // token (JWT) the connector verifies in TOOROW_AUTH_MODE=oauth.
-  return <AuthGate>{inner}</AuthGate>;
 }
