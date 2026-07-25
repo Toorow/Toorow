@@ -72,6 +72,12 @@
       "pages": [
         "adding-a-connector"
       ]
+    },
+    {
+      "group": "Changelog",
+      "pages": [
+        "changelog"
+      ]
     }
   ]
 }
