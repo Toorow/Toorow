@@ -1,0 +1,20 @@
+/**
+ * account-settings.css — page frame for shell/pages/AccountSettings.tsx.
+ *
+ * The account screen is reached from the TopBar scope control ("Account" >
+ * "Your account"), outside the six project workspaces. Its destructive section
+ * reuses danger-zone.css verbatim so erasing an account and deleting an
+ * organization look and behave the same; only the page frame lives here.
+ *
+ * Tokenized: no color or size literal beyond the shell's shared layout metrics.
+ */
+
+.accountsettings {
+  display: grid;
+  gap: 28px;
+  max-width: 880px;
+}
+
+.accountsettings .page-header {
+  align-items: flex-start;
+}

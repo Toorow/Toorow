@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useId, useState } from "react";
 import "./events.css";
+import { apiFetch } from "./lib/apiFetch";
 
 export interface ContextEvent {
   id: string;
@@ -63,7 +64,7 @@ export default function BusinessContextPanel({ projectId = "default" }: Business
     setListError(null);
     try {
       const url = `/api/context-events?project_id=${encodeURIComponent(projectId)}`;
-      const resp = await fetch(url);
+      const resp = await apiFetch(url);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
       }
@@ -100,7 +101,7 @@ export default function BusinessContextPanel({ projectId = "default" }: Business
 
     setSubmitting(true);
     try {
-      const resp = await fetch("/api/context-events", {
+      const resp = await apiFetch("/api/context-events", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

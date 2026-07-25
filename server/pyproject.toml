@@ -47,6 +47,13 @@ dependencies = [
     # delivered file bytes + manifest in the private EU quarantine bucket. Imported
     # lazily, but must be installed for the receipt/bridge Cloud Run services.
     "google-cloud-storage>=2.18",
+    # Epic 24 — per-org BigQuery dataset provisioning in warehouse_tenancy
+    # (_provision_bigquery_datasets / _drop_bigquery_datasets). Imported lazily so
+    # DuckDB mode never loads it, but it MUST be installed wherever
+    # TOOROW_BQ_PROVISION_ENABLED=1: without it, creating an org raised
+    # ImportError inside the non-blocking provisioning try/except, so the 201 was
+    # still returned and the org silently had no warehouse.
+    "google-cloud-bigquery>=3.25",
 ]
 
 # Story 5.1 — OTel/Langfuse tracing is an OPTIONAL extra. CI does NOT install it;

@@ -1,30 +1,81 @@
 ---
-title: Project Documentation Index
-description: Welcome to the toorow technical documentation index for maintainers, developers, and platform engineers.
+title: Toorow Documentation
+description: Technical documentation for toorow, the sovereign MCP control plane for governed marketing analytics and AI agents.
 ---
 
-Welcome to the **toorow** technical documentation index for maintainers, developers, and platform engineers.
+Welcome to the **toorow** technical documentation. toorow is a sovereign marketing data platform engineered for artificial intelligence agents and platform engineers, utilizing the **Model Context Protocol (MCP)**.
 
-## Product & AI Agent Documentation
+---
 
-- **[Introduction](/introduction)** — Product overview, value pillars, and strategic direction.
-- **[MCP Host Integration](/mcp-host-integration)** — Connecting internal platform agents and external LLM client hosts (Claude Desktop, Cursor).
-- **[Agent Context](/agent-context)** — Schema discovery (`get_source_capabilities`) and business context event annotations.
-- **[Agent Tools Reference](/agent-tools)** — FastMCP tool definitions and parameter schemas.
-- **[Agent Rules](/agent-rules)** — System instructions and behavioral invariants for LLMs.
-- **[MCP App Use Cases Library](/use-cases-library)** — Interactive workflows and embedded MCP App UI widgets (`ui/widgets/`).
-- **[Universal Datastreams](/universal-datastreams)** — Ingestion pipelines, Joint Grain preservation, and versioned operations.
-- **[File-Source Ingestion](/file-source-ingestion)** — Ingesting media plans, panels, and offline extracts.
-- **[Semantic Layer & Marts](/semantic-layer)** — Daily fact surface, dbt ratio views, and DuckDB read-through cache.
-- **[Anomaly Detection Method](/anomaly-detection-method)** — Surveillance methodology, baseline calculations, and z-score alert thresholds.
-- **[Agentic Daily Insights](/agentic-daily-insights)** — Automated morning briefings and narrative insights.
+## 📚 Product & AI Agent Documentation
 
-## Self-Hosted & Infrastructure (Tab: Self-Hosted)
+Explore how toorow unifies marketing data, enforces semantic governance, and exposes governed FastMCP tools for AI agents.
 
-- **[Quickstart](/quickstart)** — Step-by-step local setup for rapid evaluation and testing.
-- **[Prerequisites](/prerequisites)** — Account requirements, GCP infrastructure, and local dev tooling.
-- **[Self-Hosting & `.env` Reference](/self-hosting)** — Deploying toorow on custom stacks and exhaustive environment variable reference.
-- **[Cloud Hosting Architecture](/cloud-hosting)** — Maintainers' production GCP Cloud Run and scale-to-zero layout.
-- **[Platform Constraints & Security](/constraints)** — Security checklists, zero-telemetry rules, and architectural invariants.
-- **[Repository Boundary](/repository-boundary)** — Public application projection vs. private workspace rules.
-- **[Adding a Connector](/adding-a-connector)** — Extensibility contract, scaffolding, and Mailgun step-by-step walkthrough.
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    Product overview, key capabilities, and strategic direction.
+  </Card>
+  <Card title="Supported Connectors" icon="grid-2" href="/supported-connectors">
+    Explore the 37 pre-built connector modules (GA4, Meta, Shopify, Stripe, etc.).
+  </Card>
+  <Card title="MCP Host Integration" icon="network-wired" href="/mcp-host-integration">
+    Connect external LLM host clients (Claude Desktop, Cursor, Antigravity).
+  </Card>
+  <Card title="FastMCP Agent Tools" icon="wrench" href="/agent-tools">
+    Exhaustive API reference for FastMCP data tools exposed to AI agents.
+  </Card>
+  <Card title="MCP App Use Cases" icon="layer-group" href="/use-cases-library">
+    Interactive workflows rendering embedded React/TypeScript UI widgets.
+  </Card>
+  <Card title="Agent Context & Metadata" icon="database" href="/agent-context">
+    Dynamic schema discovery and business context event annotations.
+  </Card>
+  <Card title="Universal Datastreams" icon="arrows-rotate" href="/universal-datastreams">
+    Real-data ingestion pipelines across APIs, BigQuery, and managed feeds.
+  </Card>
+  <Card title="File-Source Ingestion" icon="file-spreadsheet" href="/file-source-ingestion">
+    Ingesting media plans, audience panels, and TGI extracts.
+  </Card>
+  <Card title="Semantic Layer & Marts" icon="cubes" href="/semantic-layer">
+    Canonical daily fact surface (`fact_daily_kpi`) and dbt ratio views.
+  </Card>
+  <Card title="Anomaly Detection" icon="chart-line" href="/anomaly-detection-method">
+    Surveillance methodology, baseline stats, and z-score alert thresholds.
+  </Card>
+  <Card title="Agentic Daily Insights" icon="sparkles" href="/agentic-daily-insights">
+    Automated morning briefings and narrative insights synthesis.
+  </Card>
+  <Card title="Agent Rules" icon="scroll" href="/agent-rules">
+    System instructions and behavioral invariants for LLMs.
+  </Card>
+</CardGroup>
+
+---
+
+## 🛠️ Self-Hosted & Infrastructure (Tab: Self-Hosted)
+
+Deploy and operate toorow on your own infrastructure or cloud environment.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install and run toorow locally in under 5 minutes.
+  </Card>
+  <Card title="Prerequisites" icon="list-check" href="/prerequisites">
+    Cloud accounts, GCP infrastructure, and local dev tooling.
+  </Card>
+  <Card title="Self-Hosting Guide" icon="server" href="/self-hosting">
+    Production deployment steps and complete `.env` variable reference.
+  </Card>
+  <Card title="Cloud Hosting" icon="cloud" href="/cloud-hosting">
+    Maintainers' production GCP Cloud Run architecture and scale-to-zero settings.
+  </Card>
+  <Card title="Platform Constraints" icon="shield-check" href="/constraints">
+    Security checklists, zero-telemetry rules, and architectural invariants.
+  </Card>
+  <Card title="Adding a Connector" icon="plug" href="/adding-a-connector">
+    Scaffold a new connector module with step-by-step Mailgun walkthrough.
+  </Card>
+  <Card title="Repository Boundary" icon="folder-tree" href="/repository-boundary">
+    Public application projection vs. private workspace rules.
+  </Card>
+</CardGroup>

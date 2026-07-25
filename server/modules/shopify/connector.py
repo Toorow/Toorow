@@ -616,6 +616,224 @@ def pull(
 
 
 # ---------------------------------------------------------------------------
+# Epic 31.6 — product_launch event profile (landing: context_events).
+#
+# Generalises the YouTube 31.3 video_upload pattern to the commerce family: each
+# Shopify product publication becomes a canonical marker
+# `shopify > product_launch > <title>` that annotates the revenue/orders curves
+# AND feeds the MMM exogenous-regressor feature builder (epic-31 §10). This
+# profile writes ONLY context_events -- never raw_shopify_orders nor
+# fact_daily_kpi (HG-2 inverted per profile).
+# ---------------------------------------------------------------------------
+
+# Canonical event mapping mirrors canonical_event_mapping in the manifest. Pure
+# lookup (no I/O) -- unit-testable via golden_events/expected_events.
+_CANONICAL_EVENT_MAPPING = {"product_launch": "product_launch"}
+
+# Products endpoint (Admin REST). AI-53: version-dated path, to confirm live.
+def _products_endpoint(shop_domain: str) -> str:
+    """Build the Admin REST products endpoint for *shop_domain* (Epic 31.6)."""
+    return f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/products.json"
+
+
+def transform_events(
+    raw_rows: list[dict],
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict]:
+    """Map raw Admin REST product dicts to canonical event dicts (AD-2, pure).
+
+    Input: a list of product resource dicts from /products.json, each with
+    ``title`` and ``published_at`` (nullable). Output: canonical event dicts with
+    keys event_type, event_date, label, platform, source -- ready for
+    persist_context_event() (value = None, pulse).
+
+    event_date = published_at truncated to YYYY-MM-DD.
+    label      = title.
+    event_type = "product_launch" (via _CANONICAL_EVENT_MAPPING).
+    platform   = "shopify".
+    source     = "shopify".
+
+    Semantics (M1): a product with a null/empty ``published_at`` was never
+    published to the Online Store -> it has NO launch date, so it is SKIPPED
+    (not emitted with an empty event_date). A published_at shorter than a 10-char
+    ISO date prefix is likewise skipped (validate_event_input would reject it).
+
+    Date window (H1): the products edge returns the whole catalogue, so an
+    unfiltered transform would emit every product on every pull. When
+    ``date_from``/``date_to`` are supplied, products whose publish date falls
+    OUTSIDE [date_from, date_to] are dropped. Both None (the golden-replay
+    contract) means "no window" -> every published product passes.
+    """
+    event_type = _CANONICAL_EVENT_MAPPING.get("product_launch", "product_launch")
+    result: list[dict] = []
+    for product in raw_rows:
+        published_at = product.get("published_at") or ""
+        # M1: unpublished product (null published_at) or invalid date -> no event.
+        if len(published_at) < 10:
+            logger.debug(
+                "transform_events: skipping product with published_at=%r", published_at
+            )
+            continue
+        event_date = published_at[:10]
+        # H1: bounded window filter (no-op when both bounds are None).
+        if date_from is not None and event_date < date_from:
+            continue
+        if date_to is not None and event_date > date_to:
+            continue
+        result.append(
+            {
+                "event_type": event_type,
+                "event_date": event_date,
+                "label": product.get("title") or "",
+                "platform": "shopify",
+                "source": "shopify",
+            }
+        )
+    return result
+
+
+def pull_product_launch(
+    connection_id: str,
+    date_from: str,
+    date_to: str,
+    project_id: str,
+    pull_id: str,
+    shop_domain: str | None = None,
+) -> dict:
+    """Fetch the shop's products and persist each publication as a context_event.
+
+    Admin REST path (reuses the existing shopify token/scope -- no new scope):
+    GET /admin/api/{version}/products.json?published_at_min=&published_at_max=&
+    limit=250, following the ``Link`` rel="next" cursor (same bounded pagination
+    as the orders pull).
+
+    Idempotence (Epic 31.3/H1): two guards make a daily re-pull idempotent (no
+    double-counted markers / doubled MMM regressor):
+      1. transform_events() filters products to [date_from, date_to] client-side.
+      2. delete_connector_events_in_window() clears this project's prior shopify
+         product_launch events in the SAME window BEFORE the re-insert.
+    No new migration is required (context_events.type/source already exist).
+
+    AD-3:  token used immediately as an X-Shopify-Access-Token header, then discarded.
+    AI-03: ASCII-only in log strings.
+    AD-2:  canonical event mapping via transform_events().
+    AD-8:  project-scoped (delete + insert both bound to project_id).
+    """
+    from core import nango_client  # noqa: PLC0415 -- AD-2: import at call time
+    from core.context_events import (  # noqa: PLC0415
+        delete_connector_events_in_window,
+        persist_context_event,
+    )
+
+    if shop_domain is None:
+        shop_domain = os.environ.get("SHOPIFY_SHOP_DOMAIN")
+    if not shop_domain:
+        raise ValueError(
+            "SHOPIFY_SHOP_DOMAIN env var required for pull "
+            "(set it to your merchant shop domain, e.g. 'my-store.myshopify.com')"
+        )
+
+    token = nango_client.get_fresh_token(connection_id, provider="shopify")
+
+    url: str | None = _products_endpoint(shop_domain)
+    params: dict | None = {
+        "published_at_min": f"{date_from}T00:00:00Z",
+        "published_at_max": f"{date_to}T23:59:59Z",
+        "limit": 250,
+    }
+    headers = {"X-Shopify-Access-Token": token}
+
+    all_products: list[dict] = []
+    seen_urls: set[str] = set()
+    pages = 0
+    while url:
+        if url in seen_urls:
+            logger.warning(
+                "pull_product_launch: non-progressing pagination cursor, stopping "
+                "(pull_id=%s pages=%d)", pull_id, pages,
+            )
+            break
+        seen_urls.add(url)
+        if pages >= _MAX_PAGES:
+            logger.warning(
+                "pull_product_launch: page cap %d reached, stopping (pull_id=%s)",
+                _MAX_PAGES, pull_id,
+            )
+            break
+        pages += 1
+        resp = httpx.get(url, params=params, headers=headers, timeout=30.0)
+
+        if resp.status_code == 429:
+            from core.quota import RateLimitError  # noqa: PLC0415
+
+            retry_after_raw = resp.headers.get("Retry-After", "0")
+            try:
+                retry_after = int(float(retry_after_raw)) or None
+            except (ValueError, TypeError):
+                retry_after = None
+            raise RateLimitError("shopify", retry_after)
+
+        if resp.status_code != 200:
+            from core.pull_errors import classify_http_error  # noqa: PLC0415
+
+            try:
+                _body = resp.json()
+            except Exception:
+                _body = resp.text
+            raise classify_http_error(resp.status_code, _body, _load_error_map())
+
+        payload = resp.json()
+        all_products.extend(payload.get("products") or [])
+        url = _next_page_url(resp.headers.get("Link"))
+        params = None  # the next URL already carries the page_info cursor
+
+    logger.info(
+        "pull_product_launch: fetched %d product(s) in %d page(s) for pull_id=%s",
+        len(all_products), pages, pull_id,
+    )
+
+    canonical_events = transform_events(all_products, date_from=date_from, date_to=date_to)
+
+    # H1: delete-by-source-window BEFORE re-insert -> idempotent daily re-pull.
+    event_type = _CANONICAL_EVENT_MAPPING.get("product_launch", "product_launch")
+    delete_connector_events_in_window(
+        project_id=project_id,
+        source="shopify",
+        event_type=event_type,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    event_count = 0
+    for ev in canonical_events:
+        label = ev["label"][:120]  # validate_event_input enforces max 120.
+        persist_context_event(
+            project_id=project_id,
+            event_date=ev["event_date"],
+            type=ev["event_type"],
+            label=label,
+            description=label,
+            created_by=f"shopify_pull:{pull_id}",
+            platform=ev["platform"],
+            value=None,
+            source=ev["source"],
+        )
+        event_count += 1
+
+    logger.info(
+        "pull_product_launch: persisted %d context_events: pull_id=%s date_from=%s date_to=%s",
+        event_count, pull_id, date_from, date_to,
+    )
+    return {
+        "pull_id": pull_id,
+        "event_count": event_count,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+
+# ---------------------------------------------------------------------------
 # transform() — manifest-driven canonical field mapping
 # ---------------------------------------------------------------------------
 

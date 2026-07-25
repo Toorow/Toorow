@@ -35,6 +35,7 @@ import FirstPublication from "./pages/FirstPublication";
 import GettingStarted from "./pages/GettingStarted";
 import ProjectSettings from "./pages/ProjectSettings";
 import OrgSettings from "./pages/OrgSettings";
+import AccountSettings from "./pages/AccountSettings";
 import ReportsPanel from "../ReportsPanel";
 import WidgetCardsPage from "../WidgetCardsPage";
 import NotebooksPanel from "../NotebooksPanel";
@@ -149,7 +150,13 @@ export default function ContentRouter() {
 
   // Scope settings (reached from the TopBar scope actions menu, any workspace).
   if (route.section === "project-settings") return <ProjectSettings projectId={projectId} />;
-  if (route.section === "org-settings") return <OrgSettings orgId={org.id} />;
+  // org is null until the scope has loaded (see ScopeValue.state) — the shell
+  // gates on that, so this only guards the type.
+  if (route.section === "org-settings") return org ? <OrgSettings orgId={org.id} /> : null;
+  // The signed-in person's own account (identity + account erasure). Like the
+  // organization settings it is NOT a project workspace: it is reached from the
+  // TopBar scope control, and it needs no scope at all — it is about the user.
+  if (route.section === "account") return <AccountSettings />;
 
   const key = `${route.workspace}/${route.section ?? ""}`;
   switch (key) {

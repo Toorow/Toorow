@@ -32,6 +32,7 @@
 import { useEffect, useState } from "react";
 import "../application.css";
 import "./data-workspace.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 /** Provider logo assets that actually exist under public/connectors/. Anything not
  *  in this map has NO asset yet — see the GAP list; we still reference
@@ -382,7 +383,7 @@ export default function DataWorkspace({
     let cancelled = false;
     async function load() {
       try {
-        const resp = await fetch(
+        const resp = await apiFetch(
           `${apiBase}/api/datastreams?project_id=${encodeURIComponent(projectId)}`,
         );
         if (!resp.ok) return; // keep the literal fallback on error
@@ -408,7 +409,7 @@ export default function DataWorkspace({
     let cancelled = false;
     async function loadConnections() {
       try {
-        const resp = await fetch(
+        const resp = await apiFetch(
           `${apiBase}/api/connections?project_id=${encodeURIComponent(projectId)}`,
         );
         if (!resp.ok) return; // keep the literal fallback on error

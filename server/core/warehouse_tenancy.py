@@ -292,6 +292,26 @@ def _duckdb_path() -> str | None:
     return os.environ.get(_DUCKDB_PATH_ENV, "").strip() or None
 
 
+def bq_provisioning_enabled() -> bool:
+    """True when creating an org must create its BigQuery datasets.
+
+    Deliberately INDEPENDENT of ``TOOROW_DB_MODE``. Those are two different
+    questions and conflating them made the feature unreachable:
+
+      * where an ORG'S DATASETS LIVE -- on Cloud Run the container disk is
+        ephemeral, so DuckDB is not a real target and a deployed org's
+        warehouse is BigQuery;
+      * where a PULL LANDS -- still DuckDB, because eight connectors hard-raise
+        on any non-duckdb mode.
+
+    While the two were tied together, "create an org, get its warehouse" could
+    only be turned on by flipping the whole platform to a landing mode that
+    breaks ingestion -- so it was never turned on at all. Splitting them lets
+    provisioning ship now and the landing migration proceed on its own clock.
+    """
+    return os.environ.get(_BQ_PROVISION_ENV, "0").strip().lower() in ("1", "true")
+
+
 def _provision_bigquery_datasets(schemas: OrgSchemas) -> None:  # pragma: no cover -- AI-08 gate
     """Create BigQuery datasets for *schemas* (gated by TOOROW_BQ_PROVISION_ENABLED).
 
@@ -405,11 +425,12 @@ def provision_org_schemas(org_id: str, conn=None) -> dict[str, Any]:
         )
         return {"status": "skipped", "reason": "unresolvable", "org_id": org_id}
 
+    if bq_provisioning_enabled():
+        _provision_bigquery_datasets(schemas)
+        return {"status": "ok", "raw": schemas.raw, "marts": schemas.marts}
+
     db_mode = os.environ.get(_DB_MODE_ENV, "").strip().lower()
     if db_mode == "bigquery":
-        if os.environ.get(_BQ_PROVISION_ENV, "0").strip() == "1":
-            _provision_bigquery_datasets(schemas)
-            return {"status": "ok", "raw": schemas.raw, "marts": schemas.marts}
         logger.info(
             "warehouse_tenancy: bigquery provisioning gated AI-08 org=%s", org_id
         )
@@ -463,11 +484,15 @@ def drop_org_schemas(org_id: str, conn=None) -> dict[str, Any]:
         # Return a skipped-unresolvable so the caller can decide (RGPD: caller blocks).
         return {"status": "skipped", "reason": "unresolvable", "org_id": org_id}
 
+    # Symmetry is mandatory here: if creation provisioned BigQuery datasets, the
+    # RGPD drop must remove those same datasets, never silently fall through to
+    # the DuckDB branch and report a success it did not perform.
+    if bq_provisioning_enabled():
+        _drop_bigquery_datasets(schemas)
+        return {"status": "ok", "raw": schemas.raw, "marts": schemas.marts}
+
     db_mode = os.environ.get(_DB_MODE_ENV, "").strip().lower()
     if db_mode == "bigquery":
-        if os.environ.get(_BQ_PROVISION_ENV, "0").strip() == "1":
-            _drop_bigquery_datasets(schemas)
-            return {"status": "ok", "raw": schemas.raw, "marts": schemas.marts}
         logger.info(
             "warehouse_tenancy: bigquery drop gated AI-08 org=%s", org_id
         )

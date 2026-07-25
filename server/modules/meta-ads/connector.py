@@ -651,6 +651,214 @@ def pull_creative_daily(
 
 
 # ---------------------------------------------------------------------------
+# Epic 31.6 — campaign_launch event profile (landing: context_events).
+#
+# Generalises the YouTube 31.3 video_upload pattern to the ads family: each Meta
+# campaign becomes a canonical marker `meta > campaign_launch > <name>` that
+# annotates the spend/conversion curves AND feeds the MMM exogenous-regressor
+# feature builder (epic-31 §10). This profile writes ONLY context_events -- never
+# raw_meta_ads_daily nor fact_daily_kpi (HG-2 inverted per profile).
+# ---------------------------------------------------------------------------
+
+# Canonical event mapping mirrors canonical_event_mapping in the manifest. Pure
+# lookup (no I/O) -- unit-testable via golden_events/expected_events.
+_CANONICAL_EVENT_MAPPING = {"campaign_launch": "campaign_launch"}
+
+
+def transform_events(
+    raw_rows: list[dict],
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict]:
+    """Map raw Graph campaign dicts to canonical event dicts (AD-2, pure function).
+
+    Input: a list of campaign resource dicts from /act_<id>/campaigns, each with
+    ``id``/``name``/``start_time`` (and optionally ``created_time``). Output:
+    canonical event dicts with keys event_type, event_date, label, platform,
+    source -- ready for persist_context_event() (value = None, pulse).
+
+    event_date = start_time truncated to YYYY-MM-DD (fallback created_time).
+    label      = name.
+    event_type = "campaign_launch" (via _CANONICAL_EVENT_MAPPING).
+    platform   = "meta".
+    source     = "meta-ads".
+
+    Date window (H1, symmetric to youtube): the campaigns edge returns every
+    campaign on the account, so an unfiltered transform would emit the full
+    account history on every pull. When ``date_from``/``date_to`` are supplied,
+    campaigns whose launch date falls OUTSIDE [date_from, date_to] are dropped.
+    Both None (the golden-replay contract) means "no window" -> every campaign
+    passes, so golden_events.json -> expected_events.json stays a pure 1:1 map.
+
+    Validity (M1): a campaign with no usable start_time/created_time (missing, or
+    shorter than a 10-char ISO date prefix) is SKIPPED rather than persisted with
+    an empty event_date (validate_event_input would reject it downstream anyway).
+    """
+    event_type = _CANONICAL_EVENT_MAPPING.get("campaign_launch", "campaign_launch")
+    result: list[dict] = []
+    for campaign in raw_rows:
+        raw_date = campaign.get("start_time") or campaign.get("created_time") or ""
+        # M1: reject a campaign without a valid ISO date prefix (>=10 chars).
+        if len(raw_date) < 10:
+            logger.debug(
+                "transform_events: skipping campaign with invalid start_time=%r", raw_date
+            )
+            continue
+        event_date = raw_date[:10]
+        # H1: bounded window filter (no-op when both bounds are None).
+        if date_from is not None and event_date < date_from:
+            continue
+        if date_to is not None and event_date > date_to:
+            continue
+        result.append(
+            {
+                "event_type": event_type,
+                "event_date": event_date,
+                "label": campaign.get("name") or "",
+                "platform": "meta",
+                "source": "meta-ads",
+            }
+        )
+    return result
+
+
+def pull_campaign_launch(
+    connection_id: str,
+    date_from: str,
+    date_to: str,
+    project_id: str,
+    pull_id: str,
+    ad_account_id: str | None = None,
+) -> dict:
+    """Fetch the ad account's campaigns and persist each launch as a context_event.
+
+    Graph API path (reuses the existing meta-ads token/ad-account scope -- no new
+    scope): GET /act_<digits>/campaigns?fields=id,name,start_time,created_time,
+    status, following ``paging.next`` (same cursor idiom as discover_accounts).
+
+    Idempotence (Epic 31.3/H1): the campaigns edge has no server-side date filter,
+    so two guards make a daily re-pull idempotent (no double-counted markers /
+    doubled MMM regressor):
+      1. transform_events() filters campaigns to [date_from, date_to] client-side.
+      2. delete_connector_events_in_window() clears this project's prior meta-ads
+         campaign_launch events in the SAME window BEFORE the re-insert.
+    No new migration is required (context_events.type/source already exist).
+
+    AD-3:  token fetched immediately before use, then discarded.
+    AI-03: ASCII-only in log strings.
+    AD-2:  canonical event mapping via transform_events().
+    AD-8:  project-scoped (delete + insert both bound to project_id).
+    """
+    from core import nango_client  # noqa: PLC0415
+    from core.context_events import (  # noqa: PLC0415
+        delete_connector_events_in_window,
+        persist_context_event,
+    )
+
+    if ad_account_id is None:
+        ad_account_id = os.environ.get("META_ADS_AD_ACCOUNT_ID")
+    if not ad_account_id:
+        raise ValueError(
+            "META_ADS_AD_ACCOUNT_ID env var required for pull "
+            "(set it to your Meta ad account id digits, without the 'act_' prefix)"
+        )
+    account_digits = ad_account_id[4:] if ad_account_id.startswith("act_") else ad_account_id
+
+    token = nango_client.get_fresh_token(connection_id, provider="meta-ads")
+
+    # Paginate the campaigns edge (Graph cursor paging via paging.next).
+    raw_rows: list[dict] = []
+    url: str | None = f"{META_GRAPH_API_BASE}/act_{account_digits}/campaigns"
+    params: dict | None = {
+        "fields": "id,name,start_time,created_time,status",
+        "limit": "100",
+    }
+    pages = 0
+    while url is not None:
+        if pages >= _MAX_ADACCOUNT_PAGES:
+            logger.warning(
+                "pull_campaign_launch: page cap %d reached, stopping", _MAX_ADACCOUNT_PAGES
+            )
+            break
+        pages += 1
+
+        resp = httpx.get(
+            url,
+            params=params,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30.0,
+        )
+
+        if resp.status_code == 429:
+            from core.quota import RateLimitError  # noqa: PLC0415
+
+            retry_after_raw = resp.headers.get("Retry-After", "0")
+            try:
+                retry_after = int(retry_after_raw) or None
+            except (ValueError, TypeError):
+                retry_after = None
+            raise RateLimitError("meta-ads", retry_after)
+
+        if resp.status_code != 200:
+            from core.pull_errors import classify_http_error  # noqa: PLC0415
+
+            try:
+                _body = resp.json()
+            except Exception:
+                _body = resp.text
+            raise classify_http_error(resp.status_code, _body, _load_error_map())
+
+        payload = resp.json()
+        raw_rows.extend(payload.get("data") or [])
+        url = (payload.get("paging") or {}).get("next")
+        params = None  # the next URL already embeds the cursor + fields
+
+    logger.info(
+        "pull_campaign_launch: fetched %d campaign(s) in %d page(s) for connection_id=%s",
+        len(raw_rows), pages, connection_id,
+    )
+
+    canonical_events = transform_events(raw_rows, date_from=date_from, date_to=date_to)
+
+    # H1: delete-by-source-window BEFORE re-insert -> idempotent daily re-pull.
+    event_type = _CANONICAL_EVENT_MAPPING.get("campaign_launch", "campaign_launch")
+    delete_connector_events_in_window(
+        project_id=project_id,
+        source="meta-ads",
+        event_type=event_type,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    event_count = 0
+    for ev in canonical_events:
+        label = ev["label"][:120]  # validate_event_input enforces max 120.
+        persist_context_event(
+            project_id=project_id,
+            event_date=ev["event_date"],
+            type=ev["event_type"],
+            label=label,
+            description=label,
+            created_by=f"meta-ads_pull:{pull_id}",
+            platform=ev["platform"],
+            value=None,
+            source=ev["source"],
+        )
+        event_count += 1
+
+    logger.info(
+        "pull_campaign_launch: persisted %d context_events: pull_id=%s date_from=%s date_to=%s",
+        event_count, pull_id, date_from, date_to,
+    )
+    return {
+        "pull_id": pull_id,
+        "event_count": event_count,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Story 25.8 — catalog_driven execution: pull_catalog_daily.
 #
 # Principle (Jean): the catalog IS the execution contract — any cataloged field a

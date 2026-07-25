@@ -23,6 +23,7 @@
 import { useEffect, useState } from "react";
 import "./shell/application.css";
 import "./knowledge.css";
+import { apiFetch } from "./lib/apiFetch";
 
 interface KnowledgeEntry {
   title: string;
@@ -96,7 +97,7 @@ export default function KnowledgeBasePage({ projectId = "default" }: { projectId
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`/api/knowledge?project_id=${encodeURIComponent(projectId)}`);
+        const res = await apiFetch(`/api/knowledge?project_id=${encodeURIComponent(projectId)}`);
         if (!res.ok) return; // keep the literal fallback
         const body = (await res.json()) as { entries?: ApiEntry[] };
         if (alive) {

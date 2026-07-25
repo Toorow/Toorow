@@ -1,0 +1,77 @@
+---
+title: Supported Connectors
+description: Exhaustive catalog of pre-built connector modules available in toorow for multi-channel marketing ingestion.
+---
+
+**toorow** features a modular, auto-discovered connector architecture. Connectors extract daily raw indicators, map fields to canonical targets, and enforce joint-grain preservation.
+
+---
+
+## Connector Catalog (37 Built-in Modules)
+
+Below is the complete list of connector modules available in the platform, categorized by marketing surface:
+
+### Analytics & Web Intelligence
+- **Google Analytics 4 (`google-analytics`)**: Traffic, conversions, event counts, pageviews, and source/medium breakdowns.
+- **Google Search Console (`gsc`)**: Organic search impressions, clicks, CTR, and average position by query, page, and device.
+- **Adobe Analytics (`adobe-analytics`)**: Enterprise web analytics indicators.
+- **Piano Analytics (`piano`)**: Digital analytics and user engagement tracking.
+
+### Paid Search & Retail Advertising
+- **Google Ads (`google-ads`)**: Campaign spend, impressions, clicks, conversions, and CPC across Search, Display, and Video.
+- **Google Ad Manager (`google-ad-manager`)**: Publisher ad serving metrics, impressions, and revenue.
+- **Search Ads 360 (`sa360`)**: Enterprise search ad management performance.
+- **Amazon Ads (`amazon-ads`)**: Sponsored Products, Sponsored Brands, and Sponsored Display campaign performance.
+- **Amazon DSP (`amazon-dsp`)**: Programmatic display and video ad metrics.
+- **Microsoft Ads (`microsoft-ads`)**: Bing search advertising performance.
+
+### Paid Social & Video
+- **Meta Ads (`meta-ads`)**: Facebook and Instagram ad spend, impressions, reach, link clicks, and post-click conversions.
+- **TikTok Ads (`tiktok-ads`)**: TikTok ad campaign performance, video views, engagement, and spend.
+- **LinkedIn Ads (`linkedin-ads`)**: B2B ad performance, lead generation, impressions, and click metrics.
+- **LinkedIn Company Pages (`linkedin-company-pages`)**: Organic page follower growth, post impressions, and engagement.
+- **Pinterest Ads (`pinterest-ads`)**: Promoted pins performance, impressions, and saved clicks.
+- **X Ads / Twitter (`x-ads`)**: Campaign impressions, engagements, and spend.
+- **YouTube Analytics (`youtube-analytics`)**: Video view counts, watch time, subscriber deltas, and video performance.
+
+### Programmatic & Enterprise Display
+- **DV360 / Display & Video 360 (`dv360`)**: Programmatic demand-side platform impressions, spend, and conversions.
+- **CM360 / Campaign Manager 360 (`cm360`)**: Ad serving and impression tracking.
+- **The Trade Desk (`thetradedesk`)**: Programmatic media buy metrics and impression delivery.
+- **Taboola (`taboola`)**: Native content recommendation campaign spend and clicks.
+- **DoubleVerify (`doubleverify`)**: Ad viewability, brand safety, and fraud verification metrics.
+- **IAS / Integral Ad Science (`ias`)**: Media quality, viewability, and verification indicators.
+
+### E-Commerce & Payments
+- **Shopify (`shopify`)**: Store orders, gross sales, net sales, refund totals, and customer orders.
+- **Stripe (`stripe`)**: Charges, subscription MRR, gross processing volume, and refund transactions.
+- **WooCommerce (`woocommerce`)**: E-commerce sales, order volume, and product metrics.
+- **Square (`square`)**: Point-of-sale sales, transaction counts, and payment volumes.
+
+### Email & Customer Engagement
+- **Klaviyo (`klaviyo`)**: Email campaign performance, open rates, click rates, and email-attributed revenue.
+- **Brevo / Sendinblue (`brevo`)**: Email dispatch stats, deliverability, and campaign responses.
+- **Mailgun (`mailgun`)**: Transactional email deliveries, drops, opens, clicks, and spam complaints.
+
+### CRM & Workflow Integration
+- **HubSpot (`hubspot`)**: Contacts created, deal pipeline stages, deal amounts, and sales activity.
+- **Monday.com (`monday`)**: Project task tracking, workflow milestones, and team productivity.
+
+### Mobile & App Analytics
+- **Adjust (`adjust`)**: Mobile app installs, attribution cohorts, and in-app event tracking.
+- **Strava (`strava`)**: Fitness activity and audience tracking.
+
+### System & Custom Feeds
+- **Google Sheets (`google-sheets`)**: Managed ingestion of custom benchmarks, promo calendars, and manual targets.
+- **GitHub (`github`)**: Development context events (releases, PR deployments, system changes).
+- **Generic (`generic`)**: Custom HTTP webhook and arbitrary tabular data ingestion.
+
+---
+
+## Extensibility & Custom Connectors
+
+Need a connector that isn't listed here? toorow provides a standardized module contract that allows developers to scaffold and deploy custom connectors in hours.
+
+<Card title="Build a Custom Connector" icon="plug" href="/adding-a-connector">
+  Read the step-by-step walkthrough for scaffolding custom connectors, defining manifests, and implementing dbt staging models.
+</Card>

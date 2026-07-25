@@ -49,6 +49,7 @@ import { useEffect, useState, type ReactElement } from "react";
 import ConnectorLogo from "../ConnectorLogo";
 import "../application.css";
 import "./competitors.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // View model — one tracked brand and its per-source wiring.
@@ -274,7 +275,7 @@ export default function Competitors({ projectId = "default" }: CompetitorsProps)
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `/api/tracked-entities?project_id=${encodeURIComponent(projectId)}`,
         );
         if (!res.ok) return; // keep the mock fallback

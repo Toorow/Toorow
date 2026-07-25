@@ -33,15 +33,28 @@ function mockFetch(responseMap: Record<string, unknown> = {}) {
   return fetchMock;
 }
 
+/** A syntactically valid, unexpired ID token so AuthGate renders the app, not sign-in. */
+function signIn(): void {
+  const payload = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }));
+  localStorage.setItem("api_token", `header.${payload}.signature`);
+}
+
 beforeEach(() => {
+  signIn();
   // The router normalizes a bare "/" into /p/default/overview. Start clean.
   window.history.replaceState({}, "", "/");
 
   mockFetch({
     "/api/overview": { fleet: [], breakers: [] },
     "/api/connections": { connections: [] },
-    "/api/organizations": { organizations: [] },
-    "/api/projects": { projects: [] },
+    // A real membership: <App /> only renders the shell when the scope resolves to
+    // state "ready" (F-011 entry routing). An empty list is the new-user case and
+    // routes to the welcome/create-organization surface instead — covered by
+    // AppEntryRouting.test.tsx.
+    "/api/organizations": { organizations: [{ id: "org-acme", name: "Acme Group" }] },
+    "/api/projects": {
+      projects: [{ id: "default", name: "Default project", org_id: "org-acme" }],
+    },
     "/api/datamodel/fields": [],
     "/api/reports/available": [],
     "/api/notebooks": [],
@@ -68,6 +81,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -131,11 +145,11 @@ describe("App — default route", () => {
 // ---------------------------------------------------------------------------
 
 describe("App — TopBar scope control", () => {
-  it("renders the seeded organization and project", async () => {
+  it("renders the organization and project returned by the API", async () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Toorow Core")).toBeInTheDocument();
+      expect(screen.getByText("Acme Group")).toBeInTheDocument();
     });
     expect(screen.getByText("Default project")).toBeInTheDocument();
   });

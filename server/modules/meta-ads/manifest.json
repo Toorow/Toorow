@@ -105,6 +105,21 @@
             },
             "extraction_path": "custom_pull",
             "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "campaign_launch",
+            "display_name": "Campaign launches (events)",
+            "metrics": [],
+            "dimensions": ["date"],
+            "events": ["campaign_launch"],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": false,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "landing": "context_events",
+            "_api_notes": "GET {graph}/act_<digits>/campaigns?fields=id,name,start_time,created_time,status (Graph cursor paging via paging.next). start_time = event_date (YYYY-MM-DD); name = label. Reuses the existing meta-ads OAuth token/ad-account scope -- no new scope. Persisted to context_events (no fact_daily_kpi). AI-53: field names declared from the Graph API docs, to confirm on the live pass (no test account 2026-07-21)."
         }
     ],
     "error_map": {
@@ -134,6 +149,9 @@
         "adset_name": "adset_name",
         "ad_id": "ad_id",
         "creative_id": "creative_id"
+    },
+    "canonical_event_mapping": {
+        "campaign_launch": "campaign_launch"
     },
     "quota": {
         "window_seconds": 300,
@@ -293,6 +311,20 @@
                     "identifier"
                 ],
                 "canonical_target": "creative_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_launch",
+                "source_field": "start_time",
+                "kind": "event",
+                "physical_type": "datetime",
+                "description": "Date a campaign was scheduled to start (campaign.start_time from the Graph API /act_<id>/campaigns edge; falls back to created_time). Maps to canonical event_type campaign_launch. label = campaign.name. Persisted as a context_events pulse (value null, event_type campaign_launch).",
+                "semantic_hints": [
+                    "event"
+                ],
+                "label_source_field": "name",
+                "canonical_target": "campaign_launch",
                 "aggregation": "none",
                 "non_additive": false
             }
@@ -540,6 +572,42 @@
                 },
                 "dispatch": {
                     "callable": "pull_catalog_daily"
+                }
+            },
+            {
+                "id": "campaign_launch",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_campaign_launch"
+                },
+                "landing": "context_events",
+                "metrics": [],
+                "dimensions": ["date"],
+                "events": ["campaign_launch"],
+                "supported_grains": [["date"]],
+                "compatibility": [],
+                "filters": [],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "full_refresh",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": ["manual", "daily"]
                 }
             }
         ]

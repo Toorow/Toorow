@@ -19,7 +19,7 @@ API layer maps them to 4xx and NEVER leaks str(exc) into a 5xx body (lesson 12.3
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -32,9 +32,13 @@ from core.audit import (
     ACTION_MEDIA_PLAN_VERSION_PUBLISHED,
     insert_audit_row,
 )
+from core.reshape import CENT as _CENT
+from core.reshape import ReshapeValidationError
+from core.reshape import compute_spread as _reshape_compute_spread
 
-# One cent as an exact Decimal quantum.
-_CENT = Decimal("0.01")
+# ``_CENT`` (the exact one-cent Decimal quantum) now has a single source of truth
+# in ``core.reshape`` (Story 22.9). Re-exported here so existing importers of
+# ``core.mediaplan_store._CENT`` (e.g. mediaplan_import) keep working unchanged.
 
 
 class MediaPlanError(ValueError):
@@ -71,47 +75,20 @@ def compute_spread(
 ) -> list[tuple[date, Decimal]]:
     """Spread ``budget`` linearly across [start_date, end_date] at the cent.
 
-    Deterministic largest-remainder distribution:
-      * work in integer CENTS to avoid any float / fractional cent;
-      * base = floor(budget_cents / n_days) cents per day;
-      * remainder = budget_cents - base * n_days cents, handed out +1 cent to the
-        first ``remainder`` days in CHRONOLOGICAL order.
+    Story 22.9: the mechanics now live in the shared ``core.reshape`` engine
+    (AD-5) so the media plan and the file-source producer share ONE cent-exact,
+    sum-preserving, deterministic largest-remainder spread. This thin wrapper
+    preserves the media-plan contract UNCHANGED: reshape's typed validation error
+    is re-raised as ``MediaPlanValidationError`` so the API layer still maps a bad
+    budget / inverted dates to 422 (never a 500).
 
-    Guarantees:
-      * SUM of returned amounts == budget EXACTLY (no cent created or lost);
-      * two identical calls return byte-identical results (deterministic);
-      * handles 1 day, multi-month ranges, and leap years (29 Feb) uniformly;
-      * Decimal throughout -- never float.
-
-    Raises MediaPlanValidationError on start_date > end_date or negative budget.
+    Raises MediaPlanValidationError on start_date > end_date, non-Decimal /
+    non-finite / negative budget.
     """
-    if not isinstance(budget, Decimal):
-        # Defensive: refuse silent float coercion (would break cent-exactness).
-        raise MediaPlanValidationError("Le budget doit être un Decimal.")
-    if not budget.is_finite():
-        # NaN/Infinity compare False to 0 and would blow up in quantize/divmod.
-        raise MediaPlanValidationError("Le budget doit être un nombre fini.")
-    if budget < 0:
-        raise MediaPlanValidationError("Le budget ne peut pas être négatif.")
-    if start_date > end_date:
-        raise MediaPlanValidationError(
-            "La date de début doit précéder la date de fin."
-        )
-
-    n_days = (end_date - start_date).days + 1
-
-    # Convert budget to an exact integer number of cents.
-    budget_cents_dec = (budget / _CENT).to_integral_value()
-    budget_cents = int(budget_cents_dec)
-
-    base, remainder = divmod(budget_cents, n_days)
-
-    out: list[tuple[date, Decimal]] = []
-    for i in range(n_days):
-        cents = base + (1 if i < remainder else 0)
-        day = start_date + timedelta(days=i)
-        out.append((day, Decimal(cents) * _CENT))
-    return out
+    try:
+        return _reshape_compute_spread(budget, start_date, end_date)
+    except ReshapeValidationError as exc:
+        raise MediaPlanValidationError(str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------

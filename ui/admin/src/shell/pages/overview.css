@@ -18,6 +18,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.8fr);
   gap: 18px;
+  margin-top: 20px;
 }
 
 .chart-card { min-height: 390px; }

@@ -271,6 +271,89 @@ def test_bigquery_provision_gated_by_default(monkeypatch):
     wt._reset_cache()
 
 
+def _mock_org_connection(slug_row=("org_01", "acme-corp")):
+    cur = MagicMock()
+    cur.fetchone.return_value = slug_row
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    cm = MagicMock()
+    cm.__enter__.return_value = conn
+    cm.__exit__.return_value = False
+    return cm
+
+
+def test_bigquery_provisioning_does_not_require_bigquery_landing_mode(monkeypatch):
+    """The org's warehouse and the pull landing target are separate decisions.
+
+    While the two were tied to TOOROW_DB_MODE, provisioning could only be turned
+    on by flipping the platform to a landing mode that eight connectors refuse --
+    so "create an org, get its datasets" was unreachable in practice.
+    """
+    monkeypatch.setenv("TOOROW_BQ_PROVISION_ENABLED", "1")
+    monkeypatch.delenv("TOOROW_DB_MODE", raising=False)
+    monkeypatch.setenv("TOOROW_DUCKDB_PATH", "/should/not/be/touched.db")
+    from core import warehouse_tenancy as wt
+
+    wt._reset_cache()
+    with (
+        patch("core.db.get_connection") as mock_gc,
+        patch("core.warehouse_tenancy._provision_bigquery_datasets") as mock_bq,
+    ):
+        mock_gc.return_value = _mock_org_connection()
+        result = wt.provision_org_schemas(org_id="org_01")
+
+    assert result["status"] == "ok"
+    assert result["raw"] == "org_acme_corp_raw"
+    assert result["marts"] == "org_acme_corp_marts"
+    mock_bq.assert_called_once()
+    wt._reset_cache()
+
+
+def test_bigquery_drop_is_symmetric_with_provisioning(monkeypatch):
+    """Whatever creation provisioned, the RGPD drop must remove.
+
+    A drop that fell through to the DuckDB branch would report success without
+    deleting the dataset -- the endpoint would then delete the Postgres row while
+    the tenant's data survived in BigQuery.
+    """
+    monkeypatch.setenv("TOOROW_BQ_PROVISION_ENABLED", "1")
+    monkeypatch.delenv("TOOROW_DB_MODE", raising=False)
+    from core import warehouse_tenancy as wt
+
+    wt._reset_cache()
+    with (
+        patch("core.db.get_connection") as mock_gc,
+        patch("core.warehouse_tenancy._drop_bigquery_datasets") as mock_drop,
+    ):
+        mock_gc.return_value = _mock_org_connection()
+        result = wt.drop_org_schemas(org_id="org_01")
+
+    assert result["status"] == "ok"
+    mock_drop.assert_called_once()
+    wt._reset_cache()
+
+
+def test_duckdb_remains_the_default_when_the_flag_is_absent(monkeypatch):
+    """No flag, no TOOROW_DB_MODE -> unchanged DuckDB behaviour, no BQ call."""
+    monkeypatch.delenv("TOOROW_BQ_PROVISION_ENABLED", raising=False)
+    monkeypatch.delenv("TOOROW_DB_MODE", raising=False)
+    monkeypatch.delenv("TOOROW_DUCKDB_PATH", raising=False)
+    from core import warehouse_tenancy as wt
+
+    wt._reset_cache()
+    with (
+        patch("core.db.get_connection") as mock_gc,
+        patch("core.warehouse_tenancy._provision_bigquery_datasets") as mock_bq,
+    ):
+        mock_gc.return_value = _mock_org_connection()
+        result = wt.provision_org_schemas(org_id="org_01")
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "no_duckdb_path"
+    mock_bq.assert_not_called()
+    wt._reset_cache()
+
+
 # ---------------------------------------------------------------------------
 # _delete_org endpoint -- admin_api level
 # ---------------------------------------------------------------------------

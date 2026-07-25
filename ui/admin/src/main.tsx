@@ -5,6 +5,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { initThemeMode } from "./shell/themeMode";
+
+// Apply the stored light/dark preference before the first paint (no FOUC).
+initThemeMode();
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {

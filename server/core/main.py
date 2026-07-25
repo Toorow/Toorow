@@ -160,6 +160,14 @@ from core.brand_registry_mcp import register as _register_brand_registry_mcp  # 
 
 _register_brand_registry_mcp(mcp)
 
+# Story 22.22: register the adaptation author-and-self-test MCP tool (Operations, READ).
+# Ships an LLM-authored .py + a bounded sample to the isolated sandbox worker (AD-3) and
+# returns the mapping result; holds no DB write and leaks no credential to the worker.
+# Registered BEFORE validate_catalog() so the boot validator sees its declaration.
+from core.adaptation_executor_mcp import register as _register_adaptation_executor  # noqa: E402
+
+_register_adaptation_executor(mcp)
+
 # Story 36.11: validate the capability catalog (fail closed at boot on any undeclared
 # or contradictory profiled tool) and install the capability-profile middleware so every
 # list_tools/call_tool is filtered by the caller's authenticated profile scope. Runs

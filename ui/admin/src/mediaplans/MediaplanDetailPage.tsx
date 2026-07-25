@@ -22,6 +22,7 @@ import MappingTab from "./MappingTab";
 import PacingTab from "./PacingTab";
 import "../shell/application.css";
 import "./imports.css";
+import { apiFetch } from "../lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // Tab types
@@ -68,7 +69,7 @@ export default function MediaplanDetailPage({
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/${encodeURIComponent(planId)}`
       );
       if (resp.status === 403 || resp.status === 404) {

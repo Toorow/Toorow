@@ -37,6 +37,7 @@ import { useEffect, useState } from "react";
 import { connectorSrc } from "../ConnectorLogo";
 import "../application.css";
 import "./datastream-create.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 /** The three source kinds the mockup's step 1 offers. Maps 1:1 to the real
  *  wizard's SourceKind (connector_pull / existing_bigquery / managed_feed). */
@@ -250,7 +251,7 @@ export default function DatastreamCreate({
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`/api/connections?project_id=${encodeURIComponent(projectId)}`);
+        const res = await apiFetch(`/api/connections?project_id=${encodeURIComponent(projectId)}`);
         if (!res.ok || !alive) return;
         const body = (await res.json()) as { connections?: ApiConnection[] };
         const mapped = (body.connections ?? []).map(toConnectionOption);
@@ -269,7 +270,7 @@ export default function DatastreamCreate({
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`/api/tracked-entities?project_id=${encodeURIComponent(projectId)}`);
+        const res = await apiFetch(`/api/tracked-entities?project_id=${encodeURIComponent(projectId)}`);
         if (!res.ok || !alive) return;
         const body = (await res.json()) as { entities?: ApiBrandEntity[] };
         const mapped = (body.entities ?? []).map(toBrandBinding);

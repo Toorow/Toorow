@@ -51,6 +51,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "../application.css";
 import "./project-settings.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 /* ---- Data model (REUSED verbatim from ProjectSettingsPage.tsx) ------------- */
 
@@ -162,7 +163,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}`, {
+      const resp = await apiFetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}`, {
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
       });
@@ -183,7 +184,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
     setCountriesLoading(true);
     setCountriesError(null);
     try {
-      const resp = await fetch(`/api/reference/countries`, {
+      const resp = await apiFetch(`/api/reference/countries`, {
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
       });
@@ -267,7 +268,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
 
     try {
       if (geographyChanged) {
-        const resp = await fetch(
+        const resp = await apiFetch(
           `/api/projects/${encodeURIComponent(resolvedProjectId)}/geography/preview`,
           {
             method: "POST",
@@ -291,7 +292,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
         return; // confirmation continues in confirmGeographicChange
       }
 
-      const resp = await fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}`, {
+      const resp = await apiFetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -332,7 +333,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
     setSaving(true);
     setSaveError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `/api/projects/${encodeURIComponent(resolvedProjectId)}/geography/previews/${encodeURIComponent(geographicPreview.id)}/confirm`,
         {
           method: "POST",

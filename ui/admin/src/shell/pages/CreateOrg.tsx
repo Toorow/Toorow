@@ -101,9 +101,16 @@ export interface CreateOrgProps {
   onCreated?: (orgId: string) => void;
   /** Called when the operator cancels/closes the flow. */
   onCancel?: () => void;
+  /**
+   * First-login entry (F-011): the signed-in person belongs to no organization, so the
+   * screen leads with a welcome that says where they are and what happens next, and the
+   * form title becomes "Create your organization". Off for the deliberate
+   * /onboarding · /create-org routes, where this is just another org being added.
+   */
+  welcome?: boolean;
 }
 
-export default function CreateOrg({ onCreated, onCancel }: CreateOrgProps) {
+export default function CreateOrg({ onCreated, onCancel, welcome = false }: CreateOrgProps) {
   const [name, setName] = useState("");
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
 
@@ -228,20 +235,43 @@ export default function CreateOrg({ onCreated, onCancel }: CreateOrgProps) {
   }
 
   // ---- Create form (idle / submitting / error) ----------------------------
+  // In welcome mode the page-level <h1> is the welcome banner, so the dialog title
+  // steps down to <h2> (one h1 per surface).
+  const DialogTitle = welcome ? "h2" : "h1";
   return (
     <div className="createorg-stage">
       <div className="createorg-scrim">
+        {welcome && (
+          <section className="createorg-welcome" aria-labelledby="createorg-welcome-title">
+            <p className="createorg-welcome-eyebrow">Getting started</p>
+            <h1 id="createorg-welcome-title">Welcome to toorow</h1>
+            <p className="createorg-welcome-lead">
+              You are signed in. You do not belong to an organization yet, so there is no data,
+              no project, and no report to show you — creating your organization is the first
+              step, and everything else hangs from it.
+            </p>
+            <p className="createorg-welcome-note">
+              Expecting to join a colleague&apos;s organization instead? Open the invitation link
+              they sent you by email; accepting it gives you access to their organization and you
+              do not need to create one here.
+            </p>
+          </section>
+        )}
         <form
           className="createorg-dialog"
           role="dialog"
-          aria-modal="true"
+          // In welcome mode this is the page itself, not a modal over something else —
+          // aria-modal would hide the welcome banner from assistive technology.
+          aria-modal={welcome ? undefined : true}
           aria-labelledby="createorg-title"
           onSubmit={handleSubmit}
           noValidate
         >
           <header className="createorg-header">
             <div>
-              <h1 id="createorg-title">Create organization</h1>
+              <DialogTitle id="createorg-title">
+                {welcome ? "Create your organization" : "Create organization"}
+              </DialogTitle>
               <p className="createorg-subtitle">
                 An organization owns its members, roles, countries, billing, and a dedicated
                 warehouse. You will be its owner.

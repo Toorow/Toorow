@@ -4,6 +4,16 @@
   "connector": "google-business-profile",
   "fields": [
     {
+      "description": "Date a Business Profile local post was published (localPost.createTime from the legacy v4 localPosts edge). Maps to canonical event_type social_post. label = localPost.summary. LIVE-GATED (v4 allowlist, 0-QPM default).",
+      "exposure": "exposed",
+      "field_id": "social_post",
+      "kind": "event",
+      "physical_type": "datetime",
+      "section": "EVENTS",
+      "source_field": "createTime",
+      "tier": "core"
+    },
+    {
       "description": "Business Profile account id (accounts/{account_id}) owning the location. Structural; planned (not extracted into the daily fact by v1).",
       "exposure": "planned",
       "field_id": "account_id",

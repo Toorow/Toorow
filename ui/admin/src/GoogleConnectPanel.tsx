@@ -38,6 +38,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { apiFetch } from "./lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -185,7 +186,7 @@ export default function GoogleConnectPanel({
     setLoading(true);
     setLoadError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `/api/google/oauth/status/${encodeURIComponent(connectionRefId)}`
       );
       if (!resp.ok) {
@@ -219,7 +220,7 @@ export default function GoogleConnectPanel({
         project_id: projectId,
         connection_ref_id: connectionRefId,
       });
-      const resp = await fetch(`/api/google/oauth/authorize?${params.toString()}`);
+      const resp = await apiFetch(`/api/google/oauth/authorize?${params.toString()}`);
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
         const msg =
@@ -252,7 +253,7 @@ export default function GoogleConnectPanel({
     setConfirmOpen(false);
     setRevoking(true);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `/api/google/oauth/revoke/${encodeURIComponent(connectionRefId)}`,
         { method: "POST" }
       );

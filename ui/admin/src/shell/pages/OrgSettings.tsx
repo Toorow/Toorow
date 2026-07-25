@@ -28,6 +28,12 @@
  *   /api/organizations/{org_id}/members), which also carries the auth-credential
  *   and BigQuery data-access grant sub-panels. We REUSE it here rather than
  *   reimplement the members table.
+ *   Deleting the organization is the DANGER ZONE at the bottom of the page
+ *   (OrgDangerZone, exported from this file):
+ *     GET    /api/organizations/{org_id}/deletion-preview
+ *     DELETE /api/organizations/{org_id}  (X-Confirm-Delete: drop-warehouse-data)
+ *   It goes through src/lib/apiFetch.ts and never renders anything the preview
+ *   did not return — see the block comment above OrgDangerZone.
  *   Countries/markets are NOT an org column: the canonical country vocabulary
  *   is read from GET /api/vocabularies/countries and the market reporting layer
  *   is configured per PROJECT (geographic posture, epic 37). This section
@@ -43,11 +49,13 @@
  * Colors come exclusively from the application.css CSS variables — no hex.
  * JetBrains Mono (.mono) is used for immutable identifiers (id + slug).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Org } from "../../orgs/types";
 import OrgDetailPanel from "../../orgs/OrgDetailPanel";
+import { ApiError, apiGet, apiJson } from "../../lib/apiFetch";
 import "../application.css";
 import "./org-settings.css";
+import "./danger-zone.css";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the REAL GET /api/organizations/{org_id} response shape.
@@ -676,6 +684,433 @@ export default function OrgSettings({
           </div>
         </div>
       </section>
+
+      {/* ============================ DANGER ZONE ======================== */}
+      {orgId ? <OrgDangerZone orgId={orgId} /> : null}
     </div>
+  );
+}
+
+// ===========================================================================
+// Danger zone — permanent deletion of the organization.
+// ===========================================================================
+//
+// Contract (server, implemented in parallel — do not widen it here):
+//   GET    /api/organizations/{org_id}/deletion-preview
+//            -> { org_id, name, slug,
+//                 projects: [{id, name, status}],
+//                 counts: {datastreams, connections, invitations, members,
+//                          operations},
+//                 warehouse_datasets: ["org_x_raw", "org_x_marts"],
+//                 blockers: [{kind, detail}] }   // empty => deletable
+//   DELETE /api/organizations/{org_id}
+//            header X-Confirm-Delete: drop-warehouse-data
+//            -> { deleted: true, org_id, removed: {...} }
+//
+// Three rules govern this surface:
+//   1. NOTHING is shown that the preview did not return. A failed preview is
+//      reported as a failure and deletion stays unavailable — an empty list
+//      would read as "there is nothing to destroy", which is exactly the
+//      fabricated-data defect of finding F-010.
+//   2. The destructive control is behind a disclosure and behind an exact-name
+//      confirmation, so it cannot be reached by accident.
+//   3. Creating an organization provisions its warehouse; deleting it DROPS
+//      those datasets. They are named, in full, before the user can confirm.
+
+/** One reason the API refuses the deletion. */
+export interface DeletionBlocker {
+  kind: string;
+  detail: string;
+}
+
+/** GET /api/organizations/{org_id}/deletion-preview */
+export interface OrgDeletionPreview {
+  org_id: string;
+  name: string;
+  slug: string;
+  projects: Array<{ id: string; name: string; status?: string | null }>;
+  counts: Partial<Record<OrgCountKey, number>>;
+  warehouse_datasets: string[];
+  blockers: DeletionBlocker[];
+}
+
+type OrgCountKey =
+  | "datastreams"
+  | "connections"
+  | "invitations"
+  | "members"
+  | "operations";
+
+/** The counts, in the order they are shown, with what each one actually means. */
+const ORG_COUNT_ROWS: Array<{ key: OrgCountKey; label: string; note: string }> = [
+  {
+    key: "datastreams",
+    label: "Datastreams",
+    note: "Feeds, their schedules and their ingested history.",
+  },
+  {
+    key: "connections",
+    label: "Connections",
+    note: "Stored authorizations to the source platforms.",
+  },
+  {
+    key: "invitations",
+    label: "Invitations",
+    note: "Pending and accepted invitations to this organization.",
+  },
+  {
+    key: "members",
+    label: "Memberships",
+    note: "People lose access here. Their toorow account is not deleted.",
+  },
+  {
+    key: "operations",
+    label: "Operations",
+    note: "Recorded runs and their outcome history.",
+  },
+];
+
+/** The confirmation phrase the server requires on the DELETE. */
+const ORG_CONFIRM_HEADER = "drop-warehouse-data";
+
+type PreviewState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; preview: OrgDeletionPreview };
+
+type DeleteState =
+  | { status: "idle" }
+  | { status: "deleting" }
+  | { status: "error"; message: string }
+  | { status: "deleted" };
+
+export interface OrgDangerZoneProps {
+  orgId: string;
+  /** What to do once the organization no longer exists. Default: leave it —
+   *  a full navigation to "/" so the scope is refetched and nothing keeps
+   *  pointing at a deleted organization. */
+  onDeleted?: () => void;
+}
+
+export function OrgDangerZone({ orgId, onDeleted }: OrgDangerZoneProps) {
+  const [open, setOpen] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
+  const [confirmText, setConfirmText] = useState("");
+  const [del, setDel] = useState<DeleteState>({ status: "idle" });
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // The preview is fetched WHEN THE ZONE IS OPENED (and on each retry), never
+  // on page load: reading what would be destroyed is itself the first step of
+  // the destructive flow.
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setPreview({ status: "loading" });
+    void (async () => {
+      try {
+        const data = await apiGet<OrgDeletionPreview>(
+          `/api/organizations/${encodeURIComponent(orgId)}/deletion-preview`,
+        );
+        if (alive) setPreview({ status: "ready", preview: data });
+      } catch (err) {
+        if (alive) {
+          setPreview({
+            status: "error",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [open, orgId, attempt]);
+
+  // Opening moves focus into the panel: the destructive form must not appear
+  // behind the user's cursor without the keyboard following it.
+  useEffect(() => {
+    if (open) panelRef.current?.focus();
+  }, [open]);
+
+  function closeZone() {
+    setOpen(false);
+    setConfirmText("");
+    setPreview({ status: "idle" });
+    setDel({ status: "idle" });
+  }
+
+  async function runDelete() {
+    setDel({ status: "deleting" });
+    try {
+      await apiJson<{ deleted: boolean; org_id: string; removed?: unknown }>(
+        `/api/organizations/${encodeURIComponent(orgId)}`,
+        { method: "DELETE", headers: { "X-Confirm-Delete": ORG_CONFIRM_HEADER } },
+      );
+      setDel({ status: "deleted" });
+      // Leave the organization we just deleted rather than keep a scope that
+      // points at nothing.
+      (onDeleted ?? (() => window.location.assign("/")))();
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? `${err.message} (HTTP ${err.status})`
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      setDel({ status: "error", message });
+    }
+  }
+
+  const ready = preview.status === "ready" ? preview.preview : null;
+  const blockers = ready?.blockers ?? [];
+  const blocked = blockers.length > 0;
+  const nameMatches = ready != null && confirmText === ready.name;
+
+  return (
+    <section className="orgsettings-section dangerzone" aria-labelledby="orgsettings-danger">
+      <div className="section-header">
+        <h2 id="orgsettings-danger">Danger zone</h2>
+        <p>Deleting this organization is permanent and cannot be undone.</p>
+      </div>
+
+      <div className="dangerzone-card">
+        <p className="dangerzone-lead">
+          Deleting an organization removes its projects, datastreams, connections
+          and members, and <strong>drops the warehouse datasets</strong> that were
+          provisioned when it was created. There is no restore and no export step.
+        </p>
+
+        {!open ? (
+          <div className="dangerzone-disclosure">
+            <button
+              type="button"
+              className="dangerzone-open-button"
+              aria-expanded={false}
+              aria-controls="orgsettings-danger-panel"
+              onClick={() => setOpen(true)}
+            >
+              Delete this organization…
+            </button>
+          </div>
+        ) : (
+          <div
+            className="dangerzone-panel"
+            id="orgsettings-danger-panel"
+            ref={panelRef}
+            tabIndex={-1}
+            aria-labelledby="orgsettings-danger-panel-title"
+          >
+            <h3 className="dangerzone-panel-title" id="orgsettings-danger-panel-title">
+              Delete this organization
+            </h3>
+
+            {preview.status === "loading" && (
+              <div className="dangerzone-status" role="status" aria-live="polite">
+                <span className="signal-label info">
+                  <span className="signal-mark" />
+                  Checking
+                </span>
+                <p>Checking exactly what deleting this organization would destroy…</p>
+              </div>
+            )}
+
+            {preview.status === "error" && (
+              <div className="dangerzone-status error" role="alert">
+                <span className="signal-label error">
+                  <span className="signal-mark" />
+                  We could not check what would be deleted
+                </span>
+                <p>
+                  {preview.message}. Nothing has been deleted. We will not offer a
+                  deletion we cannot describe — this is not a sign that the
+                  organization is empty. Try again, and if it keeps failing, leave
+                  the organization in place and report it.
+                </p>
+                <button
+                  type="button"
+                  className="dangerzone-retry"
+                  onClick={() => setAttempt((n) => n + 1)}
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {ready && blocked && (
+              <div className="dangerzone-status blocked" role="alert">
+                <span className="signal-label warning">
+                  <span className="signal-mark" />
+                  This organization cannot be deleted yet
+                </span>
+                <p>
+                  Deletion is unavailable until the following is resolved. Nothing
+                  has been deleted.
+                </p>
+                <ul className="dangerzone-list">
+                  {blockers.map((b, i) => (
+                    <li key={`${b.kind}-${i}`}>
+                      <span className="dangerzone-list-kind">{b.kind}</span>
+                      <span className="dangerzone-list-detail">{b.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {ready && !blocked && (
+              <>
+                <div className="dangerzone-status warning" role="alert">
+                  <span className="signal-label error">
+                    <span className="signal-mark" />
+                    This is permanent
+                  </span>
+                  <p>
+                    Everything listed below is destroyed when you confirm. It cannot
+                    be undone and it cannot be recovered by support.
+                  </p>
+                </div>
+
+                <div className="dangerzone-manifest">
+                  <div className="dangerzone-group">
+                    <h4>Projects deleted ({ready.projects.length})</h4>
+                    {ready.projects.length === 0 ? (
+                      <p>This organization has no project.</p>
+                    ) : (
+                      <ul className="dangerzone-chips" aria-label="Projects that will be deleted">
+                        {ready.projects.map((p) => (
+                          <li key={p.id}>
+                            <span>{p.name}</span>
+                            {p.status ? (
+                              <span className="dangerzone-chip-note">{p.status}</span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="dangerzone-group">
+                    <h4>Records deleted</h4>
+                    <dl className="dangerzone-counts">
+                      {ORG_COUNT_ROWS.map((row) => {
+                        const value = ready.counts?.[row.key];
+                        return (
+                          <div className="dangerzone-count" key={row.key}>
+                            <dt>{row.label}</dt>
+                            <dd>{typeof value === "number" ? value : "—"}</dd>
+                            <span className="dangerzone-count-note">{row.note}</span>
+                          </div>
+                        );
+                      })}
+                    </dl>
+                  </div>
+
+                  <div className="dangerzone-group">
+                    <h4>Warehouse datasets dropped ({ready.warehouse_datasets.length})</h4>
+                    <p>
+                      Creating this organization provisioned its warehouse. Deleting
+                      it drops these datasets and every table they contain.
+                    </p>
+                    {ready.warehouse_datasets.length === 0 ? (
+                      <p>
+                        The preview reports no warehouse dataset for this
+                        organization.
+                      </p>
+                    ) : (
+                      <ul
+                        className="dangerzone-datasets"
+                        aria-label="Warehouse datasets that will be dropped"
+                      >
+                        {ready.warehouse_datasets.map((d) => (
+                          <li key={d} className="mono">
+                            {d}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
+                {del.status === "error" && (
+                  <div className="dangerzone-status error" role="alert">
+                    <span className="signal-label error">
+                      <span className="signal-mark" />
+                      Organization not deleted
+                    </span>
+                    <p>{del.message}</p>
+                  </div>
+                )}
+
+                {del.status === "deleted" && (
+                  <div className="dangerzone-status success" role="status">
+                    <span className="signal-label success">
+                      <span className="signal-mark" />
+                      Organization deleted
+                    </span>
+                    <p>
+                      {ready.name} and everything listed above are gone. Leaving this
+                      organization…
+                    </p>
+                  </div>
+                )}
+
+                <div className="dangerzone-confirm">
+                  <label htmlFor="orgsettings-danger-confirm">
+                    Type the organization name to confirm
+                  </label>
+                  <input
+                    id="orgsettings-danger-confirm"
+                    className="dangerzone-input"
+                    type="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={confirmText}
+                    placeholder={ready.name}
+                    aria-describedby="orgsettings-danger-confirm-hint"
+                    disabled={del.status === "deleting" || del.status === "deleted"}
+                    onChange={(e) => {
+                      setConfirmText(e.target.value);
+                      if (del.status === "error") setDel({ status: "idle" });
+                    }}
+                  />
+                  <p className="dangerzone-hint" id="orgsettings-danger-confirm-hint">
+                    Enter <span className="mono">{ready.name}</span> exactly. The
+                    delete button stays disabled until it matches.
+                  </p>
+                </div>
+
+                <div className="dangerzone-actions">
+                  <button type="button" className="dangerzone-cancel" onClick={closeZone}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="dangerzone-button"
+                    disabled={
+                      !nameMatches || del.status === "deleting" || del.status === "deleted"
+                    }
+                    onClick={() => void runDelete()}
+                  >
+                    {del.status === "deleting"
+                      ? "Deleting…"
+                      : "Delete organization permanently"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {(preview.status === "error" || blocked) && (
+              <div className="dangerzone-actions">
+                <button type="button" className="dangerzone-cancel" onClick={closeZone}>
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

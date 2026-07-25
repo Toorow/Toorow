@@ -32,6 +32,7 @@ import {
   MenuItem,
   Snackbar,
 } from "@mui/material";
+import { apiFetch } from "./lib/apiFetch";
 
 interface ConnectButtonProps {
   onSuccess: () => void;
@@ -78,7 +79,7 @@ export default function ConnectButton({ onSuccess, projectId }: ConnectButtonPro
     let cancelled = false;
     (async () => {
       try {
-        const resp = await fetch("/api/modules/available");
+        const resp = await apiFetch("/api/modules/available");
         if (!resp.ok) return;
         const body = await resp.json();
         const list = (Array.isArray(body) ? body : (body.modules ?? []))
@@ -145,7 +146,7 @@ export default function ConnectButton({ onSuccess, projectId }: ConnectButtonPro
       });
 
       // After popup closes, register the connection on the server (AC5)
-      const resp = await fetch("/api/connections", {
+      const resp = await apiFetch("/api/connections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

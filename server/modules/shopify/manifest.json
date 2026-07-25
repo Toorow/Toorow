@@ -56,6 +56,21 @@
             },
             "extraction_path": "custom_pull",
             "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "product_launch",
+            "display_name": "Product launches (events)",
+            "metrics": [],
+            "dimensions": ["date"],
+            "events": ["product_launch"],
+            "extraction_capabilities": {
+                "row_limit": 250,
+                "filters_supported": false,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "landing": "context_events",
+            "_api_notes": "GET /admin/api/{version}/products.json?published_at_min=&published_at_max=&limit=250 (Link rel=next cursor pagination). published_at = event_date (YYYY-MM-DD); title = label. A null published_at (unpublished product) emits no event. Reuses the existing shopify OAuth token/scope. Persisted to context_events (no fact_daily_kpi). AI-53: endpoint/field names declared from the Admin REST docs, to confirm on the live pass (no test account 2026-07-21)."
         }
     ],
     "canonical_metric_mapping": {
@@ -66,6 +81,9 @@
     "canonical_dimension_mapping": {
         "order_id": "order_id",
         "transaction_id": "transaction_id"
+    },
+    "canonical_event_mapping": {
+        "product_launch": "product_launch"
     },
     "quota": {
         "window_seconds": 1,
@@ -155,6 +173,20 @@
                     "identifier"
                 ],
                 "canonical_target": "transaction_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "product_launch",
+                "source_field": "published_at",
+                "kind": "event",
+                "physical_type": "datetime",
+                "description": "Date a product was published to the Online Store (product.published_at from the Admin REST products edge). Maps to canonical event_type product_launch. label = product.title. A product with a null published_at (never published) emits no launch event. Persisted as a context_events pulse (value null).",
+                "semantic_hints": [
+                    "event"
+                ],
+                "label_source_field": "title",
+                "canonical_target": "product_launch",
                 "aggregation": "none",
                 "non_additive": false
             }
@@ -272,6 +304,41 @@
                 },
                 "dispatch": {
                     "callable": "pull_catalog_daily"
+                }
+            },
+            {
+                "id": "product_launch",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [],
+                "dimensions": ["date"],
+                "events": ["product_launch"],
+                "supported_grains": [["date"]],
+                "compatibility": [],
+                "filters": [],
+                "pagination": {
+                    "mode": "link",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 250,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "full_refresh",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": ["manual", "daily"]
+                },
+                "dispatch": {
+                    "callable": "pull_product_launch"
                 }
             }
         ]

@@ -33,7 +33,45 @@
   display: grid;
   place-items: start center;
   padding: 28px;
+  gap: 18px; /* welcome banner (F-011) above the dialog; no effect with one child */
   background: rgba(35, 32, 40, .18);
+}
+
+/* ---- First-login welcome (F-011) ----------------------------------------
+   Shown only when CreateOrg is the entry surface of a user with no organization.
+   Same width as the dialog so the two read as one column; tokens only. */
+.createorg-welcome {
+  width: min(640px, calc(100% - 56px));
+  padding: 22px 26px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface-2);
+}
+.createorg-welcome-eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font: 700 12px "Plus Jakarta Sans", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.createorg-welcome h1 {
+  margin: 8px 0 0;
+  font: 800 28px "Lexend", sans-serif;
+  letter-spacing: -.02em;
+}
+.createorg-welcome-lead {
+  max-width: 56ch;
+  margin: 12px 0 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.createorg-welcome-note {
+  max-width: 56ch;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .createorg-dialog {
@@ -54,7 +92,9 @@
   padding: 24px 28px 20px;
   border-bottom: 1px solid var(--line);
 }
-.createorg-header h1 { margin: 0; font: 600 22px "Lexend", sans-serif; letter-spacing: -.01em; }
+/* h2 in welcome mode: the welcome banner owns the page <h1>. Same visual weight. */
+.createorg-header h1,
+.createorg-header h2 { margin: 0; font: 600 22px "Lexend", sans-serif; letter-spacing: -.01em; }
 .createorg-subtitle {
   max-width: 44ch;
   margin: 8px 0 0;
@@ -161,6 +201,33 @@
 }
 .schema-role { color: var(--muted); font-size: 12px; font-weight: 600; }
 
+/* ---- Entry loading surface (F-011, App EntryGate "loading") -------------
+   Mirrors the sibling join-org skeleton so both pre-shell waits look alike. */
+.entry-skeleton { display: grid; gap: 10px; }
+.entry-skeleton > span {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 0,
+    color-mix(in srgb, var(--surface-2) 60%, var(--line)) 40%,
+    var(--surface-2) 80%
+  );
+  background-size: 200% 100%;
+  animation: entry-shimmer 1.4s ease-in-out infinite;
+}
+.entry-skeleton > span:nth-child(1) { width: 100%; }
+.entry-skeleton > span:nth-child(2) { width: 82%; }
+.entry-skeleton > span:nth-child(3) { width: 64%; }
+
+@keyframes entry-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .entry-skeleton > span { animation: none; }
+}
+
 /* ---- Error -------------------------------------------------------------- */
 .createorg-error {
   padding: 14px 16px;
@@ -189,7 +256,8 @@
 
 /* ---- Narrow-desktop resilience (mirrors sibling breakpoint) ------------- */
 @media (max-width: 1180px) {
-  .createorg-dialog { width: calc(100% - 36px); }
+  .createorg-dialog,
+  .createorg-welcome { width: calc(100% - 36px); }
   .createorg-footer { flex-wrap: wrap; }
   .scope-row { grid-template-columns: 1fr; gap: 3px; }
 }

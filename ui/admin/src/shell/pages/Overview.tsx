@@ -25,9 +25,10 @@ import { useEffect, useRef, useState } from "react";
 import type { OverviewData, OverviewFetchState } from "../../vueensemble/types";
 import "../application.css";
 import "./overview.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 async function fetchOverview(projectId: string): Promise<OverviewData> {
-  const resp = await fetch(`/api/overview?project_id=${encodeURIComponent(projectId)}`);
+  const resp = await apiFetch(`/api/overview?project_id=${encodeURIComponent(projectId)}`);
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));
     throw new Error(body.message ?? `HTTP ${resp.status}`);
@@ -84,7 +85,7 @@ export default function Overview({
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`/api/overview/summary?project_id=${encodeURIComponent(projectId)}`);
+        const res = await apiFetch(`/api/overview/summary?project_id=${encodeURIComponent(projectId)}`);
         if (res.ok && alive) setSummary((await res.json()) as OverviewSummary);
       } catch {
         /* keep the literal strip when offline */

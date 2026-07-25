@@ -81,6 +81,27 @@ For production Cloud Run endpoints secured with OAuth (`TOOROW_AUTH_MODE=oauth`)
 }
 ```
 
+### Cursor IDE Configuration
+
+To configure toorow in **Cursor**:
+1. Open **Cursor Settings** -> **Features** -> **MCP Servers**.
+2. Click **+ Add New MCP Server**.
+3. Set **Name** to `toorow`.
+4. Set **Type** to `sse` or `command`.
+5. Enter endpoint URL: `http://localhost:8000/mcp`.
+
+### Google Antigravity Configuration
+
+In Google Antigravity, toorow can be registered directly as an eager or lazy MCP tool in your configuration profile (`~/.gemini/antigravity/mcp/toorow.json`):
+
+```json
+{
+  "name": "toorow",
+  "transport": "http",
+  "url": "http://localhost:8000/mcp"
+}
+```
+
 ---
 
 ## 3. FastMCP Streamable HTTP Transport Protocol

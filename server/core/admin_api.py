@@ -45,6 +45,7 @@ from starlette.routing import Route, Router
 
 from core import nango_client
 from core.audit import (
+    ACTION_ACCOUNT_ERASED,
     ACTION_ACCOUNT_EXPOSED,
     ACTION_ACCOUNT_GRANT_REVOKED,
     ACTION_ALERT_DEF_CREATED,
@@ -5435,6 +5436,414 @@ async def _patch_org(request: Request) -> Response:
     return JSONResponse(org, status_code=200)
 
 
+# ===========================================================================
+# RGPD deletion path -- preview, org erasure core, account erasure.
+#
+# Three things must tell the SAME story: what the preview announces, what the
+# DELETE actually removes, and what the audit ledger records afterwards. They
+# therefore read the same facts helper below -- a preview that undercounts is
+# worse than no preview at all, because the user consents to the wrong thing.
+# ===========================================================================
+
+#: Direct org-scoped dependencies surfaced to a human before the drop. Only the
+#: tables someone recognises by name: the FULL tenant tree (~40 tables) is walked
+#: by core.org_purge and reported as `purged_tables` in the org_deleted audit row.
+#: Every one of these is a table whose FK into app.organizations is RESTRICT (or
+#: CASCADE for members) -- i.e. exactly what used to make DELETE fail with 409.
+_ORG_DEPENDENT_COUNTS: tuple[tuple[str, str], ...] = (
+    ("datastreams", "SELECT count(*) FROM app.datastreams WHERE org_id = %s"),
+    ("connections", "SELECT count(*) FROM app.connection_ref WHERE owner_org_id = %s"),
+    ("invitations", "SELECT count(*) FROM app.invitations WHERE org_id = %s"),
+    ("members", "SELECT count(*) FROM app.org_members WHERE org_id = %s"),
+    ("operations", "SELECT count(*) FROM app.operations WHERE effective_org_id = %s"),
+)
+
+
+def _org_deletion_facts(conn, org_id: str, *, name: str, slug: str) -> dict:
+    """What deleting *org_id* would remove, and what would stop it.
+
+    Read-only. Runs on the CALLER's connection so the erasure path can take this
+    snapshot inside its own transaction (the counts then describe exactly the
+    rows it is about to erase -- no TOCTOU between preview and deletion).
+
+    ``blockers`` empty == the org is deletable. A blocker is never worked
+    around: it names a dependency that cannot legitimately be erased here.
+    """
+    projects: list[dict] = []
+    counts: dict[str, int] = {}
+    blockers: list[dict] = []
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, name, status FROM app.projects WHERE org_id = %s "
+            "ORDER BY name, id",
+            (org_id,),
+        )
+        for pid, pname, pstatus in cur.fetchall() or []:
+            projects.append({"id": pid, "name": pname, "status": pstatus})
+
+        for key, sql in _ORG_DEPENDENT_COUNTS:
+            # A count is diagnostic, never authoritative (the FKs are). A table
+            # missing from an older deployment must therefore not abort the
+            # caller's transaction, hence one savepoint per probe.
+            cur.execute("SAVEPOINT org_facts")
+            try:
+                cur.execute(sql, (org_id,))
+                row = cur.fetchone()
+                counts[key] = int(row[0]) if row else 0
+            except Exception:
+                cur.execute("ROLLBACK TO SAVEPOINT org_facts")
+                logger.warning(
+                    "admin_api: org_deletion_facts count_failed org=%s key=%s",
+                    org_id,
+                    key,
+                )
+                counts[key] = 0
+            else:
+                cur.execute("RELEASE SAVEPOINT org_facts")
+
+    active = [p for p in projects if p["status"] != "archived"]
+    if active:
+        blockers.append(
+            {
+                "kind": "active_projects",
+                "detail": (
+                    f"{len(active)} active project(s) still attached: "
+                    + ", ".join(p["name"] for p in active[:5])
+                    + ". Archive or delete them before deleting the organization."
+                ),
+            }
+        )
+
+    # Warehouse: the datasets provisioned at org creation. If the topology
+    # cannot be resolved, drop_org_schemas returns "unresolvable" and the
+    # erasure blocks (RGPD: never report an erasure we could not perform), so
+    # the preview must announce that up front rather than let the DELETE 500.
+    from core import warehouse_tenancy as _wt  # noqa: PLC0415
+
+    schemas = _wt.resolve_org_schemas(org_id=org_id, conn=conn, fresh=True)
+    datasets = [schemas.raw, schemas.marts] if schemas is not None else []
+    if schemas is None:
+        blockers.append(
+            {
+                "kind": "warehouse_unresolvable",
+                "detail": (
+                    "Warehouse datasets cannot be resolved for this organization, "
+                    "so their removal cannot be confirmed. Deletion is blocked "
+                    "until the topology resolves."
+                ),
+            }
+        )
+
+    return {
+        "org_id": org_id,
+        "name": name,
+        "slug": slug,
+        "projects": projects,
+        "counts": counts,
+        "warehouse_datasets": datasets,
+        "blockers": blockers,
+    }
+
+
+async def _org_deletion_preview(request: Request) -> Response:
+    """GET /api/organizations/{org_id}/deletion-preview -- what would disappear.
+
+    Same owner/admin gate as the deletion itself: the composition of an org is
+    not public information. Read-only, no side effect, safe to poll from an
+    onboarding/settings screen before showing the confirmation.
+    """
+    authorized, identity = await _check_auth(request)
+    if not authorized:
+        return JSONResponse(
+            {"code": "unauthorized", "message": "Bearer token required"},
+            status_code=401,
+        )
+    org_id = request.path_params["org_id"]
+
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # Existence 404 FIRST (same discipline as _patch_org: do not
+                # disclose the manage-state of an org that does not exist).
+                cur.execute(
+                    "SELECT id, name, slug FROM app.organizations WHERE id = %s",
+                    (org_id,),
+                )
+                row = cur.fetchone()
+            if row is None:
+                return JSONResponse(
+                    {"code": "not_found", "message": "organization not found"},
+                    status_code=404,
+                )
+            denied = _enforce_org_manage(org_id, identity, conn, "org_deletion_preview")
+            if denied is not None:
+                return denied
+            facts = _org_deletion_facts(conn, org_id, name=row[1], slug=row[2])
+            # Read-only path: release the snapshot without writing anything.
+            conn.rollback()
+    except Exception:
+        logger.exception("admin_api: org_deletion_preview db_error org=%s", org_id)
+        return JSONResponse(
+            {"code": "db_error", "message": "database operation failed"},
+            status_code=500,
+        )
+    return JSONResponse(facts, status_code=200)
+
+
+def _erase_org_transactional(
+    pg_conn,
+    org_id: str,
+    *,
+    name: str,
+    slug: str,
+    identity: str,
+) -> tuple[dict | None, Response | None]:
+    """Erase org *org_id* on the caller's OPEN transaction -- no commit here.
+
+    Returns ``(result, None)`` when the erasure is staged and only a commit is
+    missing, or ``(None, response)`` when it was refused/failed -- in which case
+    the transaction has already been rolled back and the org is fully intact.
+
+    Dismantling order (the whole point of this function -- each step exists
+    because the previous one cannot succeed without it):
+
+      1. refuse on ACTIVE projects (409): a live project is a human decision,
+         never something a delete endpoint resolves on its own;
+      2. snapshot the facts + the ACTIVE dataset grants BEFORE touching a row --
+         they are about to be erased and become unobservable;
+      3. purge the tenant tree (core.org_purge): cycle-breaking UPDATEs first,
+         then DELETEs deepest-first over the RESTRICT/NO-ACTION edges. This is
+         what unpins the ~13 tables that used to answer 409 "conflict";
+      4. DELETE the org row -- still uncommitted. Anything the purge missed
+         surfaces HERE as an FK violation naming its own table (409), never as
+         a silent partial erasure;
+      5. drop the warehouse datasets (external, non-transactional) only once
+         Postgres has proven deletable. If the drop cannot be confirmed we
+         rollback: the row survives, RGPD invariant intact (never the reverse
+         order -- dropping data whose row then survives is unrecoverable);
+      6. write the audit rows on this same transaction. The caller commits, so
+         evidence and effect commit together or not at all.
+    """
+    ident = identity or "anonymous"
+
+    with pg_conn.cursor() as cur:
+        # (1) Pre-check: block if active projects exist (readable 409).
+        # The FK ON DELETE RESTRICT is the authoritative truth; this check
+        # gives a human-readable error before we attempt the DELETE.
+        cur.execute(
+            "SELECT 1 FROM app.projects WHERE org_id = %s AND status != 'archived' LIMIT 1",
+            (org_id,),
+        )
+        if cur.fetchone() is not None:
+            pg_conn.rollback()
+            return None, JSONResponse(
+                {
+                    "code": "org_has_active_projects",
+                    "message": (
+                        "Archive all active projects before deleting the organization."
+                    ),
+                },
+                status_code=409,
+            )
+
+        # (2) Epic-24 review X-1/F-2b: snapshot ACTIVE dataset-access grants
+        # BEFORE the DELETE -- the 047 FK ON DELETE CASCADE erases the rows
+        # in this same transaction (RGPD erasure by design); the durable
+        # trace is the audit entry emitted per grant in phase 3.
+        cur.execute(
+            "SELECT id, principal FROM app.dataset_access_grants "
+            "WHERE org_id = %s AND revoked_at IS NULL",
+            (org_id,),
+        )
+        active_grants = cur.fetchall()
+
+    # Same snapshot the preview shows, taken inside the erasing transaction so
+    # the reported `removed` counts are the rows actually about to go (members
+    # and grants leave via CASCADE and are unobservable afterwards).
+    facts = _org_deletion_facts(pg_conn, org_id, name=name, slug=slug)
+
+    with pg_conn.cursor() as cur:
+        # (3) Erase the tenant tree before the org row. ~50 ON DELETE RESTRICT
+        # foreign keys pin it in place (org -> projects -> datastreams ->
+        # ...), and those RESTRICT rules are wanted everywhere else, so the
+        # erasure is explicit here instead of being made implicit in the
+        # schema. Runs on THIS connection, inside THIS transaction: nothing
+        # is committed until the org row itself is gone.
+        from core.org_purge import purge_org_tree  # noqa: PLC0415
+
+        try:
+            purge_result = purge_org_tree(pg_conn, org_id)
+        except Exception:
+            pg_conn.rollback()
+            logger.exception("admin_api: delete_org purge_failed org=%s", org_id)
+            return None, JSONResponse(
+                {
+                    "code": "purge_failed",
+                    "message": (
+                        "Dependent records could not be erased; the "
+                        "organization was NOT deleted. Investigate and retry."
+                    ),
+                },
+                status_code=500,
+            )
+
+        # (4) Issue the DELETE inside the still-open transaction (no commit yet).
+        # If a project slipped through between the pre-check and now, the FK
+        # ON DELETE RESTRICT raises here -> we rollback -> 409 (no partial drop).
+        try:
+            cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+        except Exception as exc:
+            # Name the actual blocker. The previous generic "conflict" sent
+            # operators hunting for an active project when the real holder
+            # was something else entirely (an archived project's rows, a
+            # connection, ...): the pre-check above only covers NON-archived
+            # projects, while the FK restricts on every referencing row.
+            diag = getattr(exc, "diag", None)
+            blocking_table = getattr(diag, "table_name", None)
+            blocking_constraint = getattr(diag, "constraint_name", None)
+            pg_conn.rollback()
+            logger.warning(
+                "admin_api: delete_org pg_delete_fk_violation org=%s table=%s constraint=%s",
+                org_id,
+                blocking_table,
+                blocking_constraint,
+            )
+            detail = (
+                f" Still referenced by {blocking_table}"
+                f" ({blocking_constraint})."
+                if blocking_table
+                else ""
+            )
+            return None, JSONResponse(
+                {
+                    "code": "conflict",
+                    "message": (
+                        "Organization could not be deleted due to a conflict." + detail
+                    ),
+                    "blocking_table": blocking_table,
+                    "blocking_constraint": blocking_constraint,
+                },
+                status_code=409,
+            )
+
+    # (5) Drop warehouse schemas BEFORE committing the Postgres DELETE.
+    # If the drop fails we rollback -> org row stays intact (RGPD invariant).
+    from core import warehouse_tenancy as _wt  # noqa: PLC0415
+
+    try:
+        drop_result = _wt.drop_org_schemas(org_id=org_id, conn=None)
+    except Exception:
+        try:
+            pg_conn.rollback()
+        except Exception:
+            pass
+        logger.exception("admin_api: delete_org schema_drop_failed org=%s", org_id)
+        return None, JSONResponse(
+            {
+                "code": "schema_drop_failed",
+                "message": (
+                    "Warehouse schema drop failed; Postgres record NOT deleted "
+                    "(RGPD safety). Investigate and retry."
+                ),
+            },
+            status_code=500,
+        )
+
+    drop_status = drop_result.get("status")
+    drop_reason = drop_result.get("reason", "")
+
+    # "skipped / unresolvable" -> cannot confirm data removal -> block (RGPD).
+    # "skipped / no_duckdb_path" -> nothing to drop -> proceed.
+    if drop_status == "skipped" and drop_reason == "unresolvable":
+        try:
+            pg_conn.rollback()
+        except Exception:
+            pass
+        logger.error(
+            "admin_api: delete_org slug_unresolvable org=%s -- blocking deletion",
+            org_id,
+        )
+        return None, JSONResponse(
+            {"code": "schema_drop_failed", "message": "warehouse operation failed"},
+            status_code=500,
+        )
+
+    # (6) Audit rows on the same transaction; the CALLER commits.
+    from core.audit import insert_audit_row  # noqa: PLC0415
+
+    # Emit org_schemas_dropped only when a real drop occurred (F-7).
+    if drop_status == "ok":
+        insert_audit_row(
+            pg_conn,
+            identity=ident,
+            action=ACTION_ORG_SCHEMAS_DROPPED,
+            provider_account="",
+            connection_ref="",
+            metadata={
+                "org_id": org_id,
+                "raw": drop_result.get("raw"),
+                "marts": drop_result.get("marts"),
+                "drop_status": drop_status,
+            },
+        )
+    # Epic-24 review X-1/F-2b: one revoke audit per grant erased by the 047
+    # CASCADE -- the audit table is the durable RGPD trace of the exposure
+    # gesture; without this an active grant would vanish untracked.
+    for grant_id, principal in active_grants:
+        insert_audit_row(
+            pg_conn,
+            identity=ident,
+            action=ACTION_DATASET_ACCESS_REVOKED,
+            provider_account="",
+            connection_ref="",
+            metadata={
+                "org_id": org_id,
+                "grant_id": grant_id,
+                "principal": principal,
+                "reason": "org_deleted",
+            },
+        )
+
+    # What the caller reports back, and what the audit records: the same dict.
+    removed = {
+        "projects": len(facts["projects"]),
+        **facts["counts"],
+        # Everything else the purge erased across the tenant tree, so the total
+        # is not silently reduced to the five human-readable buckets.
+        "tenant_rows": purge_result.get("total_rows", 0),
+    }
+    insert_audit_row(
+        pg_conn,
+        identity=ident,
+        action=ACTION_ORG_DELETED,
+        provider_account="",
+        connection_ref="",
+        metadata={
+            "org_id": org_id,
+            "slug": slug,
+            "name": name,
+            "drop_status": drop_status,
+            "revoked_grants": len(active_grants),
+            # Durable proof of what the erasure actually removed: the rows
+            # themselves are gone, so this is the only remaining evidence.
+            "purged_rows": purge_result.get("total_rows", 0),
+            "purged_tables": purge_result.get("rows_by_table", {}),
+            "removed": removed,
+        },
+    )
+    return (
+        {
+            "removed": removed,
+            "drop_status": drop_status,
+            "warehouse_datasets": facts["warehouse_datasets"],
+        },
+        None,
+    )
+
+
 async def _delete_org(request: Request) -> Response:
     """DELETE /api/organizations/{org_id} -- human-gated RGPD drop (Story 24.2 AC5).
 
@@ -5442,7 +5851,9 @@ async def _delete_org(request: Request) -> Response:
     Blocks if active projects exist (409).  Drops warehouse schemas first (RGPD:
     if the drop cannot be confirmed, the Postgres row is NOT deleted -- no partial
     deletion).  Two audit entries emitted in order: org_schemas_dropped then
-    org_deleted.
+    org_deleted.  The dismantling order itself lives in
+    ``_erase_org_transactional``; this handler owns auth, the 404/gate, and the
+    single commit.
     """
     authorized, identity = await _check_auth(request)
     if not authorized:
@@ -5470,8 +5881,17 @@ async def _delete_org(request: Request) -> Response:
     # transactional DELETE below, eliminating the TOCTOU window (F-2).
     from core.db import get_connection  # noqa: PLC0415
 
+    # `get_connection()` is a @contextmanager. Calling `.__enter__()` on a
+    # TEMPORARY discards the context-manager object itself: the generator is then
+    # finalised by the garbage collector, its `finally: conn.close()` fires, and
+    # the connection is dead before the first cursor is opened. Holding the
+    # reference in `pg_cm` is what keeps it alive until this handler's own
+    # `finally` closes it. Symptom before the fix: every DELETE returned 500 with
+    # `psycopg.OperationalError: the connection is closed`, so the RGPD org drop
+    # was entirely non-functional in production.
     try:
-        pg_conn = get_connection().__enter__()
+        pg_cm = get_connection()
+        pg_conn = pg_cm.__enter__()
     except Exception:
         logger.exception("admin_api: delete_org db_open_failed org=%s", org_id)
         return JSONResponse(
@@ -5479,206 +5899,80 @@ async def _delete_org(request: Request) -> Response:
             status_code=500,
         )
 
+    # ONE try/finally around every path below. The 404, the manage refusal and
+    # each 409 return early, and every one of them must still hand the connection
+    # back to the context manager that owns it -- before this, a refused delete
+    # leaked its connection until the garbage collector noticed.
     try:
-        with pg_conn.cursor() as cur:
-            cur.execute(
-                "SELECT id, name, slug FROM app.organizations WHERE id = %s",
-                (org_id,),
-            )
-            org_row = cur.fetchone()
-            if org_row is None:
-                pg_conn.rollback()
-                return JSONResponse(
-                    {"code": "not_found", "message": "organization not found"},
-                    status_code=404,
+        try:
+            with pg_conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, name, slug FROM app.organizations WHERE id = %s",
+                    (org_id,),
                 )
-            org_name = org_row[1]
-            org_slug = org_row[2]
+                org_row = cur.fetchone()
+                if org_row is None:
+                    pg_conn.rollback()
+                    return JSONResponse(
+                        {"code": "not_found", "message": "organization not found"},
+                        status_code=404,
+                    )
+                org_name = org_row[1]
+                org_slug = org_row[2]
 
-            denied = _enforce_org_manage(org_id, identity, pg_conn, "delete_org")
-            if denied is not None:
-                pg_conn.rollback()
-                return denied
-
-            # Pre-check: block if active projects exist (readable 409).
-            # The FK ON DELETE RESTRICT is the authoritative truth; this check
-            # gives a human-readable error before we attempt the DELETE.
-            cur.execute(
-                "SELECT 1 FROM app.projects "
-                "WHERE org_id = %s AND status != 'archived' LIMIT 1",
-                (org_id,),
-            )
-            if cur.fetchone() is not None:
-                pg_conn.rollback()
-                return JSONResponse(
-                    {
-                        "code": "org_has_active_projects",
-                        "message": (
-                            "Archive all active projects before deleting the organization."
-                        ),
-                    },
-                    status_code=409,
-                )
-
-            # Epic-24 review X-1/F-2b: snapshot ACTIVE dataset-access grants
-            # BEFORE the DELETE -- the 047 FK ON DELETE CASCADE erases the rows
-            # in this same transaction (RGPD erasure by design); the durable
-            # trace is the audit entry emitted per grant in phase 3.
-            cur.execute(
-                "SELECT id, principal FROM app.dataset_access_grants "
-                "WHERE org_id = %s AND revoked_at IS NULL",
-                (org_id,),
-            )
-            active_grants = cur.fetchall()
-
-            # Issue the DELETE inside the still-open transaction (no commit yet).
-            # If a project slipped through between the pre-check and now, the FK
-            # ON DELETE RESTRICT raises here -> we rollback -> 409 (no partial drop).
+                denied = _enforce_org_manage(org_id, identity, pg_conn, "delete_org")
+                if denied is not None:
+                    pg_conn.rollback()
+                    return denied
+        except Exception:
             try:
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
-            except Exception:
                 pg_conn.rollback()
-                logger.warning(
-                    "admin_api: delete_org pg_delete_fk_violation org=%s", org_id
-                )
-                # FK violation means an active project appeared after the pre-check.
-                return JSONResponse(
-                    {
-                        "code": "conflict",
-                        "message": "Organization could not be deleted due to a conflict.",
-                    },
-                    status_code=409,
-                )
-
-    except Exception:
-        try:
-            pg_conn.rollback()
-        except Exception:
-            pass
-        logger.exception("admin_api: delete_org db_error org=%s", org_id)
-        return JSONResponse(
-            {"code": "db_error", "message": "database operation failed"},
-            status_code=500,
-        )
-
-    # Phase 2: drop warehouse schemas BEFORE committing the Postgres DELETE.
-    # If the drop fails we rollback -> org row stays intact (RGPD invariant).
-    from core import warehouse_tenancy as _wt  # noqa: PLC0415
-
-    try:
-        drop_result = _wt.drop_org_schemas(org_id=org_id, conn=None)
-    except Exception:
-        try:
-            pg_conn.rollback()
-        except Exception:
-            pass
-        logger.exception(
-            "admin_api: delete_org schema_drop_failed org=%s", org_id
-        )
-        return JSONResponse(
-            {
-                "code": "schema_drop_failed",
-                "message": (
-                    "Warehouse schema drop failed; Postgres record NOT deleted "
-                    "(RGPD safety). Investigate and retry."
-                ),
-            },
-            status_code=500,
-        )
-
-    drop_status = drop_result.get("status")
-    drop_reason = drop_result.get("reason", "")
-
-    # "skipped / unresolvable" -> cannot confirm data removal -> block (RGPD).
-    # "skipped / no_duckdb_path" -> nothing to drop -> proceed.
-    if drop_status == "skipped" and drop_reason == "unresolvable":
-        try:
-            pg_conn.rollback()
-        except Exception:
-            pass
-        logger.error(
-            "admin_api: delete_org slug_unresolvable org=%s -- blocking deletion",
-            org_id,
-        )
-        return JSONResponse(
-            {
-                "code": "schema_drop_failed",
-                "message": "warehouse operation failed",
-            },
-            status_code=500,
-        )
-
-    # Phase 3: write audit rows inside the same transaction, then commit once.
-    ident = identity or "anonymous"
-    from core.audit import insert_audit_row  # noqa: PLC0415
-
-    try:
-        # Emit org_schemas_dropped only when a real drop occurred (F-7).
-        if drop_status == "ok":
-            insert_audit_row(
-                pg_conn,
-                identity=ident,
-                action=ACTION_ORG_SCHEMAS_DROPPED,
-                provider_account="",
-                connection_ref="",
-                metadata={
-                    "org_id": org_id,
-                    "raw": drop_result.get("raw"),
-                    "marts": drop_result.get("marts"),
-                    "drop_status": drop_status,
-                },
+            except Exception:
+                pass
+            logger.exception("admin_api: delete_org db_error org=%s", org_id)
+            return JSONResponse(
+                {"code": "db_error", "message": "database operation failed"},
+                status_code=500,
             )
-        # Epic-24 review X-1/F-2b: one revoke audit per grant erased by the 047
-        # CASCADE -- the audit table is the durable RGPD trace of the exposure
-        # gesture; without this an active grant would vanish untracked.
-        for grant_id, principal in active_grants:
-            insert_audit_row(
-                pg_conn,
-                identity=ident,
-                action=ACTION_DATASET_ACCESS_REVOKED,
-                provider_account="",
-                connection_ref="",
-                metadata={
-                    "org_id": org_id,
-                    "grant_id": grant_id,
-                    "principal": principal,
-                    "reason": "org_deleted",
-                },
-            )
-        insert_audit_row(
-            pg_conn,
-            identity=ident,
-            action=ACTION_ORG_DELETED,
-            provider_account="",
-            connection_ref="",
-            metadata={
-                "org_id": org_id,
-                "slug": org_slug,
-                "name": org_name,
-                "drop_status": drop_status,
-                "revoked_grants": len(active_grants),
-            },
-        )
-        pg_conn.commit()
-    except Exception:
+
+        # Phases 2-4: dismantle the tenant tree, delete the row, drop the
+        # warehouse, audit -- all staged on this open transaction (see
+        # _erase_org_transactional for the order and why it is that order). It
+        # rolls back itself on refusal/failure, so the org stays whole.
         try:
-            pg_conn.rollback()
+            result, error = _erase_org_transactional(
+                pg_conn,
+                org_id,
+                name=org_name,
+                slug=org_slug,
+                identity=identity or "anonymous",
+            )
+            if error is not None:
+                return error
+            # Single commit: state change AND audit evidence land together.
+            pg_conn.commit()
         except Exception:
-            pass
-        logger.exception(
-            "admin_api: delete_org audit_commit_failed org=%s", org_id
-        )
-        return JSONResponse(
-            {"code": "db_error", "message": "database operation failed"},
-            status_code=500,
-        )
+            try:
+                pg_conn.rollback()
+            except Exception:
+                pass
+            logger.exception("admin_api: delete_org audit_commit_failed org=%s", org_id)
+            return JSONResponse(
+                {"code": "db_error", "message": "database operation failed"},
+                status_code=500,
+            )
     finally:
+        # Close through the context manager that owns the connection, so its own
+        # `finally` runs exactly once and nothing is left to the garbage collector.
         try:
-            pg_conn.close()
+            pg_cm.__exit__(None, None, None)
         except Exception:
             pass
 
-    return JSONResponse({"deleted": True, "org_id": org_id}, status_code=200)
+    return JSONResponse(
+        {"deleted": True, "org_id": org_id, "removed": result["removed"]},
+        status_code=200,
+    )
 
 
 async def _provision_org_warehouse(request: Request) -> Response:
@@ -6329,6 +6623,373 @@ async def _patch_my_profile(request: Request) -> Response:
             status_code=500,
         )
     return JSONResponse(profile, status_code=200)
+
+
+# ===========================================================================
+# RGPD account erasure (DELETE /api/me) -- the personal counterpart of the org
+# drop above. Two promises are kept here and stated out loud in the payload:
+#   * an organization is NEVER left orphaned: being the last owner of an org
+#     that still has other active members is a REFUSAL (409), not something the
+#     endpoint silently resolves by promoting somebody or abandoning the tenant;
+#   * an org that belongs to nobody but the caller LEAVES WITH THEM -- otherwise
+#     its warehouse datasets survive, unowned and billed, which is exactly the
+#     orphan state this whole path exists to prevent.
+# ===========================================================================
+
+_MEMBERSHIP_FACTS_SQL = """
+    SELECT m.org_id, o.name, o.slug, m.role, m.status,
+           (SELECT count(*) FROM app.org_members x
+             WHERE x.org_id = m.org_id AND x.identity <> %s AND x.status = 'active'),
+           (SELECT count(*) FROM app.org_members y
+             WHERE y.org_id = m.org_id AND y.identity <> %s
+               AND y.status = 'active' AND y.role = 'owner')
+    FROM app.org_members m
+    JOIN app.organizations o ON o.id = m.org_id
+    WHERE m.identity = %s
+    ORDER BY o.name, m.org_id
+"""
+
+
+def _account_deletion_facts(conn, identity: str) -> dict:
+    """What erasing *identity* would do, and what would stop it. Read-only.
+
+    ``sole_owner_of`` is every org where the caller is the ONLY active owner --
+    i.e. every org whose fate depends on this account. Each of them either
+    leaves with the account (nobody else is active in it) or blocks the erasure
+    (someone else is), and ``blockers`` says which, per org, with the remedy.
+    """
+    from core.user_profiles import fetch_user_profile  # noqa: PLC0415
+
+    profile = fetch_user_profile(identity, conn)
+
+    memberships: list[dict] = []
+    sole_owner_of: list[dict] = []
+    blockers: list[dict] = []
+    orgs_to_erase: list[dict] = []
+
+    with conn.cursor() as cur:
+        cur.execute(_MEMBERSHIP_FACTS_SQL, (identity, identity, identity))
+        rows = cur.fetchall() or []
+
+    for org_id, name, slug, role, status, others, other_owners in rows:
+        memberships.append(
+            {
+                "org_id": org_id,
+                "org_name": name,
+                "role": role,
+                "other_active_members": int(others or 0),
+            }
+        )
+        # Only an ACTIVE owner owns anything: an invited/suspended row holds no
+        # organization hostage, so it never blocks and never drags an org along.
+        if role != "owner" or status != "active" or int(other_owners or 0) > 0:
+            continue
+        sole_owner_of.append({"org_id": org_id, "org_name": name})
+        if int(others or 0) > 0:
+            blockers.append(
+                {
+                    "kind": "sole_owner_with_members",
+                    "detail": (
+                        f"You are the only owner of \"{name}\" and "
+                        f"{int(others)} other member(s) are still active. "
+                        "Transfer ownership to another member, or delete the "
+                        "organization first."
+                    ),
+                }
+            )
+            continue
+        # Nobody else is left in it: the org goes with the account. Its own
+        # deletion blockers (active projects, unresolvable warehouse) are the
+        # account's blockers too -- announcing them here is what stops the
+        # erasure from failing halfway through in production.
+        org_facts = _org_deletion_facts(conn, org_id, name=name, slug=slug)
+        for blocker in org_facts["blockers"]:
+            blockers.append(
+                {
+                    "kind": blocker["kind"],
+                    "detail": f"Organization \"{name}\": {blocker['detail']}",
+                }
+            )
+        orgs_to_erase.append({"org_id": org_id, "name": name, "slug": slug})
+
+    return {
+        "identity": identity,
+        "email": profile.get("email"),
+        "memberships": memberships,
+        "sole_owner_of": sole_owner_of,
+        "blockers": blockers,
+        # Additive, and the honest half of the promise: these organizations are
+        # erased WITH the account (warehouse datasets included).
+        "organizations_erased_with_account": orgs_to_erase,
+    }
+
+
+async def _get_my_deletion_preview(request: Request) -> Response:
+    """GET /api/me/deletion-preview -- what erasing this account would do.
+
+    Read-only, no side effect. The caller can only ever preview THEIR own
+    account: the identity comes from the auth subject, never from the request.
+    """
+    authorized, identity = await _check_auth(request)
+    if not authorized:
+        return JSONResponse(
+            {"code": "unauthorized", "message": "Bearer token required"},
+            status_code=401,
+        )
+    ident = identity or ""
+    if not ident:
+        return JSONResponse(
+            {
+                "code": "identity_required",
+                "message": "An authenticated identity is required to preview an erasure.",
+            },
+            status_code=403,
+        )
+
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            facts = _account_deletion_facts(conn, ident)
+            conn.rollback()
+    except Exception:
+        logger.exception("admin_api: my_deletion_preview db_error")
+        return JSONResponse(
+            {"code": "db_error", "message": "database operation failed"},
+            status_code=500,
+        )
+    return JSONResponse(facts, status_code=200)
+
+
+async def _delete_me(request: Request) -> Response:
+    """DELETE /api/me -- erase the caller's account (RGPD right to erasure).
+
+    Requires header ``X-Confirm-Delete: erase-account`` (422 otherwise).
+    409 when the caller is the last owner of an org that still has other active
+    members -- the message says what to do instead.
+
+    Sequencing: each org that leaves with the account is erased in its OWN
+    transaction (``_erase_org_transactional`` + commit), then the account rows
+    are erased in a final one. A single giant transaction is impossible here --
+    the warehouse drop is external and not transactional, so a rollback after a
+    successful drop would restore rows whose data is already gone. Per-org
+    atomicity is the strongest invariant that actually holds, and it is the one
+    that matters: no org is ever half-erased. Erasure being monotonic, a retry
+    after a mid-sequence failure simply resumes (the erased orgs no longer
+    appear in the facts).
+    """
+    authorized, identity = await _check_auth(request)
+    if not authorized:
+        return JSONResponse(
+            {"code": "unauthorized", "message": "Bearer token required"},
+            status_code=401,
+        )
+    ident = identity or ""
+    if not ident:
+        # "anonymous" is not an account; erasing it would erase nothing and
+        # audit a lie.
+        return JSONResponse(
+            {
+                "code": "identity_required",
+                "message": "An authenticated identity is required to erase an account.",
+            },
+            status_code=403,
+        )
+
+    if request.headers.get("X-Confirm-Delete", "") != "erase-account":
+        return JSONResponse(
+            {
+                "code": "confirmation_required",
+                "message": (
+                    "Include header X-Confirm-Delete: erase-account to confirm "
+                    "permanent erasure of your account."
+                ),
+            },
+            status_code=422,
+        )
+
+    from core.db import get_connection  # noqa: PLC0415
+
+    # Phase 1: decide. Read-only snapshot; nothing is touched if it refuses.
+    try:
+        with get_connection() as conn:
+            facts = _account_deletion_facts(conn, ident)
+            conn.rollback()
+    except Exception:
+        logger.exception("admin_api: delete_me facts_failed")
+        return JSONResponse(
+            {"code": "db_error", "message": "database operation failed"},
+            status_code=500,
+        )
+
+    if facts["blockers"]:
+        return JSONResponse(
+            {
+                "code": "account_deletion_blocked",
+                "message": (
+                    "Your account cannot be erased yet: one or more organizations "
+                    "depend on it. Resolve the blockers below and retry."
+                ),
+                "blockers": facts["blockers"],
+                "sole_owner_of": facts["sole_owner_of"],
+            },
+            status_code=409,
+        )
+
+    # Phase 2: erase the organizations that belong to nobody but the caller,
+    # one atomic transaction each (warehouse datasets included).
+    erased_orgs: list[dict] = []
+    for org in facts["organizations_erased_with_account"]:
+        try:
+            org_cm = get_connection()
+            org_conn = org_cm.__enter__()
+        except Exception:
+            logger.exception("admin_api: delete_me db_open_failed org=%s", org["org_id"])
+            return JSONResponse(
+                {"code": "db_error", "message": "database connection failed"},
+                status_code=500,
+            )
+        try:
+            result, error = _erase_org_transactional(
+                org_conn,
+                org["org_id"],
+                name=org["name"],
+                slug=org["slug"],
+                identity=ident,
+            )
+            if error is not None:
+                logger.warning(
+                    "admin_api: delete_me org_erasure_refused identity=%s org=%s status=%s",
+                    ident,
+                    org["org_id"],
+                    error.status_code,
+                )
+                return JSONResponse(
+                    {
+                        "code": "org_erasure_failed",
+                        "message": (
+                            f"Organization \"{org['name']}\" could not be erased, so "
+                            "your account was NOT erased. Resolve the cause and retry "
+                            "-- organizations already erased stay erased."
+                        ),
+                        "org_id": org["org_id"],
+                        "cause": json.loads(error.body),
+                        "organizations_erased": erased_orgs,
+                    },
+                    status_code=error.status_code,
+                )
+            org_conn.commit()
+            erased_orgs.append(
+                {
+                    "org_id": org["org_id"],
+                    "name": org["name"],
+                    "removed": result["removed"],
+                    "warehouse_datasets": result["warehouse_datasets"],
+                }
+            )
+        except Exception:
+            try:
+                org_conn.rollback()
+            except Exception:
+                pass
+            logger.exception(
+                "admin_api: delete_me org_erasure_failed org=%s", org["org_id"]
+            )
+            return JSONResponse(
+                {"code": "db_error", "message": "database operation failed"},
+                status_code=500,
+            )
+        finally:
+            try:
+                org_cm.__exit__(None, None, None)
+            except Exception:
+                pass
+
+    # Phase 3: erase the person -- memberships (org and project) and profile.
+    try:
+        acct_cm = get_connection()
+        acct_conn = acct_cm.__enter__()
+    except Exception:
+        logger.exception("admin_api: delete_me db_open_failed identity=%s", ident)
+        return JSONResponse(
+            {"code": "db_error", "message": "database connection failed"},
+            status_code=500,
+        )
+    try:
+        from core.audit import insert_audit_row  # noqa: PLC0415
+
+        with acct_conn.cursor() as cur:
+            cur.execute("DELETE FROM app.org_members WHERE identity = %s", (ident,))
+            org_memberships = cur.rowcount or 0
+            cur.execute("DELETE FROM app.project_members WHERE identity = %s", (ident,))
+            project_memberships = cur.rowcount or 0
+            cur.execute("DELETE FROM app.user_profiles WHERE identity = %s", (ident,))
+            profile_rows = cur.rowcount or 0
+
+        insert_audit_row(
+            acct_conn,
+            identity=ident,
+            action=ACTION_ACCOUNT_ERASED,
+            provider_account="",
+            connection_ref="",
+            metadata={
+                "org_memberships": org_memberships,
+                "project_memberships": project_memberships,
+                "profile_erased": bool(profile_rows),
+                "organizations_erased": [o["org_id"] for o in erased_orgs],
+            },
+        )
+        # Counted AFTER the audit insert so the number includes the entry that
+        # records this very erasure -- what the user is told is retained is
+        # exactly what remains.
+        with acct_conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM app.audit_log WHERE identity = %s", (ident,)
+            )
+            row = cur.fetchone()
+            retained_audit = int(row[0]) if row else 0
+        acct_conn.commit()
+    except Exception:
+        try:
+            acct_conn.rollback()
+        except Exception:
+            pass
+        logger.exception("admin_api: delete_me account_erasure_failed identity=%s", ident)
+        return JSONResponse(
+            {"code": "db_error", "message": "database operation failed"},
+            status_code=500,
+        )
+    finally:
+        try:
+            acct_cm.__exit__(None, None, None)
+        except Exception:
+            pass
+
+    return JSONResponse(
+        {
+            "deleted": True,
+            "identity": ident,
+            "erased": {
+                "profile": bool(profile_rows),
+                "org_memberships": org_memberships,
+                "project_memberships": project_memberships,
+                "organizations": erased_orgs,
+            },
+            # Said out loud rather than discovered later: the audit ledger keeps
+            # the identity. It is the proof that the erasure happened (and that
+            # every earlier action was legitimately taken); an erasure that also
+            # erased its own evidence could not be demonstrated to anyone.
+            "retained": {
+                "audit_entries": retained_audit,
+                "reason": (
+                    "Audit entries are kept as the durable, legally required trace "
+                    "of platform actions -- including this erasure itself. They "
+                    "record actions, not personal content."
+                ),
+            },
+        },
+        status_code=200,
+    )
 
 
 # ===========================================================================
@@ -15860,6 +16521,12 @@ router = Router(
             endpoint=_provision_org_warehouse,
             methods=["POST"],
         ),
+        # Same ordering rule: the sub-resource is declared before the bare id.
+        Route(
+            "/api/organizations/{org_id}/deletion-preview",
+            endpoint=_org_deletion_preview,
+            methods=["GET"],
+        ),
         Route("/api/organizations/{org_id}", endpoint=_delete_org, methods=["DELETE"]),
         Route(
             "/api/admin/warehouse/provision-schemas",
@@ -15869,6 +16536,13 @@ router = Router(
         # Story 21.2: self-service global user profile.
         Route("/api/me/profile", endpoint=_get_my_profile, methods=["GET"]),
         Route("/api/me/profile", endpoint=_patch_my_profile, methods=["PATCH"]),
+        # RGPD account erasure: preview declared before the bare /api/me route.
+        Route(
+            "/api/me/deletion-preview",
+            endpoint=_get_my_deletion_preview,
+            methods=["GET"],
+        ),
+        Route("/api/me", endpoint=_delete_me, methods=["DELETE"]),
         # Story 21.3: credential accounts + per-account cross-org grants. Most
         # specific (grants under an account) declared before the shorter shapes.
         Route(

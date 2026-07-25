@@ -32,6 +32,7 @@ import { useEffect, useState } from "react";
 import ConnectorLogo from "../ConnectorLogo";
 import "../application.css";
 import "./widget-feedback.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // Wire shape. Only the fields this screen reads are declared; the endpoint is
@@ -160,7 +161,7 @@ export default function WidgetFeedback({ projectId = "default" }: WidgetFeedback
     setState("loading");
     async function load() {
       try {
-        const resp = await fetch(url);
+        const resp = await apiFetch(url);
         if (!resp.ok) {
           if (!cancelled) setState("error");
           return;

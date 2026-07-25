@@ -34,6 +34,7 @@ import { useEffect, useState } from "react";
 import type { Connection, ConnectionHealth } from "../../ConnectionsList";
 import "../application.css";
 import "./sources.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // Provider -> logo + display label. Real /connectors/*.svg assets only; provider
@@ -289,7 +290,7 @@ export default function Sources({ projectId }: SourcesProps) {
         const url = projectId
           ? `/api/connections?project_id=${encodeURIComponent(projectId)}`
           : "/api/connections";
-        const resp = await fetch(url);
+        const resp = await apiFetch(url);
         if (!resp.ok) return; // keep mockup literals on any failure
         const data: { connections?: Connection[] } = await resp.json();
         const connections = data.connections ?? [];

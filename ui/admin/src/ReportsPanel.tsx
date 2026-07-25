@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import "./shell/application.css";
 import "./reports.css";
 import ReportChainPanel from "./rapports/ReportChainPanel";
+import { apiFetch } from "./lib/apiFetch";
 
 export interface AvailableReport {
   module_name: string;
@@ -104,7 +105,7 @@ export default function ReportsPanel({ projectId = "default" }: ReportsPanelProp
 
   const fetchReports = useCallback(async () => {
     try {
-      const resp = await fetch(`/api/reports/available?project_id=${encodeURIComponent(projectId)}`);
+      const resp = await apiFetch(`/api/reports/available?project_id=${encodeURIComponent(projectId)}`);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
@@ -125,7 +126,7 @@ export default function ReportsPanel({ projectId = "default" }: ReportsPanelProp
   const handleToggle = useCallback(
     async (report: AvailableReport) => {
       try {
-        const resp = await fetch(
+        const resp = await apiFetch(
           `/api/reports/${projectId}/${report.module_name}/${report.report_id}`,
           {
             method: "PATCH",

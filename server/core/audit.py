@@ -151,6 +151,11 @@ ACTION_MEDIA_PLAN_IMPORTED = "media_plan.imported"
 ACTION_ORG_SCHEMAS_PROVISIONED = "org_schemas_provisioned"
 ACTION_ORG_SCHEMAS_DROPPED = "org_schemas_dropped"
 ACTION_ORG_DELETED = "org_deleted"
+# RGPD account erasure (DELETE /api/me). The erased identity is kept in the audit
+# row on purpose: the ledger is the durable proof that the erasure happened, and
+# without the subject it proves nothing. This is the ONE trace that survives the
+# account -- the endpoint says so explicitly in its `retained` payload.
+ACTION_ACCOUNT_ERASED = "account_erased"
 # Story 13.5 volet (b) -- partage tokenise des snapshots rendus (O1, AD-20 ratifie).
 ACTION_SNAPSHOT_SHARED = "render_snapshot.shared"
 ACTION_SNAPSHOT_SHARE_REVOKED = "render_snapshot.share_revoked"

@@ -20,6 +20,7 @@ import type {
   UnmappedActual,
 } from "./types";
 import "./imports.css";
+import { apiFetch } from "../lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -136,7 +137,7 @@ function LineMappingEditor({
       // converter accepts raw "/", so encodeURIComponent is already safe here.
       // We still normalize %2F back to "/" to stay server-independent.
       const lineKey = encodeURIComponent(line.line_key).replace(/%2F/gi, "/");
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/${encodeURIComponent(planId)}/lines/${lineKey}/mappings`,
         {
           method: "PUT",
@@ -348,7 +349,7 @@ export default function MappingTab({ plan, apiBase = "" }: MappingTabProps) {
     setMappingsLoading(true);
     setMappingsError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/${encodeURIComponent(plan.id)}/mappings`
       );
       if (!resp.ok) {
@@ -367,7 +368,7 @@ export default function MappingTab({ plan, apiBase = "" }: MappingTabProps) {
     setUnmappedLoading(true);
     setUnmappedError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/${encodeURIComponent(plan.id)}/unmapped-actuals`
       );
       if (!resp.ok) {

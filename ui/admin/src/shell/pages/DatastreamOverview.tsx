@@ -44,6 +44,7 @@ import type {
 } from "../../datastreams/ops/opsTypes";
 import "../application.css";
 import "./datastream-overview.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 /** Provider logo assets that actually exist under public/connectors/. Anything not
  *  in this map has NO asset yet — we reference /connectors/<name>.svg rather than
@@ -74,7 +75,7 @@ async function fetchReadModel(
   projectId: string,
 ): Promise<DatastreamReadModel> {
   const params = new URLSearchParams({ project_id: projectId });
-  const resp = await fetch(
+  const resp = await apiFetch(
     `/api/datastreams/${encodeURIComponent(datastreamId)}/read-model?${params.toString()}`,
     { cache: "no-store" },
   );

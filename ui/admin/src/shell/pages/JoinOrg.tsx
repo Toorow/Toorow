@@ -60,6 +60,7 @@
 import { useEffect, useMemo, useState } from "react";
 import "../application.css";
 import "./join-org.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 /** One explicit grant, exactly as the accept response returns it. */
 interface ExplicitGrant {
@@ -171,7 +172,7 @@ function formatAbsoluteExpiry(iso: string | null): string {
 async function exchangeBearer(
   bearer: string,
 ): Promise<"ready" | "signin_required" | "unavailable"> {
-  const resp = await fetch("/api/invitations/exchange", {
+  const resp = await apiFetch("/api/invitations/exchange", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -193,7 +194,7 @@ type AcceptOutcome =
 /** Confirm once. Uses the narrow exchange cookie set by /exchange plus the required
  *  Idempotency-Key. Reveals the effective grant only on success (never before). */
 async function acceptOnce(idempotencyKey: string): Promise<AcceptOutcome> {
-  const resp = await fetch("/api/invitations/accept", {
+  const resp = await apiFetch("/api/invitations/accept", {
     method: "POST",
     credentials: "same-origin",
     headers: {

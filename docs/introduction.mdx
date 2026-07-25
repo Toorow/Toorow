@@ -5,17 +5,31 @@ description: Discover Toorow, the sovereign MCP control plane for trustworthy, g
 
 **toorow** is a self-hostable marketing data platform engineered for artificial intelligence agents. It leverages the **Model Context Protocol (MCP)** to grant agents governed access to unified marketing indicators without exposing raw credentials, provider APIs, or underlying database tables.
 
-<Note>
-This repository does not yet include an open-source license. toorow must not be described as open-source until an explicit license is selected and added.
-</Note>
+---
+
+## High-Level Architecture
+
+```mermaid
+graph TD
+    A[Marketing Data Sources<br/>GA4, Meta, Shopify, Stripe, etc.] -->|Ingestion & Connectors| B[Universal Datastreams]
+    B -->|Immutable Pull ULID| C[Raw BigQuery / DuckDB Datasets]
+    C -->|dbt Transformations| D[Canonical Marts: fact_daily_kpi]
+    D -->|Semantic Ratio Views| E[FastMCP Microkernel Server]
+    E -->|Dual-Channel Response| F[AI Agent Hosts<br/>Claude Desktop, Cursor, Antigravity]
+    F -->|Render UI Widgets| G[Embedded MCP App UI Widgets]
+```
+
+---
 
 ## Key Capabilities
 
-- **Unified Marketing Data**: Metrics from GA4, Search Console, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, and Klaviyo converge into a canonical semantic model built with dbt.
+- **37+ Pre-Built Connectors**: Metrics from GA4, Search Console, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, and Klaviyo converge into a canonical semantic model built with dbt.
 - **Audited & Traceable Analysis**: Freshness, data provenance, quality checks (DQ baselines), and alerts accompany every metric served to AI agents.
 - **Isolated Multi-Tenant Access**: Inbound identity, provider OAuth scopes, and dataset access are strictly isolated per project (AD-5 resource graph).
-- **Dual-Channel Response Model**: Agents receive a short, contextual text summary while the accompanying MCP widget receives rich, structured data payload (`structuredContent`) for rendering visual cards.
+- **Dual-Channel Response Model**: Agents receive a short, contextual text summary while the accompanying MCP widget receives a rich, structured data payload (`structuredContent`) for rendering visual cards.
 - **Extensible Module Architecture**: Connectors are self-contained modules auto-discovered at boot, featuring manifests, staging SQL, dbt marts, and golden-pull conformance tests.
+
+---
 
 ## Strategic Direction
 
@@ -33,16 +47,16 @@ toorow is designed as a sovereign control plane for agentic analytics rather tha
 ## Explore the Documentation
 
 <CardGroup cols={2}>
-  <Card title="Prerequisites" icon="list-check" href="/prerequisites">
-    Check required cloud accounts, GCP setup, and local tooling.
+  <Card title="Supported Connectors" icon="grid-2" href="/supported-connectors">
+    Browse all 37 pre-built connector modules available in toorow.
   </Card>
-  <Card title="Quickstart" icon="rocket" href="/quickstart">
+  <Card title="MCP Host Integration" icon="network-wired" href="/mcp-host-integration">
+    Connect Claude Desktop, Cursor, or custom AI agents via FastMCP HTTP.
+  </Card>
+  <Card title="FastMCP Agent Tools" icon="wrench" href="/agent-tools">
+    Inspect FastMCP tool definitions and parameter schemas.
+  </Card>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
     Install and run toorow locally in under 5 minutes.
-  </Card>
-  <Card title="Self-Hosting & Environment" icon="server" href="/self-hosting">
-    Deploy on your infrastructure and inspect the complete `.env` reference.
-  </Card>
-  <Card title="Platform Constraints" icon="shield-check" href="/constraints">
-    Review security rules, zero-telemetry policies, and architectural invariants.
   </Card>
 </CardGroup>

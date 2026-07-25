@@ -418,6 +418,211 @@ def discover_accounts(connection_id: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Epic 31.6 -- social_post event profile (landing: context_events).
+#
+# Generalises the YouTube 31.3 video_upload pattern to the local family: each GBP
+# local post becomes a canonical marker `gbp > social_post > <summary>` that
+# annotates the impressions/clicks curves AND feeds the MMM exogenous-regressor
+# feature builder (epic-31 §10). This profile writes ONLY context_events -- never
+# raw_gbp nor fact_daily_kpi (HG-2 inverted per profile).
+#
+# LIVE-DEFERRED: local posts live on the LEGACY v4 host, which is allowlist-gated,
+# and GBP is 0-QPM by default (manifest verification.status blocked). The
+# transform_events mapping + fixtures prove the pattern; the live pull is ratified
+# once the v4 host is granted (no test account 2026-07-21).
+# ---------------------------------------------------------------------------
+
+# Legacy v4 host (localPosts / reviews). The Performance/BusinessInfo APIs are v1.
+GBP_V4_BASE = "https://mybusiness.googleapis.com/v4"
+
+# Canonical event mapping mirrors canonical_event_mapping in the manifest. Pure
+# lookup (no I/O) -- unit-testable via golden_events/expected_events.
+_CANONICAL_EVENT_MAPPING = {"social_post": "social_post"}
+
+
+def transform_events(
+    raw_rows: list[dict],
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict]:
+    """Map raw v4 localPost dicts to canonical event dicts (AD-2, pure function).
+
+    Input: a list of localPost resource dicts, each with ``createTime`` and
+    ``summary``. Output: canonical event dicts with keys event_type, event_date,
+    label, platform, source -- ready for persist_context_event() (value = None).
+
+    event_date = createTime truncated to YYYY-MM-DD (UTC date).
+    label      = summary.
+    event_type = "social_post" (via _CANONICAL_EVENT_MAPPING).
+    platform   = "gbp".
+    source     = "google-business-profile".
+
+    Validity (M1): a post with no usable createTime (missing, or shorter than a
+    10-char ISO date prefix) is SKIPPED rather than persisted with an empty
+    event_date (validate_event_input would reject it downstream anyway).
+
+    Date window (H1): the localPosts edge returns every post, so when
+    ``date_from``/``date_to`` are supplied, posts whose createTime date falls
+    OUTSIDE [date_from, date_to] are dropped. Both None (the golden-replay
+    contract) means "no window" -> every post passes.
+    """
+    event_type = _CANONICAL_EVENT_MAPPING.get("social_post", "social_post")
+    result: list[dict] = []
+    for post in raw_rows:
+        create_time = post.get("createTime") or ""
+        # M1: reject a post without a valid ISO date prefix (>=10 chars).
+        if len(create_time) < 10:
+            logger.debug(
+                "transform_events: skipping localPost with createTime=%r", create_time
+            )
+            continue
+        event_date = create_time[:10]
+        # H1: bounded window filter (no-op when both bounds are None).
+        if date_from is not None and event_date < date_from:
+            continue
+        if date_to is not None and event_date > date_to:
+            continue
+        result.append(
+            {
+                "event_type": event_type,
+                "event_date": event_date,
+                "label": post.get("summary") or "",
+                "platform": "gbp",
+                "source": "google-business-profile",
+            }
+        )
+    return result
+
+
+def _resolve_location_parent(connection_id: str, location_id: str) -> str:
+    """Return the v4 parent path ``accounts/<a>/locations/<l>`` for *location_id*.
+
+    The v4 localPosts edge needs the account+location pair, but the topology
+    selection is a bare ``locations/<id>``. If *location_id* already carries an
+    ``accounts/`` prefix it is used verbatim; otherwise the owning account is
+    resolved from discover_accounts (never guessed). Raises ValueError when the
+    location cannot be matched to a reachable account (honest, not a silent skip).
+    """
+    if "accounts/" in location_id:
+        return location_id
+    loc = location_id if location_id.startswith("locations/") else f"locations/{location_id}"
+    for entry in discover_accounts(connection_id):
+        if entry.get("id") == loc and entry.get("parent"):
+            return f"{entry['parent']}/{loc}"
+    raise ValueError(
+        f"google-business-profile pull_social_post: could not resolve the owning "
+        f"account for {loc!r} (v4 localPosts needs accounts/*/locations/*)."
+    )
+
+
+def pull_social_post(
+    connection_id: str,
+    date_from: str,
+    date_to: str,
+    project_id: str,
+    pull_id: str,
+    location_id: str | None = None,
+) -> dict:
+    """Fetch a location's local posts and persist each as a context_event.
+
+    Legacy v4 path (reuses the existing business.manage scope -- no new scope):
+    GET {v4}/{account}/{location}/localPosts, paginated via pageToken. The account
+    is resolved from the selected location's topology parent.
+
+    Idempotence (Epic 31.3/H1): two guards make a daily re-pull idempotent:
+      1. transform_events() filters posts to [date_from, date_to] client-side.
+      2. delete_connector_events_in_window() clears this project's prior
+         google-business-profile social_post events in the SAME window BEFORE the
+         re-insert. No new migration is required.
+
+    LIVE-DEFERRED: the v4 host is allowlist-gated and GBP is 0-QPM by default, so a
+    live call 403s until the host is granted (surfaced honestly via the typed
+    error map). The transform + fixtures prove the mapping regardless.
+
+    AD-3:  token fetched immediately before use, then discarded.
+    AI-03: ASCII-only in log strings.
+    AD-2:  canonical event mapping via transform_events().
+    AD-8:  project-scoped (delete + insert both bound to project_id).
+    """
+    from core import nango_client  # noqa: PLC0415 -- AD-2
+    from core.context_events import (  # noqa: PLC0415
+        delete_connector_events_in_window,
+        persist_context_event,
+    )
+
+    if not location_id:
+        raise ValueError(
+            "google-business-profile pull_social_post requires a selected location_id "
+            "(topology selection_level 'location'); no env-var fallback (25.5+)."
+        )
+
+    parent = _resolve_location_parent(connection_id, location_id)
+    token = nango_client.get_fresh_token(connection_id, provider="google-business-profile")
+
+    raw_rows: list[dict] = []
+    page_token: str | None = None
+    while True:
+        params: dict = {"pageSize": 100}
+        if page_token:
+            params["pageToken"] = page_token
+        resp = httpx.get(
+            f"{GBP_V4_BASE}/{parent}/localPosts",
+            params=params,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=60.0,
+        )
+        _raise_for_status(resp)
+        body = resp.json()
+        raw_rows.extend(body.get("localPosts") or [])
+        page_token = body.get("nextPageToken")
+        if not page_token:
+            break
+
+    logger.info(
+        "pull_social_post: fetched %d local post(s) for parent=%s", len(raw_rows), parent
+    )
+
+    canonical_events = transform_events(raw_rows, date_from=date_from, date_to=date_to)
+
+    # H1: delete-by-source-window BEFORE re-insert -> idempotent daily re-pull.
+    event_type = _CANONICAL_EVENT_MAPPING.get("social_post", "social_post")
+    delete_connector_events_in_window(
+        project_id=project_id,
+        source="google-business-profile",
+        event_type=event_type,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    event_count = 0
+    for ev in canonical_events:
+        label = ev["label"][:120]  # validate_event_input enforces max 120.
+        persist_context_event(
+            project_id=project_id,
+            event_date=ev["event_date"],
+            type=ev["event_type"],
+            label=label,
+            description=label,
+            created_by=f"google-business-profile_pull:{pull_id}",
+            platform=ev["platform"],
+            value=None,
+            source=ev["source"],
+        )
+        event_count += 1
+
+    logger.info(
+        "pull_social_post: persisted %d context_events: pull_id=%s date_from=%s date_to=%s",
+        event_count, pull_id, date_from, date_to,
+    )
+    return {
+        "pull_id": pull_id,
+        "event_count": event_count,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+
+# ---------------------------------------------------------------------------
 # MCP tool -- reads from fact_gbp_location_daily mart (AD-12).
 # ---------------------------------------------------------------------------
 

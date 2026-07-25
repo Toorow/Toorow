@@ -12,10 +12,47 @@ To deliver accurate marketing analysis, AI agents require explicit context regar
 AI agents must not guess column names or metrics. Before attempting complex queries or constructing report requests, agents inspect source capabilities using the core tool `get_source_capabilities(project_id, connection_ref_id)`.
 
 ### Dynamic Metadata Discovery
+
 The capability descriptor returns:
 - **Available Fields**: Exact physical source field IDs (`field_id`), canonical target names (`canonical_target`), data types, and semantic hints (`traffic`, `conversion`, `revenue`).
 - **Report Profiles**: Supported grains (`supported_grains`), supported filter operators, row limits, and cadence bounds.
 - **Constraint Repairs**: If a query combination violates source bounds, toorow returns deterministic repair actions (`unknown_report_field`, `unsupported_grain`, `unsupported_cadence`).
+
+### Example Capability Descriptor Response
+
+```json
+{
+  "schema_version": "1.2",
+  "connection_ref_id": "ga4_main",
+  "project_id": "default",
+  "provider": "google-analytics",
+  "supported_grains": ["daily"],
+  "fields": [
+    {
+      "field_id": "activeUsers",
+      "canonical_target": "users",
+      "type": "integer",
+      "hint": "traffic"
+    },
+    {
+      "field_id": "conversions",
+      "canonical_target": "conversions",
+      "type": "integer",
+      "hint": "conversion"
+    },
+    {
+      "field_id": "purchaseRevenue",
+      "canonical_target": "revenue",
+      "type": "float",
+      "hint": "revenue"
+    }
+  ],
+  "constraints": {
+    "max_date_range_days": 365,
+    "requires_date_filter": true
+  }
+}
+```
 
 ---
 
@@ -34,6 +71,7 @@ Marketing metric spikes or dips rarely occur in isolation. toorow allows teams a
 ```
 
 ### Non-Causal Candidate Context (AD-9)
+
 When an agent analyzes an anomaly on a given date (e.g. a 25% drop in conversions), toorow correlates performance shifts against registered context events.
 
 <Important>

@@ -1,0 +1,16 @@
+[
+  {
+    "event_type": "product_launch",
+    "event_date": "2026-07-03",
+    "label": "Aurora Down Jacket",
+    "platform": "shopify",
+    "source": "shopify"
+  },
+  {
+    "event_type": "product_launch",
+    "event_date": "2026-07-18",
+    "label": "Summit Trail Backpack",
+    "platform": "shopify",
+    "source": "shopify"
+  }
+]

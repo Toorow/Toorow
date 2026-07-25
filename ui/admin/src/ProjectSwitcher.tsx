@@ -26,6 +26,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { apiFetch } from "./lib/apiFetch";
 
 export const ACTIVE_PROJECT_STORAGE_KEY = "connector_active_project";
 
@@ -78,7 +79,7 @@ export default function ProjectSwitcher({ onProjectChange }: ProjectSwitcherProp
 
   const loadProjects = useCallback(async () => {
     try {
-      const resp = await fetch("/api/projects");
+      const resp = await apiFetch("/api/projects");
       if (!resp.ok) return;
       const body = await resp.json();
       const list: Project[] = body.projects ?? [];
@@ -114,7 +115,7 @@ export default function ProjectSwitcher({ onProjectChange }: ProjectSwitcherProp
     setCreating(true);
     setCreateError(null);
     try {
-      const resp = await fetch("/api/projects", {
+      const resp = await apiFetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -126,7 +127,7 @@ export default function ProjectSwitcher({ onProjectChange }: ProjectSwitcherProp
       }
       const created: Project = await resp.json();
       // Refresh the list and make the new project active.
-      const listResp = await fetch("/api/projects");
+      const listResp = await apiFetch("/api/projects");
       if (listResp.ok) {
         const body = await listResp.json();
         setProjects(body.projects ?? []);

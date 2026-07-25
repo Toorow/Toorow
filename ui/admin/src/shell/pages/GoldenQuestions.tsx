@@ -23,6 +23,7 @@
 import { useEffect, useState } from "react";
 import "../application.css";
 import "./golden-questions.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 type Result = "success" | "error";
 
@@ -120,7 +121,7 @@ export default function GoldenQuestions({ projectId = "default" }: GoldenQuestio
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `/api/eval/golden-questions?project_id=${encodeURIComponent(projectId)}`,
         );
         if (!res.ok) return; // keep the mock fallback

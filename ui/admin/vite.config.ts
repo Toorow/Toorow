@@ -12,11 +12,20 @@ import react from "@vitejs/plugin-react";
 // Build: `pnpm --filter @toorow/admin build` then serve via mcp-server /admin.
 export default defineConfig({
   plugins: [react()],
-  // G-15 (review-global-gaps follow-up): the console is served under /admin by
-  // the mcp-server dispatcher. With the default base "/", the built index.html
-  // referenced /assets/*.js which 404'd through the server -- the console only
-  // ever rendered on the Vite dev server. A relative base works under any mount.
-  base: "./",
+  // The console is served at the ROOT of app.toorow.com (Firebase Hosting, with
+  // `**` rewritten to /index.html). It must therefore be an ABSOLUTE base.
+  //
+  // History, and why this changed: G-15 set `base: "./"` when the console was
+  // mounted under /admin by the mcp-server dispatcher. That mount is gone (it
+  // now 404s), and a relative base is actively harmful under a SPA rewrite: from
+  // a route two levels deep such as /p/:project/:workspace, `./assets/x.js`
+  // resolves to /p/:project/assets/x.js, the rewrite answers it with index.html
+  // (HTTP 200, text/html), the browser refuses to run HTML as a module — and the
+  // page stays BLANK. Measured on the deployed console 2026-07-25: `/`,
+  // `/overview` and `/create-org` rendered, `/p/default/overview` did not. Every
+  // real application route lives at that depth, so every deep link and every
+  // page refresh inside the app was broken.
+  base: "/",
   build: {
     outDir: "dist",
     target: "esnext",

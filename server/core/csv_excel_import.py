@@ -71,7 +71,7 @@ import logging
 import re as _re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from ulid import ULID
 
@@ -323,6 +323,10 @@ class ParseResult:
     sheet_name: str | None  # sheet parsed (Excel) or None (CSV)
     detected_row_count: int  # total data rows seen (accepted + rejected)
     content_hash: str  # SHA-256 of the raw input bytes
+    # Story 22.10 (AD-4): an OPTIONAL parse-level metadata block a reshape producer
+    # may surface (e.g. the media-plan top ``label: value`` block). Additive with a
+    # default so the CSV/Excel parsers (Story 12.9) are unaffected.
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -1355,8 +1359,19 @@ def run_import(
     write_mode: str = WRITE_MODE_REPLACE,
     force_empty_publish: bool = False,
     preferences: dict[str, Any] | None = None,
+    producer: Callable[[bytes], "ParseResult"] | None = None,
 ) -> dict[str, Any]:
     """Drive a CSV/Excel upload through the 12.8 ledger + 12.5 DQ gates.
+
+    File-source producer path (Story 22.12, AD-1): when ``producer`` is supplied,
+    the PARSE STEP delegates to it (a ``file_source_producer.produce`` closure
+    returning a ``ParseResult`` with rows keyed by canonical field ids) instead of
+    ``parse_csv``/``parse_excel``. Everything downstream -- the 12.8 ledger
+    (``open_import``/``record_rows``), the rejection gate, and the landing
+    relation -- is REUSED UNCHANGED; no second ledger or landing path is
+    introduced. The file-source template is the versioned contract (Story 22.11),
+    so this path threads ``source_metadata['import_contract_id']`` (optional)
+    rather than versioning a CSV/Excel contract.
 
     This is the ORCHESTRATION step (the second half of the import flow). The caller
     must have already called ``build_preview`` to confirm the file is valid and the
@@ -1395,40 +1410,49 @@ def run_import(
     if write_mode == WRITE_MODE_APPEND:
         raise AppendUnavailable()
 
-    # Normalise and validate the contract.
-    norm = validate_import_contract(contract)
-    fmt = norm["format"]
-
-    # H2: re-detect the actual format from the bytes and assert it matches the contract
-    # (mirrors build_preview). A contract labelled csv over xlsx bytes must NOT run
-    # parse_csv on binary -- fail with the invalid-contract error instead.
-    detected = detect_format(source_metadata.get("filename"), data)
-    if detected != fmt:
-        raise InvalidImportContract(
-            f"Contract format '{fmt}' does not match the actual file format "
-            f"'{detected}' (detected from content/extension)."
-        )
-
-    # Parse (re-parse after the preview confirmation -- bytes are cheap).
-    if fmt == FORMAT_CSV:
-        result = parse_csv(
-            data,
-            delimiter=norm.get("delimiter"),
-            date_format=norm.get("date_format"),
-            locale=norm.get("locale"),
-            header_row=norm.get("header_row", 1),
-            column_types=norm.get("column_types"),
-        )
+    if producer is not None:
+        # File-source producer path (AD-1): the producer owns parsing + the
+        # source->canonical mapping. feed_format stays a valid ledger enum
+        # (csv/excel); the file-source template is the versioned contract.
+        result = producer(data)
+        fmt = source_metadata.get("format") or FORMAT_EXCEL
+        if fmt not in SUPPORTED_FORMATS:
+            fmt = FORMAT_EXCEL
     else:
-        result = parse_excel(
-            data,
-            sheet_name=norm.get("sheet_name"),
-            header_row=norm.get("header_row", 1),
-            date_format=norm.get("date_format"),
-            locale=norm.get("locale"),
-            formulas_as_values=norm.get("formulas_as_values", True),
-            column_types=norm.get("column_types"),
-        )
+        # Normalise and validate the contract.
+        norm = validate_import_contract(contract)
+        fmt = norm["format"]
+
+        # H2: re-detect the actual format from the bytes and assert it matches the
+        # contract (mirrors build_preview). A contract labelled csv over xlsx bytes
+        # must NOT run parse_csv on binary -- fail with the invalid-contract error.
+        detected = detect_format(source_metadata.get("filename"), data)
+        if detected != fmt:
+            raise InvalidImportContract(
+                f"Contract format '{fmt}' does not match the actual file format "
+                f"'{detected}' (detected from content/extension)."
+            )
+
+        # Parse (re-parse after the preview confirmation -- bytes are cheap).
+        if fmt == FORMAT_CSV:
+            result = parse_csv(
+                data,
+                delimiter=norm.get("delimiter"),
+                date_format=norm.get("date_format"),
+                locale=norm.get("locale"),
+                header_row=norm.get("header_row", 1),
+                column_types=norm.get("column_types"),
+            )
+        else:
+            result = parse_excel(
+                data,
+                sheet_name=norm.get("sheet_name"),
+                header_row=norm.get("header_row", 1),
+                date_format=norm.get("date_format"),
+                locale=norm.get("locale"),
+                formulas_as_values=norm.get("formulas_as_values", True),
+                column_types=norm.get("column_types"),
+            )
 
     accepted_rows = result.rows
     rejected_rows_parsed = result.rejected
@@ -1458,13 +1482,19 @@ def run_import(
     import core.managed_feed_ledger as _mfl  # noqa: PLC0415
 
     # AC2: version (or dedup) the parsing contract and thread its id onto the ledger.
-    import_contract_id = version_contract(
-        contract,
-        datastream_id=datastream_id,
-        project_id=project_id,
-        actor=actor,
-        conn=conn,
-    )
+    # File-source path (22.12): the versioned contract is the file-source template
+    # (Story 22.11), not a CSV/Excel contract -- thread its id if the caller supplied
+    # one; never version a CSV/Excel contract here.
+    if producer is not None:
+        import_contract_id = source_metadata.get("import_contract_id")
+    else:
+        import_contract_id = version_contract(
+            contract,
+            datastream_id=datastream_id,
+            project_id=project_id,
+            actor=actor,
+            conn=conn,
+        )
 
     # Delegate to the 12.8 ledger (open_import mints the ledger row + candidate BEFORE
     # any row is written -- NFR14).

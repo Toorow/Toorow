@@ -34,6 +34,19 @@ export default function TopBar() {
     navigate({ projectId: id, workspace: "overview", section: null });
   };
 
+  // No scope loaded (loading / error / no organization): render the bar without
+  // a scope switch rather than a placeholder organization — cf. finding F-010.
+  if (!org || !activeProject) {
+    return (
+      <header className="topbar">
+        <div className="topbar-left" />
+        <div className="top-actions">
+          <button className="quiet-button" type="button">Help</button>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header className="topbar">
       <div className="topbar-left" />
@@ -124,6 +137,12 @@ export default function TopBar() {
               <div className="scope-action-label">Project</div>
               <button className="scope-action-row" type="button" role="menuitem" onClick={() => { setOpen(null); navigate({ section: "project-settings" }); }}>Project settings</button>
               <button className="scope-action-row" type="button" role="menuitem" onClick={() => { setOpen(null); navigate({ section: "project-settings" }); }}>Project access</button>
+              <div className="scope-menu-divider" />
+              {/* The signed-in person's own account. Organization administration
+                  and the user account live in the scope control, outside the six
+                  project workspaces — not as a seventh navigation entry. */}
+              <div className="scope-action-label">Account</div>
+              <button className="scope-action-row" type="button" role="menuitem" onClick={() => { setOpen(null); navigate({ section: "account" }); }}>Your account</button>
             </div>
           ) : null}
         </div>

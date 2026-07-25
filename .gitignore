@@ -94,6 +94,11 @@ web/.firebase/
 # Stray local test screenshots at repo root -- never committed
 /test_*.png
 
+# Journey-gate screenshots (e2e/runner.py) -- 18 MB of PNGs per campaign, never
+# committed. The run reports next door (_bmad-output/qa/runs/*.json) ARE committed:
+# they are the dated evidence a gate result rests on, and they stay small.
+_bmad-output/qa/screenshots/
+
 # Visual-QA artifacts (Playwright route-mock harnesses + screenshots) -- never committed
 /*qa.mjs
 /test-results/

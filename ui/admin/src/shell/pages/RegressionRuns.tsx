@@ -30,6 +30,7 @@
 import { useEffect, useState } from "react";
 import "../application.css";
 import "./regression-runs.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // View model. One row per eval run against the golden-question set, most recent
@@ -166,7 +167,7 @@ export default function RegressionRuns({ projectId = "default" }: RegressionRuns
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `/api/eval/runs?project_id=${encodeURIComponent(projectId)}`,
         );
         if (!res.ok) return; // keep the mock fallback

@@ -1,0 +1,16 @@
+[
+  {
+    "event_type": "campaign_launch",
+    "event_date": "2026-07-01",
+    "label": "Summer Launch — Prospecting",
+    "platform": "meta",
+    "source": "meta-ads"
+  },
+  {
+    "event_type": "campaign_launch",
+    "event_date": "2026-07-15",
+    "label": "Retargeting — Q3",
+    "platform": "meta",
+    "source": "meta-ads"
+  }
+]

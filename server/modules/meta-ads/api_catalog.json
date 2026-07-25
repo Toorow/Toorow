@@ -5,6 +5,16 @@
   "exposure_policy": "catalog_driven",
   "fields": [
     {
+      "description": "Date a campaign was scheduled to start (campaign.start_time from the /act_<id>/campaigns edge; falls back to created_time). Maps to canonical event_type campaign_launch. label = campaign.name.",
+      "exposure": "exposed",
+      "field_id": "campaign_launch",
+      "kind": "event",
+      "physical_type": "datetime",
+      "section": "EVENTS",
+      "source_field": "start_time",
+      "tier": "core"
+    },
+    {
       "description": "Currency used by the ad account.",
       "exposure": "exposed",
       "field_id": "account_currency",

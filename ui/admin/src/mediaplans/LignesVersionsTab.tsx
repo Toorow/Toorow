@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DiffResult, MediaPlanDetail, MediaPlanVersion } from "./types";
 import "./imports.css";
+import { apiFetch } from "../lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -84,7 +85,7 @@ export default function LignesVersionsTab({
     setVersionsLoading(true);
     setVersionsError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/${encodeURIComponent(plan.id)}/versions`
       );
       if (!resp.ok) {
@@ -113,7 +114,7 @@ export default function LignesVersionsTab({
     setPublishError(null);
     setPublishSuccess(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/versions/${encodeURIComponent(versionId)}/publish`,
         { method: "POST", headers: { "Content-Type": "application/json" } }
       );
@@ -143,7 +144,7 @@ export default function LignesVersionsTab({
     setDiff(null);
     try {
       const url = `${apiBase}/api/mediaplans/${encodeURIComponent(plan.id)}/diff?from=${encodeURIComponent(diffFrom)}&to=${encodeURIComponent(diffTo)}`;
-      const resp = await fetch(url);
+      const resp = await apiFetch(url);
       if (!resp.ok) {
         const data = await resp.json().catch(() => null);
         throw new Error(data?.message ?? `HTTP ${resp.status}`);

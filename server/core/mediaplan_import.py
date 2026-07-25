@@ -59,6 +59,14 @@ from core.mediaplan_store import (
     list_lines,
 )
 
+# Story 22.9 (AD-5): the mechanical reshape primitives (merged-cell resolution,
+# header-row column resolution) now live in ONE shared engine. This module is the
+# producer that consumes them -- it does not own a second Excel engine. Kept under
+# their existing private names to leave the parser call sites unchanged.
+from core.reshape import cell_resolved as _cell_resolved
+from core.reshape import resolve_column_index as _column_index
+from core.reshape import resolve_merges as _resolve_merges
+
 # Target fields a contract column may map to. line_key is handled separately
 # (contract["line_key"]), the rest are line attributes.
 _TARGET_FIELDS = frozenset(
@@ -200,25 +208,8 @@ def _parse_cell_budget(value: Any) -> Decimal | None:
 
 
 # ---------------------------------------------------------------------------
-# Merge resolution
+# File-side budget total (independent pass over the resolved budget column)
 # ---------------------------------------------------------------------------
-
-
-def _resolve_merges(ws: Any) -> dict[tuple[int, int], tuple[Any, str]]:
-    """Build {(row, col) -> (top_left_value, range_id)} for every merged cell.
-
-    row/col are 1-based (openpyxl convention). range_id is the A1 range string
-    (e.g. "C4:C6"), stable and human-readable -- used as the explode key and in
-    rejection reasons.
-    """
-    covered: dict[tuple[int, int], tuple[Any, str]] = {}
-    for rng in ws.merged_cells.ranges:
-        range_id = str(rng)
-        top_left = ws.cell(row=rng.min_row, column=rng.min_col).value
-        for r in range(rng.min_row, rng.max_row + 1):
-            for c in range(rng.min_col, rng.max_col + 1):
-                covered[(r, c)] = (top_left, range_id)
-    return covered
 
 
 def _sheet_file_budget_sum(
@@ -251,50 +242,6 @@ def _sheet_file_budget_sum(
         if budget is not None:
             total += budget
     return total
-
-
-def _cell_resolved(
-    ws: Any, merges: dict[tuple[int, int], tuple[Any, str]], row: int, col: int
-) -> tuple[Any, str | None]:
-    """Return (value, range_id|None) for a cell, resolving merges (rule a).
-
-    A covered cell reads the top-left value and its range id; an unmerged cell
-    reads its own value and None.
-    """
-    if (row, col) in merges:
-        return merges[(row, col)]
-    return ws.cell(row=row, column=col).value, None
-
-
-# ---------------------------------------------------------------------------
-# Column resolution (header text or letter -> field)
-# ---------------------------------------------------------------------------
-
-
-def _column_index(ws: Any, header_row: int, key: str) -> int | None:
-    """Resolve a contract column key to a 1-based column index.
-
-    ``key`` is either a header cell text (matched case-insensitively, trimmed,
-    against the header row) or an Excel column letter (e.g. "C"). Header text is
-    tried FIRST so a header that happens to read like a letter (e.g. "TV") is not
-    mis-parsed as a column reference; a pure-letter key is used as a fallback only
-    when no header matches. Returns None when unresolved.
-    """
-    from openpyxl.utils import column_index_from_string  # noqa: PLC0415
-
-    stripped = key.strip()
-    target = stripped.casefold()
-    for col in range(1, ws.max_column + 1):
-        val = ws.cell(row=header_row, column=col).value
-        if val is not None and str(val).strip().casefold() == target:
-            return col
-    # Fallback: interpret the key as an Excel column letter (A, AB, ...).
-    if stripped.isalpha() and stripped.isupper():
-        try:
-            return column_index_from_string(stripped)
-        except ValueError:
-            return None
-    return None
 
 
 # ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ImportContract, ImportReport, MediaPlanDetail } from "./types";
 import "./imports.css";
+import { apiFetch } from "../lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -114,7 +115,7 @@ export default function ImportTab({ plan, apiBase = "", onRefresh }: ImportTabPr
     setContractsLoading(true);
     setContractsError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/${encodeURIComponent(plan.id)}/import-contracts`
       );
       if (!resp.ok) {
@@ -194,7 +195,7 @@ export default function ImportTab({ plan, apiBase = "", onRefresh }: ImportTabPr
     setContractSaveError(null);
     setContractSaveOk(false);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/${encodeURIComponent(plan.id)}/import-contracts/${encodeURIComponent(effectiveSheet.trim())}`,
         {
           method: "PUT",
@@ -243,7 +244,7 @@ export default function ImportTab({ plan, apiBase = "", onRefresh }: ImportTabPr
     setImporting(true);
     try {
       const base64 = await fileToBase64(file);
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/${encodeURIComponent(plan.id)}/import`,
         {
           method: "POST",
@@ -276,7 +277,7 @@ export default function ImportTab({ plan, apiBase = "", onRefresh }: ImportTabPr
     setPublishingVersionId(versionId);
     setPublishError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/versions/${encodeURIComponent(versionId)}/publish`,
         { method: "POST", headers: { "Content-Type": "application/json" } }
       );

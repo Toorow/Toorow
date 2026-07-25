@@ -28,6 +28,7 @@
 import { useEffect, useState } from "react";
 import "../application.css";
 import "./procedures.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 // The reconciliation method a procedure applies. These mirror the ~5 methods
 // already present in the marts, surfaced here as the pill label.
@@ -167,7 +168,7 @@ export default function Procedures({ projectId = "default" }: { projectId?: stri
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `/api/procedures?project_id=${encodeURIComponent(projectId)}`,
         );
         if (!res.ok) return; // keep the literal fallback

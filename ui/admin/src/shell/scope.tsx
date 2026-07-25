@@ -7,19 +7,28 @@
  * the OrgThemeProvider (org color tokenization).
  *
  * Data: GET /api/organizations (id, name, brand_* colors, logo_url) + GET
- * /api/projects (id, name, org_id), composed into orgs-with-projects. While the
- * fetch is in flight — or if it fails — the minimal SEED keeps the shell usable
- * so the app never renders without a scope. A project not attached to any org
- * (legacy NULL org_id) still resolves via a graceful fallback so deep links work.
+ * /api/projects (id, name, org_id), composed into orgs-with-projects, both via
+ * `apiFetch` so the bearer token is always attached. A project not attached to
+ * any org (legacy NULL org_id) still resolves via a graceful fallback so deep
+ * links work.
+ *
+ * There is NO fallback scope. Finding F-010: this provider used to seed a
+ * hard-coded "Toorow Core / Default project" whenever the fetch failed, which
+ * meant an unauthenticated 401 rendered a console full of an organization the
+ * user did not own. The load outcome is now reported explicitly through
+ * `state`, and `org` / `activeProject` are null until it is "ready" — the shell
+ * must show a loading, error or onboarding surface instead of inventing data.
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { apiFetch } from "../lib/apiFetch";
 import type { OrgBranding } from "./orgTheme";
 import { useRoute } from "./router";
 
@@ -35,10 +44,23 @@ export interface OrgRef {
   projects: ProjectRef[];
 }
 
+/**
+ * Load outcome of the org/project fetch.
+ *   "loading" — the request is in flight.
+ *   "error"   — the request failed (network, 401, 500, …).
+ *   "empty"   — the request succeeded and the user has NO organization.
+ *   "ready"   — the request succeeded and there is at least one organization.
+ * `org` and `activeProject` are non-null only when state is "ready".
+ */
+export type ScopeState = "loading" | "error" | "empty" | "ready";
+
 export interface ScopeValue {
-  org: OrgRef;
+  state: ScopeState;
+  org: OrgRef | null;
   orgs: OrgRef[];
-  activeProject: ProjectRef;
+  activeProject: ProjectRef | null;
+  /** Re-runs the fetch — for the retry affordance of the error surface. */
+  reload: () => void;
 }
 
 const ScopeContext = createContext<ScopeValue | null>(null);
@@ -48,16 +70,6 @@ export function useScope(): ScopeValue {
   if (!ctx) throw new Error("useScope must be used within <ScopeProvider>");
   return ctx;
 }
-
-/** Minimal seed used while the API loads or if it is unreachable. */
-const SEED_ORGS: OrgRef[] = [
-  {
-    id: "toorow-core",
-    name: "Toorow Core",
-    branding: null,
-    projects: [{ id: "default", name: "Default project" }],
-  },
-];
 
 interface ApiOrg {
   id: string;
@@ -80,7 +92,8 @@ function brandingOf(o: ApiOrg): OrgBranding | null {
 
 /** Compose orgs + projects into the scope shape (only orgs with ≥1 project are
  *  navigable; projects with no org_id fall into a synthetic bucket so they stay
- *  reachable rather than vanishing). */
+ *  reachable rather than vanishing). An empty result stays empty — a user with
+ *  no organization must be told so, not handed one. */
 function compose(orgs: ApiOrg[], projects: ApiProject[]): OrgRef[] {
   const byOrg = new Map<string, ProjectRef[]>();
   const orphans: ProjectRef[] = [];
@@ -105,7 +118,7 @@ function compose(orgs: ApiOrg[], projects: ApiProject[]): OrgRef[] {
   if (orphans.length > 0) {
     composed.push({ id: "_unassigned", name: "Unassigned", branding: null, projects: orphans });
   }
-  return composed.length > 0 ? composed : SEED_ORGS;
+  return composed;
 }
 
 export function ScopeProvider({
@@ -119,7 +132,15 @@ export function ScopeProvider({
   children: ReactNode;
 }) {
   const { route } = useRoute();
-  const [fetched, setFetched] = useState<OrgRef[] | null>(null);
+  const [loaded, setLoaded] = useState<OrgRef[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  const reload = useCallback(() => {
+    setLoaded(null);
+    setFailed(false);
+    setAttempt((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     if (orgsOverride) return; // explicit override (tests) — skip the fetch.
@@ -127,33 +148,47 @@ export function ScopeProvider({
     (async () => {
       try {
         const [orgsRes, projRes] = await Promise.all([
-          fetch(`${apiBase}/api/organizations`),
-          fetch(`${apiBase}/api/projects`),
+          apiFetch(`${apiBase}/api/organizations`),
+          apiFetch(`${apiBase}/api/projects`),
         ]);
-        if (!orgsRes.ok || !projRes.ok) return;
+        // A 401/403/5xx is a load FAILURE, never an empty scope.
+        if (!orgsRes.ok || !projRes.ok) {
+          if (alive) setFailed(true);
+          return;
+        }
         const orgsBody = (await orgsRes.json()) as { organizations?: ApiOrg[] };
         const projBody = (await projRes.json()) as { projects?: ApiProject[] };
         const composed = compose(orgsBody.organizations ?? [], projBody.projects ?? []);
-        if (alive) setFetched(composed);
+        if (alive) setLoaded(composed);
       } catch {
-        /* keep the seed — the shell stays usable offline. */
+        if (alive) setFailed(true);
       }
     })();
     return () => {
       alive = false;
     };
-  }, [orgsOverride, apiBase]);
-
-  const orgs = orgsOverride ?? fetched ?? SEED_ORGS;
+  }, [orgsOverride, apiBase, attempt]);
 
   const value = useMemo<ScopeValue>(() => {
-    const org =
-      orgs.find((o) => o.projects.some((p) => p.id === route.projectId)) ?? orgs[0];
+    const orgs = orgsOverride ?? loaded;
+    if (!orgs) {
+      return {
+        state: failed ? "error" : "loading",
+        org: null,
+        orgs: [],
+        activeProject: null,
+        reload,
+      };
+    }
+    if (orgs.length === 0) {
+      return { state: "empty", org: null, orgs, activeProject: null, reload };
+    }
+    const org = orgs.find((o) => o.projects.some((p) => p.id === route.projectId)) ?? orgs[0];
     const activeProject =
       org.projects.find((p) => p.id === route.projectId) ??
       org.projects[0] ?? { id: route.projectId, name: route.projectId };
-    return { org, orgs, activeProject };
-  }, [orgs, route.projectId]);
+    return { state: "ready", org, orgs, activeProject, reload };
+  }, [orgsOverride, loaded, failed, reload, route.projectId]);
 
   return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
 }

@@ -13,13 +13,6 @@ root_files = [
   "README.md",
   "pyproject.toml",
   "uv.lock",
-  "docs.json",
-  "mint.json",
-  "favicon.ico",
-  "toorow_logo_horizontal_dark.png",
-  "toorow_logo_horizontal_light.png",
-  "toorow_logo_horizontal_dark.webp",
-  "toorow_logo_horizontal_light.webp",
 ]
 
 public_directories = [

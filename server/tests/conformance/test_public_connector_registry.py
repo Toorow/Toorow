@@ -67,7 +67,10 @@ def test_projection_is_deterministic_complete_and_fail_closed():
     # youtube-analytics: 15 -> 26 connectors, 45 -> 88 total report profiles.
     # epic-31: youtube-analytics becomes a MIXED connector -- its new event
     # profile (video_upload, landing=context_events) is the 89th report profile.
-    assert sum(len(item["reports"]) for item in first["connectors"]) == 125
+    # epic-31.6: meta-ads (campaign_launch), shopify (product_launch) and
+    # google-business-profile (social_post) each gain one context_events event
+    # profile -> three more MIXED connectors: 125 -> 128 report profiles.
+    assert sum(len(item["reports"]) for item in first["connectors"]) == 128
     assert len({item["id"] for item in first["connectors"]}) == len(first["connectors"])
     assert {item["readiness"]["status"] for item in first["connectors"]} == {"validation_required"}
 

@@ -43,7 +43,8 @@
             "group": "Product Overview",
             "pages": [
               "index",
-              "introduction"
+              "introduction",
+              "supported-connectors"
             ]
           },
           {

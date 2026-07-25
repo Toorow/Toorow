@@ -294,6 +294,7 @@ button { color: inherit; }
   font-weight: 700;
 }
 .user {
+  position: relative;
   margin-top: auto;
   min-height: 76px;
   display: flex;
@@ -302,6 +303,7 @@ button { color: inherit; }
   padding: 14px 22px;
   border-top: 1px solid var(--line);
 }
+.user-id { min-width: 0; }
 .avatar {
   width: 36px;
   height: 36px;
@@ -312,9 +314,92 @@ button { color: inherit; }
   font-size: 13px;
   font-weight: 700;
 }
+img.avatar { object-fit: cover; }
 .user strong { display: block; font-size: 14px; }
-.user span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
-.user .more { margin-left: auto; font-weight: 700; }
+.user span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
+}
+.user .more {
+  margin-left: auto;
+  font-weight: 700;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 8px;
+  line-height: 1;
+}
+.user .more:hover { background: var(--surface-2); color: var(--ink); }
+
+/* Account menu — pops up above the footer, anchored to .user (relative). */
+.user-menu {
+  position: absolute;
+  bottom: calc(100% - 6px);
+  left: 14px;
+  right: 14px;
+  z-index: 40;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  padding: 10px;
+}
+.user-menu-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 2px 4px 8px;
+}
+.theme-switch {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 3px;
+  background: var(--surface-2);
+  border-radius: 9px;
+}
+.theme-option {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.theme-option:hover { color: var(--ink); }
+.theme-option.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.user-menu-sep { height: 1px; background: var(--line); margin: 10px 0; }
+.user-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.user-menu-item:hover { background: var(--surface-2); }
 
 .app {
   min-width: 0;

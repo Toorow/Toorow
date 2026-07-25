@@ -28,6 +28,7 @@ import {
 } from "@mui/material";
 import ConnectButton from "./ConnectButton";
 import GoogleConnectPanel from "./GoogleConnectPanel";
+import { apiFetch } from "./lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -144,7 +145,7 @@ export default function ConnectionsList({ projectId }: ConnectionsListProps = {}
       const url = projectId
         ? `/api/connections?project_id=${encodeURIComponent(projectId)}`
         : "/api/connections";
-      const resp = await fetch(url);
+      const resp = await apiFetch(url);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
       }
@@ -171,7 +172,7 @@ export default function ConnectionsList({ projectId }: ConnectionsListProps = {}
   async function handleRefresh(connId: string) {
     setRefreshing((prev) => ({ ...prev, [connId]: true }));
     try {
-      const resp = await fetch(`/api/connections/${connId}/refresh-health`, {
+      const resp = await apiFetch(`/api/connections/${connId}/refresh-health`, {
         method: "POST",
       });
       if (!resp.ok) {

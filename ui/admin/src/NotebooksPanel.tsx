@@ -20,6 +20,7 @@
 import { useEffect, useState } from "react";
 import "./shell/application.css";
 import "./notebooks.css";
+import { apiFetch } from "./lib/apiFetch";
 
 // Play glyph inline — @mui/icons-material is not a dependency here.
 function PlayGlyph() {
@@ -61,7 +62,7 @@ const PROJECT_ID =
 const API_BASE = "";
 
 async function listNotebooks(projectId: string): Promise<Notebook[]> {
-  const resp = await fetch(
+  const resp = await apiFetch(
     `${API_BASE}/api/notebooks?project_id=${encodeURIComponent(projectId)}`,
   );
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -71,7 +72,7 @@ async function listNotebooks(projectId: string): Promise<Notebook[]> {
 async function runNotebook(
   notebookId: string,
 ): Promise<{ run_id: string; summary: string }> {
-  const resp = await fetch(`${API_BASE}/api/notebooks/${notebookId}/run`, {
+  const resp = await apiFetch(`${API_BASE}/api/notebooks/${notebookId}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
@@ -87,7 +88,7 @@ async function scheduleNotebook(
   const body = scheduled
     ? { scheduled: true, schedule_rule: "nightly" }
     : { scheduled: false, schedule_rule: null };
-  const resp = await fetch(`${API_BASE}/api/notebooks/${notebookId}/schedule`, {
+  const resp = await apiFetch(`${API_BASE}/api/notebooks/${notebookId}/schedule`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

@@ -2,10 +2,13 @@
  * Per-user Google Sign-In gate.
  *
  * The connector runs in TOOROW_AUTH_MODE=oauth: it verifies a Google ID token
- * (a JWT) against Google's JWKS. Every ui/admin API call already sends
- * `Authorization: Bearer ${localStorage.api_token}`, so this gate simply
- * populates `api_token` with a fresh Google ID token via Google Identity
- * Services (GIS). No other component needs to change.
+ * (a JWT) against Google's JWKS. This gate populates `localStorage.api_token`
+ * with a fresh Google ID token via Google Identity Services (GIS).
+ *
+ * The token only reaches the API through `src/lib/apiFetch.ts`, which attaches
+ * `Authorization: Bearer <api_token>` to every call. A bare `fetch("/api/...")`
+ * sends NO credential and the server answers 401 — this gate holding a valid
+ * token is necessary but not sufficient (finding F-010).
  *
  * The ID token carries the verified `email` / `email_verified` claims the
  * connector uses for identity + invitation acceptance. It expires after ~1h;
@@ -85,14 +88,19 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 20,
+        gap: 28,
+        padding: 24,
         fontFamily: "Geist, Inter, system-ui, sans-serif",
         background: "#0f1115",
         color: "#f5f5f5",
       }}
     >
-      <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em" }}>toorow</div>
-      <div style={{ opacity: 0.7, fontSize: 14 }}>Sign in to continue</div>
+      <img
+        src="/brand/toorow-logo-horizontal-light.png"
+        alt="toorow"
+        style={{ width: "min(880px, 90vw)", height: "auto", marginBottom: 8 }}
+      />
+      <div style={{ opacity: 0.7, fontSize: 15 }}>Sign in to continue</div>
       <div ref={btnRef} />
       {!CLIENT_ID && (
         <div style={{ color: "#ff6b6b", fontSize: 12 }}>

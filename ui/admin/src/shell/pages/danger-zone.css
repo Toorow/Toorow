@@ -1,0 +1,358 @@
+/**
+ * danger-zone.css — the shared visual vocabulary of the two irreversible
+ * surfaces of the console:
+ *   - the "Danger zone" section of shell/pages/OrgSettings.tsx (delete an
+ *     organization, which drops its warehouse datasets), and
+ *   - shell/pages/AccountSettings.tsx (erase your own account).
+ *
+ * One stylesheet, one prefix (`dangerzone-`), so both screens read identically:
+ * a destructive action must never look different depending on where it is
+ * reached from. Nothing here collides with application.css — the base classes
+ * (.page-header, .section-header, .primary-button, .secondary-button, .mono,
+ * .signal-label / .signal-mark) live there and are NOT redefined.
+ *
+ * Tokenized: every color is an application.css CSS variable (--ink, --muted,
+ * --line, --surface, --surface-2, --error, --warning, --info, --success,
+ * --focus). No hex literal, no hard-coded size outside the layout metrics that
+ * match the other pages of the shell.
+ */
+
+/* ---- Section frame ------------------------------------------------------- */
+.dangerzone {
+  display: grid;
+  gap: 14px;
+}
+.dangerzone-card {
+  display: grid;
+  gap: 18px;
+  padding: 22px 24px;
+  border: 1px solid color-mix(in srgb, var(--error) 40%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--error) 5%, var(--surface));
+}
+.dangerzone-lead {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.dangerzone-lead strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* ---- Disclosure: the destructive path stays closed until asked for ------- */
+.dangerzone-disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.dangerzone-open-button {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--error) 55%, var(--line));
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dangerzone-open-button:focus-visible,
+.dangerzone-button:focus-visible,
+.dangerzone-input:focus-visible,
+.dangerzone-retry:focus-visible {
+  outline: 3px solid var(--focus, var(--info));
+  outline-offset: 2px;
+}
+
+/* ---- Opened panel -------------------------------------------------------- */
+.dangerzone-panel {
+  display: grid;
+  gap: 18px;
+  padding: 20px 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.dangerzone-panel:focus {
+  outline: none;
+}
+.dangerzone-panel:focus-visible {
+  outline: 3px solid var(--focus, var(--info));
+  outline-offset: 2px;
+}
+.dangerzone-panel-title {
+  margin: 0;
+  font: 700 16px/1.3 "Lexend", Arial, sans-serif;
+  color: var(--ink);
+}
+
+/* ---- Status blocks (loading / error / blocked) --------------------------- */
+.dangerzone-status {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.dangerzone-status p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.dangerzone-status.error {
+  border-color: color-mix(in srgb, var(--error) 40%, var(--line));
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+}
+.dangerzone-status.blocked {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+}
+.dangerzone-status.warning {
+  border-color: color-mix(in srgb, var(--error) 45%, var(--line));
+  background: color-mix(in srgb, var(--error) 7%, var(--surface));
+}
+.dangerzone-status.success {
+  border-color: color-mix(in srgb, var(--success) 40%, var(--line));
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+}
+.dangerzone-status.info {
+  border-color: color-mix(in srgb, var(--info) 35%, var(--line));
+}
+.dangerzone-retry {
+  justify-self: flex-start;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ---- Blocker / consequence lists ---------------------------------------- */
+.dangerzone-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.dangerzone-list li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.dangerzone-list .dangerzone-list-kind {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.dangerzone-list .dangerzone-list-detail {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* ---- What gets destroyed ------------------------------------------------- */
+.dangerzone-manifest {
+  display: grid;
+  gap: 16px;
+}
+.dangerzone-group {
+  display: grid;
+  gap: 8px;
+}
+.dangerzone-group h4 {
+  margin: 0;
+  font: 700 12px "Plus Jakarta Sans", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.dangerzone-group p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.dangerzone-chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dangerzone-chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 13px;
+  color: var(--ink);
+}
+.dangerzone-chip-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+.dangerzone-counts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.dangerzone-count {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.dangerzone-count dt {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.dangerzone-count dd {
+  margin: 0;
+  font: 700 20px/1.2 "Lexend", Arial, sans-serif;
+  color: var(--ink);
+}
+.dangerzone-count-note {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.dangerzone-datasets {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.dangerzone-datasets li {
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--error) 6%, var(--surface));
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Confirmation -------------------------------------------------------- */
+.dangerzone-confirm {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.dangerzone-confirm label {
+  padding-top: 14px;
+  font: 600 13px "Plus Jakarta Sans", sans-serif;
+  color: var(--ink);
+}
+.dangerzone-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+}
+.dangerzone-input::placeholder {
+  color: var(--muted);
+}
+.dangerzone-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.dangerzone-hint .mono {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* ---- Actions ------------------------------------------------------------- */
+.dangerzone-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.dangerzone-button {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+  border: 1px solid var(--error);
+  border-radius: 999px;
+  background: var(--error);
+  color: var(--surface);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dangerzone-button[disabled] {
+  opacity: 0.45;
+  filter: saturate(0.6);
+  cursor: not-allowed;
+}
+.dangerzone-cancel {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dangerzone-cancel:focus-visible {
+  outline: 3px solid var(--focus, var(--info));
+  outline-offset: 2px;
+}
+
+@media (max-width: 1180px) {
+  .dangerzone-counts {
+    grid-template-columns: 1fr;
+  }
+  .dangerzone-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}

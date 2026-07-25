@@ -5,6 +5,16 @@
   "exposure_policy": "catalog_driven",
   "fields": [
     {
+      "description": "Date a product was published to the Online Store (product.published_at from the Admin REST products edge). Maps to canonical event_type product_launch. label = product.title.",
+      "exposure": "exposed",
+      "field_id": "product_launch",
+      "kind": "event",
+      "physical_type": "datetime",
+      "section": "EVENTS",
+      "source_field": "published_at",
+      "tier": "core"
+    },
+    {
       "description": "The city, town, or village of the billing address.",
       "exposure": "exposed",
       "field_id": "billing_address_city",

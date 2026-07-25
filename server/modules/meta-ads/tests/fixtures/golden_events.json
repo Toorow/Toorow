@@ -1,0 +1,16 @@
+[
+  {
+    "id": "23851234567890123",
+    "name": "Summer Launch — Prospecting",
+    "start_time": "2026-07-01T09:00:00+0000",
+    "created_time": "2026-06-28T14:12:00+0000",
+    "status": "ACTIVE"
+  },
+  {
+    "id": "23851234567890124",
+    "name": "Retargeting — Q3",
+    "start_time": "2026-07-15T08:30:00+0000",
+    "created_time": "2026-07-14T11:00:00+0000",
+    "status": "ACTIVE"
+  }
+]

@@ -44,6 +44,21 @@
             },
             "extraction_path": "custom_pull",
             "_api_notes": "GET locations/{location}:fetchMultiDailyMetricsTimeSeries with all 11 DailyMetric values over the dailyRange, per selected location. Daily grain, all metrics ADDITIVE. History hard-capped at ~18 months; zero-days omitted by the API -> gap-filled to 0. Requires a granted (>0 QPM) project."
+        },
+        {
+            "id": "social_post",
+            "display_name": "Local posts (events)",
+            "metrics": [],
+            "dimensions": ["date"],
+            "events": ["social_post"],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": false,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "landing": "context_events",
+            "_api_notes": "GET https://mybusiness.googleapis.com/v4/{account}/{location}/localPosts (LEGACY v4 host, allowlist-gated) paginated via pageToken. createTime = event_date (YYYY-MM-DD); summary = label. account is resolved from the selected location's topology parent (discover_accounts). Reuses the existing business.manage scope. Persisted to context_events (no fact_daily_kpi). LIVE-DEFERRED: the v4 host is allowlist-restricted and GBP is 0-QPM by default (verification.status blocked). transform_events + fixtures prove the mapping; the live pull is ratified once the v4 host is granted."
         }
     ],
     "canonical_metric_mapping": {
@@ -58,6 +73,9 @@
         "BUSINESS_BOOKINGS": "business_bookings",
         "BUSINESS_FOOD_ORDERS": "business_food_orders",
         "BUSINESS_FOOD_MENU_CLICKS": "business_food_menu_clicks"
+    },
+    "canonical_event_mapping": {
+        "social_post": "social_post"
     },
     "canonical_dimension_mapping": {},
     "error_map": {
@@ -243,6 +261,18 @@
                 "canonical_target": "location_id",
                 "aggregation": "none",
                 "non_additive": false
+            },
+            {
+                "field_id": "social_post",
+                "source_field": "createTime",
+                "kind": "event",
+                "physical_type": "datetime",
+                "description": "Date a Business Profile local post was published (localPost.createTime from the legacy v4 localPosts edge). Maps to canonical event_type social_post. label = localPost.summary. Persisted as a context_events pulse (value null). LIVE-GATED: the v4 host is allowlist-restricted and GBP is 0-QPM by default -- transform-proven, live-deferred (see verification.status blocked).",
+                "semantic_hints": ["event"],
+                "label_source_field": "summary",
+                "canonical_target": "social_post",
+                "aggregation": "none",
+                "non_additive": false
             }
         ],
         "reports": [
@@ -298,6 +328,42 @@
                 },
                 "incremental": {
                     "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": ["manual", "daily"]
+                }
+            },
+            {
+                "id": "social_post",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_social_post"
+                },
+                "landing": "context_events",
+                "metrics": [],
+                "dimensions": ["date"],
+                "events": ["social_post"],
+                "supported_grains": [["date"]],
+                "compatibility": [],
+                "filters": [],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request_per_location"
+                },
+                "incremental": {
+                    "mode": "full_refresh",
                     "cursor_field": null
                 },
                 "cadence": {

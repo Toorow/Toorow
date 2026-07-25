@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { MediaPlan } from "./types";
 import "../shell/application.css";
 import "./imports.css";
+import { apiFetch } from "../lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // Common currencies (non-exhaustive, extensible)
@@ -83,7 +84,7 @@ export default function MediaplansPage({
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/projects/${encodeURIComponent(projectId)}/mediaplans`
       );
       if (!resp.ok) {
@@ -114,7 +115,7 @@ export default function MediaplansPage({
     setCreateSaving(true);
     setCreateError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/projects/${encodeURIComponent(projectId)}/mediaplans`,
         {
           method: "POST",

@@ -53,11 +53,17 @@ class TestOfficialSnapshot:
         assert 480 <= len(metrics) <= 640, f"unexpected metric count: {len(metrics)}"
 
     def test_eleven_manifest_fields_present_with_matching_kind_and_source_field(self, official):
-        """AC1: the 11 manifest source_capabilities fields must be present with
-        matching kind AND source_field (e.g. date -> date_start)."""
+        """AC1: the 11 manifest source_capabilities INSIGHTS fields must be present
+        with matching kind AND source_field (e.g. date -> date_start).
+
+        epic-31.6: kind=="event" fields (campaign_launch, source_field start_time)
+        come from the /act_<id>/campaigns edge, NOT the Insights field snapshot, so
+        they are orthogonal to this official-insights reconciliation and excluded."""
         by_id = {f["field_id"]: f for f in official}
         manifest = _load(_MODULE_DIR / "manifest.json")
         for m in manifest["source_capabilities"]["fields"]:
+            if m["kind"] == "event":
+                continue
             fid = m["field_id"]
             assert fid in by_id, f"manifest field {fid!r} missing from official_fields.json"
             f = by_id[fid]
@@ -142,8 +148,13 @@ class TestFusionReport:
         assert report["drift_ids"] == []
 
     def test_counts_reconcile(self, report):
-        """AC7: matched + official_only == official_total (== catalog field count)."""
+        """AC7: matched + official_only == official_total (== catalog field count).
+
+        epic-31.6: kind=="event" catalog fields are hand-declared from a different
+        edge (/campaigns) than the Insights official snapshot, so they are excluded
+        from the official reconciliation count."""
         assert report["matched"] + report["official_only"] == report["official_total"]
         if _API_CATALOG.exists():
             catalog = _load(_API_CATALOG)
-            assert report["official_total"] == len(catalog["fields"])
+            non_event_fields = [f for f in catalog["fields"] if f.get("kind") != "event"]
+            assert report["official_total"] == len(non_event_fields)

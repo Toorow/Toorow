@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PacingChannel, PacingLine, PacingPlan, PacingResponse } from "./types";
 import "./imports.css";
+import { apiFetch } from "../lib/apiFetch";
 
 // ---------------------------------------------------------------------------
 // Default thresholds (decision 6, epic 22 — asymmetric, configurable server-side).
@@ -117,7 +118,7 @@ export default function PacingTab({ planId, currency, apiBase = "" }: PacingTabP
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/mediaplans/${encodeURIComponent(planId)}/pacing`
       );
       if (!resp.ok) {

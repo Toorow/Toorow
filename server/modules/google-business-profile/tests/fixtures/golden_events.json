@@ -1,0 +1,14 @@
+[
+  {
+    "name": "accounts/1111/locations/2222/localPosts/3001",
+    "summary": "Now open Sundays — come visit our downtown store!",
+    "createTime": "2026-07-04T09:00:00Z",
+    "state": "LIVE"
+  },
+  {
+    "name": "accounts/1111/locations/2222/localPosts/3002",
+    "summary": "Summer menu launch — new seasonal specials",
+    "createTime": "2026-07-20T13:45:00Z",
+    "state": "LIVE"
+  }
+]
