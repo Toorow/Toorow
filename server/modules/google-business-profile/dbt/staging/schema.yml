@@ -1,0 +1,43 @@
+version: 2
+
+sources:
+  - name: raw_gbp
+    description: "Immutable raw landing zone for Google Business Profile performance data (AD-7: append-only)."
+    schema: main
+    tables:
+      - name: raw_gbp_location_daily
+        description: "Raw GBP daily location metrics (wide, canonical column names). One row per location per date. Append-only (AD-7)."
+
+models:
+  - name: stg_gbp_location_daily
+    description: >
+      Staging: GBP location_daily metrics with canonical names.
+      QUALIFY supersede (AD-7): latest pull per grain wins.
+      Grain: (project_id, date, location_id). AD-4: all metrics additive.
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: location_id
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_gbp_location_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || location_id"
+
+  - name: fact_gbp_location_daily
+    description: >
+      Dedicated daily location-performance mart (wide). All metrics additive.
+      total_impressions = sum of the 4 business_impressions_* computed downstream.
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: location_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: fact_gbp_location_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || location_id"

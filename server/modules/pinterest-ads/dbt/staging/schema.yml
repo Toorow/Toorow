@@ -1,0 +1,114 @@
+version: 2
+
+sources:
+  - name: raw_pinterest_ads
+    description: "Immutable raw landing zone for Pinterest Ads daily data (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_pinterest_ads_daily
+        description: >
+          Raw Pinterest Ads daily data, LONG format (Story 26.3): one row per
+          grain x metric x pull_id. Append-only (AD-7): each pull run adds a
+          new batch identified by pull_id. The catalog_daily profile can land
+          ANY of the 626 async catalog columns here (metric, value_num),
+          which is why the landing is long, not wide. *_IN_MICRO_DOLLAR
+          amounts are converted to currency units at landing (value/1e6,
+          platform micros rule, conversion set derived from the catalog
+          marker).
+        columns:
+          - name: date
+            description: "ISO-8601 date string (DATE response key at granularity DAY, UTC). Day grain."
+          - name: data_level
+            description: >
+              Report grain that produced this row: CAMPAIGN | AD_GROUP | AD |
+              PRODUCT_GROUP | KEYWORD (story 3.6 lesson). Part of the grain
+              key so coexisting grains never double-count inside one series.
+          - name: ad_account_id
+            description: "Reporting ad account ID (selected via the topology flow)."
+          - name: campaign_id
+            description: "Campaign ID ('' on rows whose grain does not carry it)."
+          - name: campaign_name
+            description: "Campaign display name."
+          - name: ad_group_id
+            description: "Ad group ID ('' above ad group grain)."
+          - name: ad_id
+            description: "Ad ID ('' above ad grain)."
+          - name: pin_id
+            description: "Promoted pin ID (ad grain only)."
+          - name: product_group_id
+            description: "Product group ID (PRODUCT_GROUP grain only)."
+          - name: segments_json
+            description: >
+              Canonical sorted-key JSON of the selected non-key dimensions
+              (entity attributes like statuses, budget types, labels...).
+              NULL when none were selected. Part of the supersede grain.
+          - name: metric
+            description: >
+              Canonical metric id (catalog field_id after manifest rename,
+              e.g. 'cost' for SPEND_IN_MICRO_DOLLAR). Long-format contract.
+          - name: value_num
+            description: >
+              Metric value. Monetary metrics are ALWAYS in currency units
+              (micros/1e6 applied once in transform()). Ratio metrics
+              selected via catalog_daily are RAW day-grain values:
+              NON-ADDITIVE (AD-4), never SUM them.
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: "Project binding (AD-14). 'default' for seeded test data."
+
+models:
+  - name: stg_pinterest_ads_daily
+    description: >
+      Staging layer for the Pinterest Ads LONG landing (Story 26.3).
+      Supersede semantics (AD-7): QUALIFY keeps only the latest pull per
+      grain (project_id, date, data_level, ad_account_id, campaign_id,
+      ad_group_id, ad_id, pin_id, product_group_id, segments_json, metric).
+      AD-4: ratio metrics land raw and are never summed; monetary values are
+      in currency units (catalog-driven micros rule applied at landing).
+      Conversion metrics restate while the pinned attribution windows run
+      (30 click / 30 engagement / 1 view -- refetch ladder 7/30/60).
+    tests:
+      # AI-05 grain uniqueness: a duplicate grain row means double-counted
+      # KPIs downstream. The QUALIFY dedup must always hold. COALESCE the
+      # nullable segments_json so rows without segments key cleanly.
+      - unique:
+          name: stg_pinterest_ads_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || data_level || '|' || ad_account_id || '|' || campaign_id || '|' || ad_group_id || '|' || ad_id || '|' || pin_id || '|' || product_group_id || '|' || COALESCE(segments_json, '') || '|' || metric"
+    columns:
+      - name: date
+        description: "ISO-8601 date string. Day grain."
+        tests:
+          - not_null
+      - name: data_level
+        description: "Report grain marker (part of the grain key)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["CAMPAIGN", "AD_GROUP", "AD", "PRODUCT_GROUP", "KEYWORD"]
+      - name: ad_account_id
+        description: "Reporting ad account ID."
+        tests:
+          - not_null
+      - name: metric
+        description: "Canonical metric id (long format)."
+        tests:
+          - not_null
+      - name: value_num
+        description: "Metric value (currency units for monetary metrics)."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding for this row. Propagated from raw_pinterest_ads_daily."
+        tests:
+          - not_null

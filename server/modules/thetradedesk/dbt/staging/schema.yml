@@ -1,0 +1,113 @@
+version: 2
+
+sources:
+  - name: raw_thetradedesk
+    description: "Immutable raw landing zone for The Trade Desk MyReports daily data (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_thetradedesk_daily
+        description: >
+          Raw The Trade Desk daily data, LONG format (Story 28.2): one row per
+          grain x metric x pull_id. Append-only (AD-7): each pull run adds a
+          new batch identified by pull_id. Downloaded from the v3 MyReports
+          async flow (POST reportschedule referencing a pre-existing managed
+          ReportTemplate -> poll reportexecution/query to Complete -> download
+          the pre-signed ReportDeliveries DownloadURL, ~1 h TTL). catalog_daily
+          can land ANY exposed catalog column here (metric, value_num), which
+          is why the landing is long, not wide. Numeric coercion is driven by
+          the catalog physical_type, never by an id suffix.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (daily grain; advertiser time zone). Day grain."
+          - name: report_template
+            description: >
+              The managed ReportTemplate that produced this row
+              (daily_performance | conversions | creative | geo_platform |
+              video_player). Part of the grain key so coexisting report grains
+              never double-count.
+          - name: partner_id
+            description: "The Trade Desk PartnerId (billing/seat entity)."
+          - name: advertiser_id
+            description: "The Trade Desk AdvertiserId (the MyReports reporting anchor)."
+          - name: campaign_id
+            description: "Campaign ID ('' on rows whose grain does not carry it)."
+          - name: campaign_name
+            description: "Campaign display name."
+          - name: ad_group_id
+            description: "Ad group ID ('' above ad-group grain)."
+          - name: ad_group_name
+            description: "Ad group display name."
+          - name: creative_id
+            description: "Creative ID (creative / video_player grains)."
+          - name: segments_json
+            description: >
+              Canonical sorted-key JSON of the selected non-key dimensions
+              (Country, DeviceType, non-numeric catalog selections, ...). NULL
+              when none were selected. Part of the supersede grain.
+          - name: metric
+            description: >
+              Canonical metric id (catalog field_id after manifest rename, e.g.
+              'advertiser_cost_usd' for AdvertiserCostUSD). Long-format contract.
+          - name: value_num
+            description: >
+              Column value. Ratio columns selected via catalog_daily
+              (Cpm/Cpc/Ctr/Cpa*) are RAW day-grain values: NON-ADDITIVE (AD-4),
+              never SUM them. Conversion columns are restated as attribution
+              windows close (refetch ladder 3/14/45).
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: "Project binding (AD-14). 'default' for seeded test data."
+
+models:
+  - name: stg_thetradedesk_daily
+    description: >
+      Staging layer for the The Trade Desk LONG landing (Story 28.2). Supersede
+      semantics (AD-7): QUALIFY keeps only the latest pull per grain
+      (project_id, date, report_template, partner_id, advertiser_id,
+      campaign_id, ad_group_id, creative_id, segments_json, metric) --
+      attribution restatements re-pulled by the 3/14/45 refetch ladder are
+      absorbed, never double-counted. AD-4: ratio columns land raw and are
+      never summed.
+    tests:
+      # AI-05 grain uniqueness: a duplicate grain row means double-counted KPIs
+      # downstream. The QUALIFY dedup must always hold. COALESCE the nullable
+      # segments_json so rows without a segments key cleanly.
+      - unique:
+          name: stg_thetradedesk_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || report_template || '|' || partner_id || '|' || advertiser_id || '|' || campaign_id || '|' || ad_group_id || '|' || creative_id || '|' || COALESCE(segments_json, '') || '|' || metric"
+    columns:
+      - name: date
+        description: "ISO-8601 date string. Day grain."
+        tests:
+          - not_null
+      - name: report_template
+        description: "Managed ReportTemplate marker (part of the grain key)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["daily_performance", "conversions", "creative", "geo_platform", "video_player"]
+      - name: advertiser_id
+        description: "The Trade Desk AdvertiserId (reporting anchor)."
+        tests:
+          - not_null
+      - name: metric
+        description: "Canonical metric id (long format)."
+        tests:
+          - not_null
+      - name: value_num
+        description: "Column value."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: project_id
+        description: "Project binding for this row. Propagated from raw_thetradedesk_daily."
+        tests:
+          - not_null

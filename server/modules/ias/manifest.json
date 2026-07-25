@@ -1,0 +1,420 @@
+{
+    "schema_version": "1.2",
+    "name": "ias",
+    "display_name": "Integral Ad Science",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "paid_media",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify against a real IAS Signal account and run the independent connector evidence contract."
+        }
+    },
+    "auth_type": "oauth2",
+    "module_kind": "kpi",
+    "report_profiles": [
+        {
+            "id": "viewability_daily",
+            "display_name": "Viewability (daily)",
+            "metrics": [
+                "measured_impressions",
+                "viewable_impressions",
+                "eligible_impressions"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id",
+                "campaign_name"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "brand_safety_daily",
+            "display_name": "Brand Safety & Suitability (daily)",
+            "metrics": [
+                "brand_safety_passed_ads",
+                "brand_safety_failed_ads"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id",
+                "campaign_name"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "invalid_traffic_daily",
+            "display_name": "Invalid Traffic (daily)",
+            "metrics": [
+                "invalid_traffic_ads"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id",
+                "campaign_name"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        }
+    ],
+    "error_map": {},
+    "_error_map_note": "IAS Reporting API authentication is OAuth 2.0 (password grant, token endpoint https://api.integralplatform.com/uaa/oauth/token). The one documented application-level error signal is the OAuth 'invalid_token' / 'Access token expired' body returned with HTTP 401 -- which the pure-HTTP taxonomy in classify_http_error already routes to auth_expired (reconnect). The OAuth error body carries a STRING 'error' field (e.g. {\"error\":\"invalid_token\"}), not the numeric error.code/error.subcode shape the generic provider-code extractor reads, so an error_map entry keyed on it could not refine anything the HTTP status does not already give us. IAS does not publish a provider-specific numeric error-code table. Actionable classes are therefore fully covered by status alone: 401 -> auth_expired, 403 -> permission_denied, 400 -> invalid_request, 5xx -> provider_transient, 429 -> RateLimitError. Confirmed against https://helpcenter.integralplatform.com/article/reporting-api (2026-07-21). Revisit if IAS documents numbered error codes.",
+    "canonical_metric_mapping": {
+        "measuredImps": "measured_impressions",
+        "viewableImps": "viewable_impressions",
+        "eligibleImps": "eligible_impressions",
+        "invalidImps": "invalid_traffic_ads",
+        "passedImps": "brand_safety_passed_ads",
+        "failedImps": "brand_safety_failed_ads"
+    },
+    "canonical_dimension_mapping": {
+        "campaignId": "campaign_id",
+        "campaignName": "campaign_name"
+    },
+    "account_topology": {
+        "_comment": "IAS topology: the reporting entity is the IAS Team (the {teamId} path segment of every /reportingservice/api/teams/{teamId}/... request). A single OAuth credential can reach multiple Teams. discover_accounts enumerates the Teams the token can reach (GET /reportingservice/api/teams -- assumed path, confirmed at live ratification). Core owns selection / access-check / bounded trial / windowed backfill. No IAS_TEAM_ID env var: the selected Team is resolved by core topology and passed to pull at execution.",
+        "levels": [
+            {
+                "id": "team",
+                "label": "IAS Team"
+            }
+        ],
+        "selection_level": "team",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    },
+    "quota": {
+        "window_seconds": 60,
+        "budget_points": 300,
+        "read_cost": 1,
+        "write_cost": 1
+    },
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "measured_impressions",
+                "source_field": "measuredImps",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Impressions IAS was able to measure for viewability.",
+                "semantic_hints": [
+                    "viewability",
+                    "count"
+                ],
+                "canonical_target": "measured_impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "viewable_impressions",
+                "source_field": "viewableImps",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Impressions that met the MRC viewable standard.",
+                "semantic_hints": [
+                    "viewability",
+                    "count"
+                ],
+                "canonical_target": "viewable_impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "eligible_impressions",
+                "source_field": "eligibleImps",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Impressions eligible for viewability measurement.",
+                "semantic_hints": [
+                    "viewability",
+                    "count"
+                ],
+                "canonical_target": "eligible_impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "invalid_traffic_ads",
+                "source_field": "invalidImps",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Ads flagged as invalid traffic (IVT).",
+                "semantic_hints": [
+                    "invalid_traffic",
+                    "count"
+                ],
+                "canonical_target": "invalid_traffic_ads",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "brand_safety_passed_ads",
+                "source_field": "passedImps",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Ads that passed the brand safety and suitability check.",
+                "semantic_hints": [
+                    "brand_safety",
+                    "count"
+                ],
+                "canonical_target": "brand_safety_passed_ads",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "brand_safety_failed_ads",
+                "source_field": "failedImps",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Ads that failed the brand safety and suitability check.",
+                "semantic_hints": [
+                    "brand_safety",
+                    "count"
+                ],
+                "canonical_target": "brand_safety_failed_ads",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "date",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "Reporting day (YYYY-MM-DD).",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_id",
+                "source_field": "campaignId",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign id.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_name",
+                "source_field": "campaignName",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign display name.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_name",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "viewability_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "measured_impressions",
+                    "viewable_impressions",
+                    "eligible_impressions"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id",
+                    "campaign_name"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id",
+                        "campaign_name"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "unknown",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_viewability_daily"
+                }
+            },
+            {
+                "id": "brand_safety_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "brand_safety_passed_ads",
+                    "brand_safety_failed_ads"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id",
+                    "campaign_name"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id",
+                        "campaign_name"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "unknown",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_brand_safety_daily"
+                }
+            },
+            {
+                "id": "invalid_traffic_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "invalid_traffic_ads"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id",
+                    "campaign_name"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id",
+                        "campaign_name"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "unknown",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_invalid_traffic_daily"
+                }
+            }
+        ]
+    }
+}

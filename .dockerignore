@@ -1,0 +1,47 @@
+# .dockerignore — controls what is sent to the Docker build daemon.
+# Build context is repo root; only server/ and workspace lockfiles are needed.
+# Story 2.1 Task 1.2.
+
+# Version control
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+
+# Virtual environments
+.venv
+
+# Frontend / UI
+ui/
+
+# dbt (included via COPY in Dockerfile only for workspace resolution)
+# Note: dbt/ IS copied in the builder stage for uv workspace sync.
+# Uncomment the line below only if dbt is removed from the uv workspace.
+# dbt/
+
+# Infrastructure code (not needed at runtime)
+infra/
+
+# BMAD planning artifacts
+_bmad-output/
+
+# Local databases
+*.duckdb
+
+# Editor artifacts
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Local env files (must never enter the build context)
+*.env
+.env*
+*.tfvars
+backend.tf

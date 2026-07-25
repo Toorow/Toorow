@@ -1,0 +1,27 @@
+version: 2
+sources:
+  - name: raw_adobe_analytics
+    schema: main
+    tables:
+      - name: raw_adobe_analytics_daily
+models:
+  - name: stg_adobe_analytics_daily
+    description: Adobe Analytics values at full report-suite/component/segment grain.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - project_id
+            - report_profile
+            - global_company_id
+            - rsid
+            - date
+            - dimension
+            - item_id
+            - parent_item_id
+            - segment_ids
+            - metric
+    columns:
+      - name: rsid
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]

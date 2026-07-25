@@ -1,0 +1,72 @@
+version: 2
+
+sources:
+  - name: raw_google_sheets
+    description: >
+      Source brute Google Sheets. Les lignes sont inserees par le connector
+      google-sheets (Story 15.6, Epic 15). Chaque pull correspond a une lecture
+      de la plage declaree dans le column_mapping du datastream.
+    schema: main
+    tables:
+      - name: raw_google_sheets_daily
+        description: >
+          Lignes brutes lues depuis une feuille Google Sheets (objectifs et budgets
+          saisis manuellement). Grain : date x sheet_row_id x project_id x pull_id.
+        columns:
+          - name: date
+            description: "Date de la ligne (valeur de la colonne date_column du column_mapping)."
+          - name: sheet_row_id
+            description: "Identifiant de la ligne dans la feuille (valeur de row_id_column ou row_N)."
+          - name: budget_declared
+            description: "Budget declare (NULL si cellule vide ou non parsable)."
+          - name: target_revenue
+            description: "Objectif de CA declare (NULL si cellule vide ou non parsable)."
+          - name: target_conversions
+            description: "Objectif de conversions declare (NULL si cellule vide ou non parsable)."
+          - name: pull_id
+            description: "ULID du pull, frappe par le scheduler core (AD-7)."
+          - name: loaded_at
+            description: "Timestamp UTC d'insertion (ISO-8601)."
+          - name: project_id
+            description: "Identifiant du projet toorow."
+          - name: spreadsheet_id
+            description: "ID du Google Spreadsheet (extrait de l'URL)."
+          - name: sheet_name
+            description: "Nom ou plage de la feuille lue (pour traceabilite)."
+
+models:
+  - name: stg_google_sheets_daily
+    description: >
+      Vue staging Google Sheets au grain (project_id, date, sheet_row_id).
+      Supersede par pull_id DESC (le dernier pull gagne pour le meme grain).
+      Metriques : budget_declared, target_revenue, target_conversions (OBJECTIFS
+      saisis manuellement, additifs au grain, AD-4). Jamais dans cross_source_conversions.
+    config:
+      materialized: view
+    columns:
+      - name: project_id
+        description: "Identifiant du projet toorow."
+        data_tests:
+          - not_null
+      - name: date
+        description: "Date de la ligne (ISO-8601 YYYY-MM-DD)."
+        data_tests:
+          - not_null
+      - name: sheet_row_id
+        description: "Identifiant de la ligne (non-null : garde au staging)."
+        data_tests:
+          - not_null
+      - name: budget_declared
+        description: "Budget declare (NULL honnete si absent)."
+      - name: target_revenue
+        description: "Objectif CA declare (NULL honnete si absent)."
+      - name: target_conversions
+        description: "Objectif conversions declare (NULL honnete si absent)."
+      - name: pull_id
+        description: "ULID du pull (provenance AD-7)."
+        data_tests:
+          - not_null
+    data_tests:
+      - unique:
+          column_name: "(project_id || '|' || date || '|' || sheet_row_id)"
+          name: stg_google_sheets_daily_grain_unique

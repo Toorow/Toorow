@@ -1,0 +1,13 @@
+[
+  {
+    "date": "2026-07-01",
+    "advertiser_id": "adv-1",
+    "campaign_id": "cmp-1",
+    "insertion_order_id": "io-1",
+    "line_item_id": "li-1",
+    "creative_id": "cr-1",
+    "impressions": "1000",
+    "clicks": "25",
+    "media_cost_micros": "14500000"
+  }
+]

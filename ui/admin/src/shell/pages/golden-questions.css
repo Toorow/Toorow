@@ -1,0 +1,70 @@
+/**
+ * golden-questions.css — Test > Golden questions (eval-loop trust benchmark).
+ *
+ * Shell/layout classes (panel, page-header, metric-strip, metric,
+ * section-header, signal-label, signal-mark, secondary-button) already live in
+ * application.css and are global. This file only adds the page-specific pieces:
+ * the benchmark-questions panel, the table + its scroll container, and the
+ * per-cell text treatments. Mirrors the table vocabulary from sources.css.
+ *
+ * Colors exclusively via application.css CSS variables (dark-theme safe).
+ * Numbers use the Geist tabular-nums treatment via .gq-num.
+ */
+
+.gq-panel {
+  overflow: hidden;
+}
+
+/* Horizontal scroll container for the questions table (not in application.css). */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.gq-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.gq-table th {
+  height: 42px;
+  padding: 0 16px;
+  background: var(--page);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+.gq-table td {
+  height: 72px;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.gq-table th:nth-child(1) { width: 46%; }
+.gq-table th:nth-child(2) { width: 18%; }
+.gq-table th:nth-child(3) { width: 18%; }
+.gq-table th:nth-child(4) { width: 18%; }
+
+.gq-question {
+  display: block;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.gq-topic {
+  color: var(--muted);
+}
+
+/* Honest empty state when the real fetched set carries no questions. */
+.gq-empty {
+  text-align: center;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Numeric cell — Geist tabular figures, matching the summary/metric treatment. */
+.gq-num {
+  font: 500 14px "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}

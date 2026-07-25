@@ -1,0 +1,266 @@
+{
+  "api_version": "2022-11-28",
+  "catalog_version": "1",
+  "connector": "github",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Date of the GitHub event (release: published_at truncated to YYYY-MM-DD; deployment: created_at truncated to YYYY-MM-DD). Used as the primary time dimension for context_events rows. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "published_at/created_at",
+      "tier": "core"
+    },
+    {
+      "description": "ISO-8601 timestamp when the deployment was created. Source of the 'date' dimension for the deployments profile.",
+      "exposure": "exposed",
+      "field_id": "deployment_created_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "DEPLOYMENT",
+      "source_field": "created_at",
+      "tier": "core"
+    },
+    {
+      "description": "GitHub login (username) of the user or bot that triggered the deployment.",
+      "exposure": "exposed",
+      "field_id": "deployment_creator_login",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPLOYMENT",
+      "source_field": "creator.login",
+      "tier": "core"
+    },
+    {
+      "description": "Short human-readable description of the deployment, supplied at creation time. May be null.",
+      "exposure": "exposed",
+      "field_id": "deployment_description",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPLOYMENT",
+      "source_field": "description",
+      "tier": "core"
+    },
+    {
+      "description": "Unique integer identifier for the deployment object returned by the GitHub REST API.",
+      "exposure": "exposed",
+      "field_id": "deployment_id",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "DEPLOYMENT",
+      "source_field": "id",
+      "tier": "core"
+    },
+    {
+      "description": "Branch name, tag, or commit SHA that was deployed (e.g. 'main', 'v2.3.1'). Used in the event label.",
+      "exposure": "exposed",
+      "field_id": "deployment_ref",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPLOYMENT",
+      "source_field": "ref",
+      "tier": "core"
+    },
+    {
+      "description": "Full commit SHA that was deployed. Useful for correlating deployments with specific code changes.",
+      "exposure": "exposed",
+      "field_id": "deployment_sha",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPLOYMENT",
+      "source_field": "sha",
+      "tier": "core"
+    },
+    {
+      "description": "Deployment task name (typically 'deploy' or 'deploy:migrations'). Describes the type of deployment action.",
+      "exposure": "exposed",
+      "field_id": "deployment_task",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPLOYMENT",
+      "source_field": "task",
+      "tier": "core"
+    },
+    {
+      "description": "ISO-8601 timestamp of the last status update for the deployment.",
+      "exposure": "exposed",
+      "field_id": "deployment_updated_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "DEPLOYMENT",
+      "source_field": "updated_at",
+      "tier": "core"
+    },
+    {
+      "description": "True when the release is a draft (unpublished). Draft releases have no published_at timestamp.",
+      "exposure": "exposed",
+      "field_id": "draft",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "RELEASE",
+      "source_field": "draft",
+      "tier": "core"
+    },
+    {
+      "description": "Target deployment environment name (e.g. 'production', 'staging', 'preview'). Used in the event label.",
+      "exposure": "exposed",
+      "field_id": "environment",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPLOYMENT",
+      "source_field": "environment",
+      "tier": "core"
+    },
+    {
+      "description": "The initial environment name before any promotion/redirection. May differ from environment after a pipeline changes the target.",
+      "exposure": "exposed",
+      "field_id": "original_environment",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPLOYMENT",
+      "source_field": "original_environment",
+      "tier": "core"
+    },
+    {
+      "description": "True when the release is marked as a pre-release (e.g. alpha, beta, RC).",
+      "exposure": "exposed",
+      "field_id": "prerelease",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "RELEASE",
+      "source_field": "prerelease",
+      "tier": "core"
+    },
+    {
+      "description": "True when the target environment is the production environment.",
+      "exposure": "exposed",
+      "field_id": "production_environment",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "DEPLOYMENT",
+      "source_field": "production_environment",
+      "tier": "core"
+    },
+    {
+      "description": "ISO-8601 timestamp when the release was published. Null for draft releases. Source of the 'date' dimension for the releases profile.",
+      "exposure": "exposed",
+      "field_id": "published_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "RELEASE",
+      "source_field": "published_at",
+      "tier": "core"
+    },
+    {
+      "description": "GitHub login (username) of the user who created the release.",
+      "exposure": "exposed",
+      "field_id": "release_author_login",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "RELEASE",
+      "source_field": "author.login",
+      "tier": "core"
+    },
+    {
+      "description": "Markdown release notes body. Available in the API response; not currently extracted to context_events.",
+      "exposure": "exposed",
+      "field_id": "release_body",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "RELEASE",
+      "source_field": "body",
+      "tier": "core"
+    },
+    {
+      "description": "ISO-8601 timestamp when the release object was created in GitHub (may precede publication).",
+      "exposure": "exposed",
+      "field_id": "release_created_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "RELEASE",
+      "source_field": "created_at",
+      "tier": "core"
+    },
+    {
+      "description": "Unique integer identifier for the release object returned by the GitHub REST API.",
+      "exposure": "exposed",
+      "field_id": "release_id",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "RELEASE",
+      "source_field": "id",
+      "tier": "core"
+    },
+    {
+      "description": "Human-readable title of the release. Falls back to tag_name when null. Stored as context_event description.",
+      "exposure": "exposed",
+      "field_id": "release_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "RELEASE",
+      "source_field": "name",
+      "tier": "core"
+    },
+    {
+      "description": "GitHub repository name. Supplied via connection_config at pull time; not a field in the release/deployment payload itself.",
+      "exposure": "exposed",
+      "field_id": "repo_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPOSITORY",
+      "source_field": "_connection_config.repo",
+      "tier": "standard"
+    },
+    {
+      "description": "GitHub repository owner (user or organization name). Supplied via connection_config at pull time; not a field in the release/deployment payload itself.",
+      "exposure": "exposed",
+      "field_id": "repo_owner",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPOSITORY",
+      "source_field": "_connection_config.owner",
+      "tier": "standard"
+    },
+    {
+      "description": "Git tag that identifies the release (e.g. 'v2.3.1'). Used as the event label in context_events.",
+      "exposure": "exposed",
+      "field_id": "tag_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "RELEASE",
+      "source_field": "tag_name",
+      "tier": "core"
+    },
+    {
+      "description": "Branch name or commit SHA the release tag points to (e.g. 'main', 'v2-stable').",
+      "exposure": "exposed",
+      "field_id": "target_commitish",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "RELEASE",
+      "source_field": "target_commitish",
+      "tier": "core"
+    },
+    {
+      "description": "True when the deployment environment is ephemeral (e.g. a per-PR preview environment).",
+      "exposure": "exposed",
+      "field_id": "transient_environment",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "DEPLOYMENT",
+      "source_field": "transient_environment",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28"
+    }
+  ]
+}

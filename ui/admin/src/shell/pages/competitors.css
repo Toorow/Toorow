@@ -1,0 +1,384 @@
+/**
+ * competitors.css — page-specific styles for Competitors (the tracked-brand /
+ * competitor master registry, Governance workspace, epic-40).
+ *
+ * Shell/layout classes (frame, sidebar, topbar, main, panel, page-header,
+ * header-actions, selector, buttons, signal-label, signal-mark, provider-logo,
+ * inline-note, number, mono/event) live in application.css and are global. This
+ * file only adds the registry-surface classes that are NOT already there:
+ *   registry-explainer, registry-explainer-header, capability-rows,
+ *   capability-row, capability-icon, capability-copy, registry-guardrail,
+ *   detection-alert, detection-icon, detection-copy, detection-brand,
+ *   detection-source-logo, detection-source, detection-actions,
+ *   registry-panel, registry-panel-header, table-scroll, registry-table,
+ *   brand-cell, alias-cell, alias-chip, alias-more, wiring-cell, wiring-pill,
+ *   wiring-logo, wiring-label, registry-footer, footer-note, and the
+ *   signal-label.role-competitor role variant.
+ *
+ * Tokenized: every color references an application.css CSS variable only
+ * (--ink, --muted, --surface, --surface-2, --page, --line, --info, --rose,
+ * --success, --warning, --error, --focus) so the surface flips correctly in
+ * dark. IDs/aliases/handles render in JetBrains Mono via the global .mono
+ * class; counts in Geist tabular via the global .number class.
+ */
+
+/* --- Explainer panel: what the registry does --- */
+.registry-explainer {
+  margin-bottom: 18px;
+}
+.registry-explainer-header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.registry-explainer-header h2 {
+  margin: 0;
+  font: 600 19px "Lexend", sans-serif;
+}
+.registry-explainer-header p {
+  margin: 4px 0 0;
+  max-width: 560px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.capability-rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.capability-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+}
+.capability-row:nth-child(odd) {
+  border-right: 1px solid var(--line);
+}
+.capability-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--info);
+}
+.capability-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.capability-copy {
+  flex: 1;
+  min-width: 0;
+}
+.capability-copy strong {
+  display: block;
+  font-size: 14px;
+}
+.capability-copy p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Guardrail note inside the explainer panel — reuses the global .inline-note. */
+.registry-guardrail {
+  margin: 16px 20px 20px;
+}
+
+/* --- Governed inbound-detection alert --- */
+.detection-alert {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 16px 20px;
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--surface));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+}
+.detection-icon {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--warning) 18%, var(--surface));
+  color: var(--warning);
+}
+.detection-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.detection-copy {
+  flex: 1;
+  min-width: 0;
+}
+.detection-copy strong {
+  display: block;
+  font-size: 14px;
+}
+.detection-copy p {
+  margin: 3px 0 0;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.detection-brand {
+  color: var(--ink);
+  font-weight: 700;
+}
+.detection-source-logo {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+}
+.detection-source {
+  color: var(--ink);
+  font-weight: 600;
+}
+.detection-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* --- Panel: tracked brands --- */
+.registry-panel {
+  overflow: hidden;
+}
+.registry-panel-header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.registry-panel-header h2 {
+  margin: 0;
+  font: 600 19px "Lexend", sans-serif;
+}
+.registry-panel-header p {
+  margin: 4px 0 0;
+  max-width: 560px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- Scroll wrapper for the registry table --- */
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--line) transparent;
+  scrollbar-gutter: stable;
+}
+.table-scroll:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.table-scroll .registry-table {
+  min-width: 1040px;
+}
+.table-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+}
+
+/* --- Registry table --- */
+.registry-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.registry-table th {
+  height: 42px;
+  padding: 0 16px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+.registry-table td {
+  height: 72px;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+/* Brand cell: canonical name + scope note. */
+.brand-cell strong {
+  display: block;
+  font-size: 14px;
+}
+.brand-cell small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Aliases cell: mono chips + overflow count. */
+.alias-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.alias-chip {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--page);
+  color: var(--ink);
+  font-size: 12px;
+}
+.alias-more {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Source-wiring cell: small pills, wired vs not. */
+.wiring-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.wiring-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.wiring-pill.wired {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.wiring-pill.unwired {
+  background: transparent;
+  color: var(--muted);
+  border-style: dashed;
+}
+.wiring-pill.unwired .wiring-logo {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+.wiring-logo {
+  width: 18px;
+  height: 18px;
+}
+.wiring-pill:not(:has(.wiring-logo)) {
+  padding-left: 10px;
+}
+.wiring-label {
+  white-space: nowrap;
+}
+
+/* --- Role variant: competitor (them-side, attention-bearing rose). Own uses
+   the global .signal-label.info, reference uses .signal-label.muted from
+   modules.css scope — redeclared here so this surface is self-sufficient. --- */
+.signal-label.role-competitor {
+  color: var(--rose);
+}
+.signal-label.role-competitor .signal-mark {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--rose) 40%, transparent);
+}
+.signal-label.muted {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+}
+.signal-label.muted .signal-mark {
+  background: var(--muted);
+}
+
+/* --- Footer --- */
+.registry-footer {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+.footer-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- Narrow-desktop resilience --- */
+@media (max-width: 1320px) {
+  .capability-rows {
+    grid-template-columns: 1fr;
+  }
+  .capability-row:nth-child(odd) {
+    border-right: 0;
+  }
+  .detection-alert {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .registry-panel-header {
+    min-height: auto;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 14px 20px;
+  }
+  .registry-footer {
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-block: 10px;
+  }
+}
+
+.registry-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 24px;
+  line-height: 1.6;
+}

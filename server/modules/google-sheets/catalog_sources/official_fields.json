@@ -1,0 +1,70 @@
+[
+  {
+    "_note": "SELF-DECLARED CONTRACT — Google Sheets is a user-defined tabular source; there is no provider field catalog. The fields listed here ARE the toorow tabular-objectives contract v1, not a snapshot of a remote API reference. Each field_id matches exactly the source_field name (1:1 mapping) declared in manifest.json source_capabilities.fields. The transport URL (sheets-v4 values endpoint) is recorded in catalog_sources.json under sources[0].url.",
+    "_contract_version": "tabular contract v1",
+    "_generated_at": "2026-07-21T00:00:00Z",
+    "_field_count": 5,
+    "_metrics": 3,
+    "_dimensions": 2
+  },
+  {
+    "field_id": "budget_declared",
+    "source_field": "budget_declared",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "TABULAR",
+    "description": "Planned budget amount for the period, as manually entered by the user in the linked Google Sheet. Mapped from a user-declared column (e.g. 'Budget', 'Budget plan') via the datastream column_mapping. Additive over rows. Currency is user-defined (no currency code stored at field level). NULL when the cell is empty or non-numeric (AD-9: never silently coerced to 0).",
+    "semantic_hints": ["spend", "currency"],
+    "canonical_target": "budget_declared",
+    "aggregation": "sum",
+    "non_additive": false
+  },
+  {
+    "field_id": "target_revenue",
+    "source_field": "target_revenue",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "TABULAR",
+    "description": "Revenue objective for the period, as manually entered by the user in the linked Google Sheet. Mapped from a user-declared column (e.g. 'Objectif CA', 'Target Revenue') via the datastream column_mapping. Additive over rows. This is a forward-looking objective, not a realised revenue figure; it does not participate in cross_source_conversions deduplication. NULL when cell is empty or non-numeric.",
+    "semantic_hints": ["revenue", "currency"],
+    "canonical_target": "target_revenue",
+    "aggregation": "sum",
+    "non_additive": false
+  },
+  {
+    "field_id": "target_conversions",
+    "source_field": "target_conversions",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "TABULAR",
+    "description": "Conversion count objective for the period, as manually entered by the user in the linked Google Sheet. Mapped from a user-declared column (e.g. 'Objectif Conversions', 'Target Conversions') via the datastream column_mapping. Integer count; additive over rows. This is a forward-looking objective, not a realised conversion count. NULL when cell is empty or non-numeric.",
+    "semantic_hints": ["conversion", "count"],
+    "canonical_target": "target_conversions",
+    "aggregation": "sum",
+    "non_additive": false
+  },
+  {
+    "field_id": "date",
+    "source_field": "date",
+    "kind": "dimension",
+    "data_type": "date",
+    "section": "TABULAR",
+    "description": "ISO-8601 date string identifying the period of the objective row. Parsed from the user-declared date_column in the datastream column_mapping (e.g. 'Date', 'Periode'). Rows with an empty or sentinel date value (-, N/A, null, #N/A) are skipped at parse time and never ingested (AD-9). Used as the primary time grain for joining with realised metrics.",
+    "semantic_hints": ["date"],
+    "canonical_target": "date",
+    "aggregation": "none",
+    "non_additive": false
+  },
+  {
+    "field_id": "sheet_row_id",
+    "source_field": "sheet_row_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "TABULAR",
+    "description": "Row identifier used to distinguish multiple objective rows on the same date (e.g. one row per marketing channel or campaign). Parsed from the optional row_id_column in the datastream column_mapping (e.g. 'Canal', 'Campagne'). When row_id_column is absent, defaults to the synthetic value 'row_N' where N is the 1-based row index in the sheet. Forms the composite grain (date, sheet_row_id) together with project_id.",
+    "semantic_hints": ["identifier"],
+    "canonical_target": "sheet_row_id",
+    "aggregation": "none",
+    "non_additive": false
+  }
+]

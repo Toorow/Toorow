@@ -1,0 +1,33 @@
+/*
+ * Font inlining (AD-11 / NFR4 / UX-DR9 / rebrand toorow 2026-07-19):
+ *
+ * The three toorow brand faces and Material Symbols Outlined are imported from
+ * @fontsource npm packages so Vite + vite-plugin-singlefile can inline the
+ * WOFF2 bytes into the single-file bundle at build time.
+ *
+ * NO CDN URL (fonts.googleapis.com / fonts.gstatic.com) is used here.
+ * The CI bundle gate verifies this: any https:// reference in the bundle fails.
+ *
+ * toorow typography:
+ *   - Lexend Variable            → titres & logo (theme h1-h6 via FONT_DISPLAY)
+ *   - Plus Jakarta Sans Variable → corps de texte & tableaux (FONT_PRIMARY)
+ *   - JetBrains Mono Variable    → logs MCP & code dbt (FONT_MONO)
+ *
+ * UX-DR9 explicitly forbids using the system-font fallback as the primary face;
+ * "sans-serif"/"monospace" in the theme are CSS fallbacks only.
+ */
+
+/* Lexend Variable — latin subset, weights 100-900 in one WOFF2. */
+@import "@fontsource-variable/lexend/index.css";
+
+/* Plus Jakarta Sans Variable — latin subset, weights 200-800 in one WOFF2. */
+@import "@fontsource-variable/plus-jakarta-sans/index.css";
+
+/* JetBrains Mono Variable — latin subset, weights 100-800 in one WOFF2. */
+@import "@fontsource-variable/jetbrains-mono/index.css";
+
+/*
+ * Material Symbols Outlined — icon font.
+ * Source: @fontsource/material-symbols-outlined (npm, not CDN)
+ */
+@import "@fontsource/material-symbols-outlined/index.css";

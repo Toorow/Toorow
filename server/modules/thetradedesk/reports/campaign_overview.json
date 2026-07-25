@@ -1,0 +1,15 @@
+{
+  "id": "campaign_overview",
+  "display_name": "Campaign performance",
+  "metrics": ["impressions", "clicks"],
+  "dimensions": ["date", "campaign_id"],
+  "layout": {
+    "chart_type": "bar",
+    "order_by": "impressions DESC",
+    "top_n": 10
+  },
+  "narrative_prompt": "Analyze The Trade Desk campaign delivery: impressions vs clicks trend, flag rising delivery with stalling clicks. Recent conversion-adjacent figures are provisional (TTD restates).",
+  "date_window": {
+    "default_days": 30
+  }
+}

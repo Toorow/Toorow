@@ -1,0 +1,3 @@
+# dbt/models/ — empty in Story 1.1. Populated from Story 1.4 onward:
+# staging (per-module, auto-included), marts (module-agnostic), semantic layer
+# (metric dictionary). See AD-2, AD-4, AD-6.

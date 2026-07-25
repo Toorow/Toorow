@@ -1,0 +1,175 @@
+name: Nightly / Release (full matrix)
+
+# The exhaustive suite that PR CI deliberately does NOT run: the WHOLE server
+# test suite and conformance for EVERY connector, plus the full dbt loop.
+# Runs on a schedule, on published releases, and on manual dispatch — so the
+# "test everything / every connector" cost is paid at release cadence, not on
+# every PR (see ci.yml for the PR-scoped, per-connector jobs).
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Whole Python suite (no path scoping) + lint.
+  # ---------------------------------------------------------------------------
+  full-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check server
+
+      - name: Full test suite (unit + integration + conformance + evals)
+        run: uv run pytest server/tests -q
+
+  # ---------------------------------------------------------------------------
+  # Conformance for EVERY built-in connector (dynamic matrix over server/modules).
+  # ---------------------------------------------------------------------------
+  discover-connectors:
+    runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.list.outputs.modules }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        name: Enumerate connector module directories
+        run: |
+          MODS=$(ls -d server/modules/*/ | sed 's#server/modules/##; s#/##' | sort)
+          JSON=$(printf '%s\n' "$MODS" | grep -v '^$' | jq -R . | jq -s -c .)
+          echo "modules=$JSON" >> "$GITHUB_OUTPUT"
+          echo "Discovered connectors: $JSON"
+
+  conformance-all:
+    needs: discover-connectors
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJson(needs.discover-connectors.outputs.modules) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Capability contract (all modules)
+        run: uv run pytest server/tests/conformance/test_all_module_capabilities.py -q
+
+      - name: Conformance — ${{ matrix.module }}
+        run: |
+          uv run pytest server/tests/conformance/ \
+            --module-path "server/modules/${{ matrix.module }}/" -q
+
+  # ---------------------------------------------------------------------------
+  # Full dbt loop (seed → load → run → test).
+  # ---------------------------------------------------------------------------
+  full-dbt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync Python deps
+        run: uv sync --frozen --all-packages
+
+      - name: Generate + load GA4 seed into DuckDB
+        run: |
+          uv run python server/modules/google-analytics/seeds/generate_seed.py
+          uv run python server/modules/google-analytics/seeds/load_seed.py \
+            --mode duckdb --duckdb-path /tmp/ci_test.duckdb
+
+      - name: Write dbt profiles.yml (DuckDB local)
+        run: |
+          mkdir -p dbt/profiles
+          cat > dbt/profiles/profiles.yml <<'PROFILES'
+          connector:
+            target: local
+            outputs:
+              local:
+                type: duckdb
+                path: /tmp/ci_test.duckdb
+                threads: 1
+          PROFILES
+
+      - name: dbt run + test
+        env:
+          TOOROW_DUCKDB_PATH: /tmp/ci_test.duckdb
+        run: |
+          cd dbt
+          uv run dbt run --profiles-dir profiles
+          uv run dbt test --profiles-dir profiles
+
+  # ---------------------------------------------------------------------------
+  # Isolation suite (ephemeral Postgres, all migrations).
+  # ---------------------------------------------------------------------------
+  full-isolation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: connector
+          POSTGRES_PASSWORD: connector_dev_only
+          POSTGRES_DB: connector
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_POSTGRES_DSN: postgresql://connector:connector_dev_only@localhost:5432/connector
+      PLATFORM_DB_URL: postgresql://connector:connector_dev_only@localhost:5432/connector
+      HEALTH_POLLER_ENABLED: "false"
+      QUEUE_WORKER_ENABLED: "false"
+      SCHEDULER_ENABLED: "false"
+      TOOROW_AUTH_MODE: disabled
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply app-schema migrations in order
+        env:
+          PGPASSWORD: connector_dev_only
+        run: |
+          for f in $(ls infra/nango/migrations/*.sql | sort -V); do
+            echo "applying $f"
+            psql -h localhost -U connector -d connector -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Run isolation suite
+        run: uv run pytest server/tests/isolation/ -v -m isolation

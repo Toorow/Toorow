@@ -1,0 +1,114 @@
+[
+  {
+    "field_id": "date",
+    "source_field": "date",
+    "kind": "dimension",
+    "data_type": "date",
+    "section": "STANDARD",
+    "description": "CM360 reporting day."
+  },
+  {
+    "field_id": "advertiser_id",
+    "source_field": "dfa:advertiser",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "STANDARD",
+    "description": "Advertiser id."
+  },
+  {
+    "field_id": "campaign_id",
+    "source_field": "dfa:campaign",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "STANDARD",
+    "description": "Campaign id."
+  },
+  {
+    "field_id": "placement_id",
+    "source_field": "dfa:placement",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "STANDARD",
+    "description": "Placement id."
+  },
+  {
+    "field_id": "creative_id",
+    "source_field": "dfa:creative",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "STANDARD",
+    "description": "Creative id."
+  },
+  {
+    "field_id": "floodlight_activity_id",
+    "source_field": "dfa:activity",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FLOODLIGHT",
+    "description": "Floodlight activity id."
+  },
+  {
+    "field_id": "country",
+    "source_field": "dfa:country",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "REACH",
+    "description": "Country or provider sentinel."
+  },
+  {
+    "field_id": "impressions",
+    "source_field": "dfa:impressions",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "STANDARD",
+    "description": "Served impressions."
+  },
+  {
+    "field_id": "clicks",
+    "source_field": "dfa:clicks",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "STANDARD",
+    "description": "Recorded clicks."
+  },
+  {
+    "field_id": "cost",
+    "source_field": "dfa:mediaCost",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "STANDARD",
+    "description": "Media cost."
+  },
+  {
+    "field_id": "conversions",
+    "source_field": "dfa:totalConversions",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "FLOODLIGHT",
+    "description": "Attributed conversions."
+  },
+  {
+    "field_id": "conversion_value",
+    "source_field": "dfa:totalConversionsRevenue",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "FLOODLIGHT",
+    "description": "Conversion value."
+  },
+  {
+    "field_id": "unique_reach",
+    "source_field": "dfa:uniqueReachImpressions",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "REACH",
+    "description": "Unique reach."
+  },
+  {
+    "field_id": "average_frequency",
+    "source_field": "dfa:averageFrequency",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "REACH",
+    "description": "Average frequency."
+  }
+]

@@ -1,0 +1,1530 @@
+# AD-17: this record is TEST CODE, not knowledge. It judges the context layer; it is not part of it.
+schema_version: '1'
+as_of_anchor: '2026-07-15'
+seeds_commit: a6b3c60
+dbt_build_commit: a6b3c60
+created_by: human+agent
+questions:
+- id: daily_report_ga4_sessions_30d
+  question: Combien de sessions Google Analytics ai-je eu sur les 30 derniers jours
+    ?
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: easy
+  tags:
+  - ga4
+  - sessions
+  - additive
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_sessions FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
+      AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/daily_report_ga4_sessions_30d.json
+    fixture_sha256: 393b4e9f71f15e3e02fa2b9c5b048f1ac69d73e3d589b814f6137a826d151123
+    role: canonical_correct
+    note: Standard 30-day GA4 sessions via country breakdown
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-06-16'
+        end: '2026-07-15'
+    result_selector:
+      kind: fact_sum
+      connector: google-analytics
+      metric: sessions
+      breakdown_dimension: country
+      round: null
+- id: daily_report_meta_cost_30d
+  question: Quel est le coût total de mes campagnes Meta Ads sur les 30 derniers jours
+    ?
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: easy
+  tags:
+  - meta-ads
+  - cost
+  - campaign
+  expected_citations:
+  - source_system: meta-ads
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_cost FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'meta-ads' AND metric = 'cost' AND breakdown_dimension
+      = 'campaign_id' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/daily_report_meta_cost_30d.json
+    fixture_sha256: 00d250891bc244887253a05e94a5186aadd5cd40e7189daff2cfd9cc048d8e8c
+    role: canonical_correct
+    note: Total Meta Ads spend at CAMPAIGN data_level
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - meta-ads
+      date_range:
+        start: '2026-06-16'
+        end: '2026-07-15'
+    result_selector:
+      kind: fact_sum
+      connector: meta-ads
+      metric: cost
+      breakdown_dimension: campaign_id
+      round: null
+- id: daily_report_gsc_clicks_30d
+  question: Combien de clics SEO ai-je obtenus d'après Google Search Console sur les
+    30 derniers jours ?
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: easy
+  tags:
+  - gsc
+  - clicks
+  - seo
+  expected_citations:
+  - source_system: gsc
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_clicks FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'gsc' AND metric = 'clicks' AND breakdown_dimension
+      = 'page' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/daily_report_gsc_clicks_30d.json
+    fixture_sha256: 023e081ecc005da763f1cb8947a24d451cbad4c36988c0127bf8812743a55e14
+    role: canonical_correct
+    note: Total GSC clicks via page breakdown
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - gsc
+      date_range:
+        start: '2026-06-16'
+        end: '2026-07-15'
+    result_selector:
+      kind: fact_sum
+      connector: gsc
+      metric: clicks
+      breakdown_dimension: page
+      round: null
+- id: daily_report_cross_connector_sessions_conversions
+  question: Donne-moi les sessions GA4 et les conversions Meta Ads sur les 7 derniers
+    jours.
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: medium
+  tags:
+  - cross-connector
+  - ga4
+  - meta-ads
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  - source_system: meta-ads
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT connector, metric, SUM(value) AS total_value FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND ( (connector = 'google-analytics' AND metric
+      = 'sessions' AND breakdown_dimension = 'country') OR (connector = 'meta-ads'
+      AND metric = 'conversions' AND breakdown_dimension = 'campaign_id') ) AND date
+      BETWEEN '2026-07-09' AND '2026-07-15' GROUP BY connector, metric ORDER BY connector,
+      metric
+    expected_result_fixture: fixtures/daily_report_cross_connector_sessions_conversions.json
+    fixture_sha256: c6537cfa7ec5e0ee703c3d6eb1584a03dbcf923a4821d6978e9e29b9e30f6347
+    role: canonical_correct
+    note: Cross-connector daily report split by connector
+- id: daily_report_freshness_edge
+  question: Quel est le volume de sessions GA4 enregistré le dernier jour disponible
+    (2026-07-15) ?
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: easy
+  tags:
+  - ga4
+  - freshness
+  - single_day
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT date, SUM(value) AS sessions FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
+      AND breakdown_dimension = 'country' AND date = '2026-07-15' GROUP BY date
+    expected_result_fixture: fixtures/daily_report_freshness_edge.json
+    fixture_sha256: 379adfbe733da9f1935eae0d17396a88c8e2351780a3a57e666b5239a0952111
+    role: canonical_correct
+    note: GA4 sessions on exact as_of date
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-07-15'
+        end: '2026-07-15'
+    result_selector:
+      kind: fact_sum_by_date
+      connector: google-analytics
+      metric: sessions
+      breakdown_dimension: country
+      round: null
+- id: daily_report_empty_date_range
+  question: Quel est le volume de clics GSC sur une plage de dates sans données (janvier
+    2025) ?
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: easy
+  tags:
+  - gsc
+  - empty_range
+  expected_citations:
+  - source_system: gsc
+    source_field: fact_daily_kpi
+    pull_id_required: false
+  updated_at: '2026-07-21T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_clicks FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'gsc' AND metric = 'clicks' AND date
+      BETWEEN '2025-01-01' AND '2025-01-07'
+    expected_result_fixture: fixtures/daily_report_empty_date_range.json
+    fixture_sha256: ae2b0fa515020eed925226350660ed16e91c431e62731e701c3d5023a2536b94
+    role: canonical_correct
+    note: 'Out-of-range SUM returns one null row — fixture is [{total_clicks: null}]'
+- id: daily_report_project_not_found
+  question: Quel est le volume de sessions pour un projet non existant ?
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: easy
+  tags:
+  - ga4
+  - error_path
+  - unknown_project
+  expected_citations: []
+  updated_at: '2026-07-21T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_sessions FROM marts.fact_daily_kpi WHERE
+      project_id = 'non_existent_project' AND connector = 'google-analytics' AND metric
+      = 'sessions' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/daily_report_project_not_found.json
+    fixture_sha256: 376823d00454b855fd7272e7f1be8cb3529d11ebe8ea82f701d8bfc889ae30c9
+    role: canonical_correct
+    note: 'Non-existent project SUM returns one null row — fixture is [{total_sessions:
+      null}]'
+- id: daily_report_provenance_pull_id_check
+  question: Quel est le total de conversions GA4 sur les 30 derniers jours avec vérification
+    de provenance ?
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: easy
+  tags:
+  - ga4
+  - conversions
+  - provenance
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_conversions FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
+      'conversions' AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16'
+      AND '2026-07-15'
+    expected_result_fixture: fixtures/daily_report_provenance_pull_id_check.json
+    fixture_sha256: 88953f26b0474267c3d2be1d587b1cece2ee085e7a5cc33f765d5b4c3a11e2b8
+    role: canonical_correct
+    note: GA4 30-day conversions for citation checking
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-06-16'
+        end: '2026-07-15'
+    result_selector:
+      kind: fact_sum
+      connector: google-analytics
+      metric: conversions
+      breakdown_dimension: country
+      round: null
+- id: daily_report_ga4_users_30d
+  question: Combien d'utilisateurs actifs ai-je eu sur GA4 sur les 30 derniers jours
+    ?
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: easy
+  tags:
+  - ga4
+  - users
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_active_users FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
+      'active_users' AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16'
+      AND '2026-07-15'
+    expected_result_fixture: fixtures/daily_report_ga4_users_30d.json
+    fixture_sha256: 96091a541bf9302c98e36fcfd894bdb6eba683bab02d0bd940aea64f55f4a313
+    role: canonical_correct
+    note: Active users sum via country breakdown
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-06-16'
+        end: '2026-07-15'
+    result_selector:
+      kind: fact_sum
+      connector: google-analytics
+      metric: active_users
+      breakdown_dimension: country
+      round: null
+- id: daily_report_gsc_impressions_30d
+  question: Quel est le volume total d'impressions GSC sur les 30 derniers jours ?
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: easy
+  tags:
+  - gsc
+  - impressions
+  expected_citations:
+  - source_system: gsc
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_impressions FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'gsc' AND metric = 'impressions'
+      AND breakdown_dimension = 'page' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/daily_report_gsc_impressions_30d.json
+    fixture_sha256: b9ad858d7d9849d222cc762840166682b1b19324f33f733366868f07fa62b7ba
+    role: canonical_correct
+    note: GSC impressions sum via page breakdown
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - gsc
+      date_range:
+        start: '2026-06-16'
+        end: '2026-07-15'
+    result_selector:
+      kind: fact_sum
+      connector: gsc
+      metric: impressions
+      breakdown_dimension: page
+      round: null
+- id: expert_report_gsc_position_movements
+  question: What is the weighted average position for GSC queries over the last 30
+    days?
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: medium
+  tags:
+  - gsc
+  - average_position
+  - non_additive
+  expected_citations:
+  - source_system: gsc
+    source_field: semantic_avg_position
+    pull_id_required: true
+  updated_at: '2026-07-21T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT ROUND(SUM(average_position * impressions_weight) / NULLIF(SUM(impressions_weight),
+      0), 2) AS overall_avg_position FROM marts.semantic_avg_position WHERE project_id
+      = 'default' AND connector = 'gsc' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/expert_report_gsc_position_movements.json
+    fixture_sha256: 6266126194a385973f590493ff73c7ff70b967b5691ce83f4de149b9e17d903e
+    role: canonical_correct
+    note: 'Impression-weighted overall GSC average position: SUM(average_position
+      * impressions_weight) / NULLIF(SUM(impressions_weight), 0) — one scalar for
+      the 30-day window, matching the question intent'
+- id: expert_report_meta_campaign_breakdown
+  question: What is the breakdown of Meta Ads spend and impressions by campaign over
+    the last 30 days?
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: medium
+  tags:
+  - meta-ads
+  - campaign
+  - breakdown
+  expected_citations:
+  - source_system: meta-ads
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT breakdown_value AS campaign_id, metric, SUM(value) AS total
+      FROM marts.fact_daily_kpi WHERE project_id = 'default' AND connector = 'meta-ads'
+      AND breakdown_dimension = 'campaign_id' AND metric IN ('cost', 'impressions')
+      AND date BETWEEN '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value, metric
+      ORDER BY breakdown_value, metric
+    expected_result_fixture: fixtures/expert_report_meta_campaign_breakdown.json
+    fixture_sha256: 190ecaf4340e8271f7e06516e9f5c91bb44565b06f723576c07f42364c7057dd
+    role: canonical_correct
+    note: Meta Ads spend and impressions by campaign
+- id: expert_report_post_deploy_regressions
+  question: Are there any custom post-deploy regression events logged in GA4 for January
+    2026?
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: easy
+  tags:
+  - ga4
+  - post_deploy_regression
+  - empty_state
+  expected_citations: []
+  updated_at: '2026-07-21T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT COUNT(*) AS event_count FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'google-analytics' AND metric = 'post_deploy_regression'
+      AND date BETWEEN '2026-01-01' AND '2026-01-31'
+    expected_result_fixture: fixtures/expert_report_post_deploy_regressions.json
+    fixture_sha256: 7c9146a97e53a939135143112ac8bb662d84189d748e87a428b9ebaae113590e
+    role: canonical_correct
+    note: 'COUNT of absent metric returns one zero row — fixture is [{event_count:
+      0}]'
+- id: expert_report_as_of_override_replay
+  question: Replay GA4 daily sessions as of 2026-06-01 for the preceding 14 days.
+  as_of: '2026-06-01'
+  surface: expert_report
+  difficulty: medium
+  tags:
+  - ga4
+  - as_of_replay
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT date, SUM(value) AS sessions FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
+      AND breakdown_dimension = 'country' AND date BETWEEN '2026-05-19' AND '2026-06-01'
+      GROUP BY date ORDER BY date
+    expected_result_fixture: fixtures/expert_report_as_of_override_replay.json
+    fixture_sha256: 153fa79ef393ae3ecd963b2bc3751bdae0d46ef677c0f57f415c2c5818c4f589
+    role: canonical_correct
+    note: Replayed 14-day window ending on June 1 2026
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-05-19'
+        end: '2026-06-01'
+      as_of: '2026-06-01T23:59:59Z'
+    result_selector:
+      kind: fact_sum_by_date
+      connector: google-analytics
+      metric: sessions
+      breakdown_dimension: country
+      round: null
+- id: expert_report_cross_connector_attribution
+  question: What is the cross-source conversion summary across GA4, Meta Ads, and
+    GSC for the last 30 days?
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: medium
+  tags:
+  - cross-connector
+  - conversions
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  - source_system: meta-ads
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT connector, SUM(value) AS total_conversions FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND metric = 'conversions' AND date BETWEEN '2026-06-16'
+      AND '2026-07-15' GROUP BY connector ORDER BY connector
+    expected_result_fixture: fixtures/expert_report_cross_connector_attribution.json
+    fixture_sha256: e7502bc33fc43220c543b598a2116c5c54dfa6257edcc723ff52b6387603d86f
+    role: canonical_correct
+    note: Total conversions by connector
+- id: expert_report_ga4_user_acquisition_channels
+  question: What is the breakdown of GA4 sessions by acquisition channel over the
+    last 30 days?
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: medium
+  tags:
+  - ga4
+  - acquisition
+  - channels
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT breakdown_value AS channel, SUM(value) AS sessions FROM
+      marts.fact_daily_kpi WHERE project_id = 'default' AND connector = 'google-analytics'
+      AND metric = 'sessions' AND breakdown_dimension = 'session_source_medium' AND
+      date BETWEEN '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value ORDER BY
+      sessions DESC
+    expected_result_fixture: fixtures/expert_report_ga4_user_acquisition_channels.json
+    fixture_sha256: df20dcbf358eaf605d55d4010484fd82f79fa42b893dde8bdbf53ed30486ab69
+    role: canonical_correct
+    note: GA4 sessions breakdown by session_source_medium
+- id: expert_report_meta_conversion_performance
+  question: What are the total Meta Ads conversions over the last 30 days?
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: medium
+  tags:
+  - meta-ads
+  - conversions
+  expected_citations:
+  - source_system: meta-ads
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_conversions FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'meta-ads' AND metric = 'conversions'
+      AND breakdown_dimension = 'campaign_id' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/expert_report_meta_conversion_performance.json
+    fixture_sha256: dc36065d68f5cd793a48cee8e1c1b8daef60e820a749c07db5c8c2377d4e1dba
+    role: canonical_correct
+    note: Meta Ads 30-day conversions total at campaign_id grain
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - meta-ads
+      date_range:
+        start: '2026-06-16'
+        end: '2026-07-15'
+      as_of: '2026-07-15T23:59:59Z'
+    result_selector:
+      kind: fact_sum
+      connector: meta-ads
+      metric: conversions
+      breakdown_dimension: campaign_id
+      round: null
+- id: expert_report_gsc_top_pages_by_clicks
+  question: Which top 5 GSC pages generated the highest clicks over the last 30 days?
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: medium
+  tags:
+  - gsc
+  - top_pages
+  expected_citations:
+  - source_system: gsc
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT breakdown_value AS page, SUM(value) AS clicks FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'gsc' AND metric = 'clicks' AND
+      breakdown_dimension = 'page' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+      GROUP BY breakdown_value ORDER BY clicks DESC LIMIT 5
+    expected_result_fixture: fixtures/expert_report_gsc_top_pages_by_clicks.json
+    fixture_sha256: c7d2debb8e7b00620991f2f1694550fb758ae36ac77bd2126cb60031c9d4cea2
+    role: canonical_correct
+    note: Top 5 GSC pages by total clicks
+- id: expert_report_ga4_landing_pages
+  question: What are the top landing pages by sessions in GA4 over the last 30 days?
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: medium
+  tags:
+  - ga4
+  - landing_pages
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT breakdown_value AS landing_page, SUM(value) AS sessions
+      FROM marts.fact_daily_kpi WHERE project_id = 'default' AND connector = 'google-analytics'
+      AND metric = 'sessions' AND breakdown_dimension = 'landing_page' AND date BETWEEN
+      '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value ORDER BY sessions DESC
+      LIMIT 5
+    expected_result_fixture: fixtures/expert_report_ga4_landing_pages.json
+    fixture_sha256: b39a6d97d9cc7f9950afbdad630758e3ad52fdc839708156dde15cad09d24be0
+    role: canonical_correct
+    note: GA4 landing page sessions top 5 — breakdown_dimension='landing_page' (entry
+      pages)
+- id: expert_report_meta_adset_performance
+  question: What is the cost and conversion performance by adset in Meta Ads for the
+    last 30 days?
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: medium
+  tags:
+  - meta-ads
+  - adset
+  expected_citations:
+  - source_system: meta-ads
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT breakdown_value AS adset_id, metric, SUM(value) AS total
+      FROM marts.fact_daily_kpi WHERE project_id = 'default' AND connector = 'meta-ads'
+      AND breakdown_dimension = 'adset_id' AND metric IN ('cost', 'conversions') AND
+      date BETWEEN '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value, metric
+      ORDER BY breakdown_value, metric
+    expected_result_fixture: fixtures/expert_report_meta_adset_performance.json
+    fixture_sha256: fd5d96c402204d508ea0c4f25ae9bc4a878fca6f3cc639503dd302558a158dfe
+    role: canonical_correct
+    note: Meta Ads performance by adset_id
+- id: card_kpi_summary_ga4_sessions
+  question: Affiche la carte Synthèse KPI des sessions GA4 sur les 30 derniers jours.
+  as_of: '2026-07-15'
+  surface: card
+  difficulty: easy
+  tags:
+  - ga4
+  - card
+  - kpi_summary
+  procedure_ref: get_card(template='kpi', project_id='default')
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_sessions FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
+      AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/card_kpi_summary_ga4_sessions.json
+    fixture_sha256: 393b4e9f71f15e3e02fa2b9c5b048f1ac69d73e3d589b814f6137a826d151123
+    role: canonical_correct
+    note: Card template KPI sessions query
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-06-16'
+        end: '2026-07-15'
+    result_selector:
+      kind: fact_sum
+      connector: google-analytics
+      metric: sessions
+      breakdown_dimension: country
+      round: null
+- id: card_keywords_gsc_clicks_impressions
+  question: Affiche la carte Mots-clés avec les clics et impressions GSC sur les 30
+    derniers jours.
+  as_of: '2026-07-15'
+  surface: card
+  difficulty: medium
+  tags:
+  - gsc
+  - card
+  - keywords
+  procedure_ref: get_card(template='keywords', project_id='default')
+  expected_citations:
+  - source_system: gsc
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT metric, SUM(value) AS total FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'gsc' AND metric IN ('clicks', 'impressions')
+      AND breakdown_dimension = 'page' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+      GROUP BY metric ORDER BY metric
+    expected_result_fixture: fixtures/card_keywords_gsc_clicks_impressions.json
+    fixture_sha256: 817ef4ef69c1817cb49d125ad33b4ab7d6fe18aacec606505a735fc5298d2119
+    role: canonical_correct
+    note: Card template keywords query
+- id: card_conversions_cpa_cross_source
+  question: Affiche la carte Conversions & CPA global sur les 30 derniers jours.
+  as_of: '2026-07-15'
+  surface: card
+  difficulty: medium
+  tags:
+  - cross-connector
+  - card
+  - conversions
+  procedure_ref: get_card(template='conversions', project_id='default')
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  - source_system: meta-ads
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_conversions FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND metric = 'conversions' AND date BETWEEN '2026-06-16'
+      AND '2026-07-15'
+    expected_result_fixture: fixtures/card_conversions_cpa_cross_source.json
+    fixture_sha256: c25c2b313dd21c561218bf7a543dde622d607443aacf96c4513c957f4dbda867
+    role: canonical_correct
+    note: Card template conversions total
+- id: card_usertypes_new_returning
+  question: Affiche la carte Nouveaux vs fidèles pour GA4 sur les 30 derniers jours.
+  as_of: '2026-07-15'
+  surface: card
+  difficulty: medium
+  tags:
+  - ga4
+  - card
+  - usertypes
+  procedure_ref: get_card(template='usertypes', project_id='default')
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT breakdown_value AS user_type, SUM(value) AS sessions FROM
+      marts.fact_daily_kpi WHERE project_id = 'default' AND connector = 'google-analytics'
+      AND metric = 'sessions' AND breakdown_dimension = 'user_type' AND date BETWEEN
+      '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value ORDER BY breakdown_value
+    expected_result_fixture: fixtures/card_usertypes_new_returning.json
+    fixture_sha256: 562fea38fcf956e5776ba01486b6b98d9b76a1b29198585ef846c8b13ae168eb
+    role: canonical_correct
+    note: Card template user_type sessions donut
+- id: card_journey_entry_top_pages
+  question: Affiche la carte Parcours utilisateur avec les pages d'entrée GA4 sur
+    les 30 derniers jours.
+  as_of: '2026-07-15'
+  surface: card
+  difficulty: medium
+  tags:
+  - ga4
+  - card
+  - journey
+  procedure_ref: get_card(template='journey', project_id='default')
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT breakdown_value AS page, SUM(value) AS views FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
+      'screen_page_views' AND breakdown_dimension = 'page' AND date BETWEEN '2026-06-16'
+      AND '2026-07-15' GROUP BY breakdown_value ORDER BY views DESC LIMIT 10
+    expected_result_fixture: fixtures/card_journey_entry_top_pages.json
+    fixture_sha256: 449465a22a7aa259236c68ed29d65f18524d333c068155c669f77cd6906864c1
+    role: canonical_correct
+    note: Card template journey — top pages by screen_page_views (breakdown_dimension='page')
+- id: card_attribution_session_source
+  question: Affiche la carte Attribution par source/medium GA4 sur les 30 derniers
+    jours.
+  as_of: '2026-07-15'
+  surface: card
+  difficulty: medium
+  tags:
+  - ga4
+  - card
+  - attribution
+  procedure_ref: get_card(template='attribution', project_id='default')
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT breakdown_value AS source_medium, SUM(value) AS conversions
+      FROM marts.fact_daily_kpi WHERE project_id = 'default' AND connector = 'google-analytics'
+      AND metric = 'conversions' AND breakdown_dimension = 'session_source_medium'
+      AND date BETWEEN '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value ORDER
+      BY conversions DESC
+    expected_result_fixture: fixtures/card_attribution_session_source.json
+    fixture_sha256: 718f37645f5aca5f2ca66d38c8e8a3c7140fe27867a5bea431036832de9c20c9
+    role: canonical_correct
+    note: Card template attribution by source/medium
+- id: card_connectors_context
+  question: Affiche la carte contextuelle des connecteurs actifs sur le projet.
+  as_of: '2026-07-15'
+  surface: card
+  difficulty: easy
+  tags:
+  - card
+  - connectors
+  - context
+  procedure_ref: get_card(template='connectors', project_id='default')
+  expected_citations: []
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT DISTINCT connector FROM marts.fact_daily_kpi WHERE project_id
+      = 'default' ORDER BY connector
+    expected_result_fixture: fixtures/card_connectors_context.json
+    fixture_sha256: bdb1166dec58cd2f5a3fdb60a80e19328c333338dee203aadc26e912882acf43
+    role: canonical_correct
+    note: Card template active connectors enumeration
+- id: card_dedup_context
+  question: Affiche la carte d'estimation de déduplication des conversions sur les
+    30 derniers jours.
+  as_of: '2026-07-15'
+  surface: card
+  difficulty: medium
+  tags:
+  - card
+  - dedup
+  - cross_source
+  procedure_ref: get_card(template='dedup', project_id='default')
+  expected_citations:
+  - source_system: google-analytics
+    source_field: cross_source_conversions
+    pull_id_required: false
+  updated_at: '2026-07-21T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(claimed_conversions) AS claimed, SUM(deduplicated_contribution)
+      AS deduped FROM marts.dedup_estimate WHERE project_id = 'default' AND date BETWEEN
+      '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/card_dedup_context.json
+    fixture_sha256: 959b162bb92210821d5c4c4813cc6232c79262761851ac0b0c156871bc500307
+    role: canonical_correct
+    note: 'Card dedup estimate — default project not configured; fixture is [{claimed:
+      null, deduped: null}]'
+- id: card_catalog_list_all_templates
+  question: Liste tous les modèles de cartes disponibles dans le catalogue.
+  as_of: '2026-07-15'
+  surface: card_catalog
+  difficulty: easy
+  tags:
+  - card_catalog
+  - list_templates
+  procedure_ref: list_card_templates()
+  expected_citations: []
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT COUNT(*) AS total_templates FROM (SELECT 'kpi' UNION SELECT
+      'keywords' UNION SELECT 'conversions' UNION SELECT 'usertypes' UNION SELECT
+      'journey' UNION SELECT 'attribution' UNION SELECT 'connectors' UNION SELECT
+      'dedup' UNION SELECT 'custom') AS t
+    expected_result_fixture: fixtures/card_catalog_list_all_templates.json
+    fixture_sha256: 68c5773e392cba43edc4958aa681a1907cf252c0258003252762ec6bde319d3d
+    role: canonical_correct
+    note: Total count of registered card templates
+- id: card_catalog_connectors_explicit_only
+  question: Vérifie que la carte connecteurs est de type contextuel et explicite.
+  as_of: '2026-07-15'
+  surface: card_catalog
+  difficulty: medium
+  tags:
+  - card_catalog
+  - connectors
+  expected_citations: []
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT DISTINCT connector FROM marts.fact_daily_kpi WHERE project_id
+      = 'default' AND date BETWEEN '2026-07-01' AND '2026-07-15' ORDER BY connector
+    expected_result_fixture: fixtures/card_catalog_connectors_explicit_only.json
+    fixture_sha256: bdb1166dec58cd2f5a3fdb60a80e19328c333338dee203aadc26e912882acf43
+    role: canonical_correct
+    note: Explicit connector verification query
+- id: card_kpi_summary_meta_cost
+  question: Affiche la carte Synthèse KPI pour le coût Meta Ads sur les 30 derniers
+    jours.
+  as_of: '2026-07-15'
+  surface: card
+  difficulty: easy
+  tags:
+  - meta-ads
+  - card
+  - cost
+  expected_citations:
+  - source_system: meta-ads
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_cost FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'meta-ads' AND metric = 'cost' AND breakdown_dimension
+      = 'campaign_id' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/card_kpi_summary_meta_cost.json
+    fixture_sha256: 00d250891bc244887253a05e94a5186aadd5cd40e7189daff2cfd9cc048d8e8c
+    role: canonical_correct
+    note: Meta Ads 30-day spend for KPI summary card
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - meta-ads
+      date_range:
+        start: '2026-06-16'
+        end: '2026-07-15'
+    result_selector:
+      kind: fact_sum
+      connector: meta-ads
+      metric: cost
+      breakdown_dimension: campaign_id
+      round: null
+- id: card_attribution_campaign
+  question: Affiche la carte Attribution par campagne GA4 sur les 30 derniers jours.
+  as_of: '2026-07-15'
+  surface: card
+  difficulty: medium
+  tags:
+  - ga4
+  - card
+  - campaign
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT breakdown_value AS campaign, SUM(value) AS conversions FROM
+      marts.fact_daily_kpi WHERE project_id = 'default' AND connector = 'google-analytics'
+      AND metric = 'conversions' AND breakdown_dimension = 'session_campaign' AND
+      date BETWEEN '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value ORDER BY
+      conversions DESC
+    expected_result_fixture: fixtures/card_attribution_campaign.json
+    fixture_sha256: 839d2f00f404380fa75ff8077db27255b94b27603b062dbd1e1e2adafa600c01
+    role: canonical_correct
+    note: Attribution by session_campaign
+- id: dq_stale_data_detection
+  question: Détecte si les données GA4 présentent un retard de fraîcheur sur les 3
+    derniers jours.
+  as_of: '2026-07-15'
+  surface: dq
+  difficulty: medium
+  tags:
+  - dq
+  - freshness
+  - stale
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT COUNT(*) AS recent_rows FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'google-analytics' AND date BETWEEN '2026-07-13'
+      AND '2026-07-15'
+    expected_result_fixture: fixtures/dq_stale_data_detection.json
+    fixture_sha256: d288a70571272941721ff2e7d8f107f204e726be8335cda60e36e8f9e1a2a847
+    role: canonical_correct
+    note: Recent row count check for freshness validation
+- id: dq_connector_disabled_check
+  question: Détecte si le connecteur twitter-ads est absent du warehouse (aucune donnée
+    active).
+  as_of: '2026-07-15'
+  surface: dq
+  difficulty: medium
+  tags:
+  - dq
+  - disabled_connector
+  expected_citations: []
+  updated_at: '2026-07-21T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT COUNT(*) AS row_count FROM marts.fact_daily_kpi WHERE project_id
+      = 'default' AND connector = 'twitter-ads' AND date BETWEEN '2026-06-16' AND
+      '2026-07-15'
+    expected_result_fixture: fixtures/dq_connector_disabled_check.json
+    fixture_sha256: 6e0aab82092b58e022835fda1f04472bd70568af1abbab563c5dc9616413e4f5
+    role: canonical_correct
+    note: 'twitter-ads row count — fixture is [{row_count: 0}] (connector never seeded/activated)'
+- id: dq_ga4_anomaly_day_75
+  question: Vérifie les anomalies détectées dans les métriques quotidiennes sur les
+    90 derniers jours.
+  as_of: '2026-07-15'
+  surface: dq
+  difficulty: medium
+  tags:
+  - dq
+  - anomaly
+  - day75
+  expected_citations:
+  - source_system: google-analytics
+    source_field: anomalies_daily
+    pull_id_required: false
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT date, connector, metric, observed_value, expected_value,
+      zscore FROM marts.anomalies_daily WHERE project_id = 'default' AND connector
+      = 'google-analytics' AND metric = 'sessions' ORDER BY zscore DESC LIMIT 1
+    expected_result_fixture: fixtures/dq_ga4_anomaly_day_75.json
+    fixture_sha256: 1b2cb4fab8e99f721b3e5115b2becf7cc6a441e57966cf98c9c10fa8147054f9
+    role: canonical_correct
+    note: Highest z_score anomaly query
+- id: dq_provenance_gap_null_pull_id
+  question: Détecte les enregistrements dans le warehouse n'ayant pas de pull_id associé.
+  as_of: '2026-07-15'
+  surface: dq
+  difficulty: medium
+  tags:
+  - dq
+  - provenance
+  - null_pull_id
+  expected_citations: []
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT COUNT(*) AS null_pull_count FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND pull_id IS NULL
+    expected_result_fixture: fixtures/dq_provenance_gap_null_pull_id.json
+    fixture_sha256: 938329301d1a7a26e76357b45800573f7d25d3300515bcaa0fd0f99cdfd5d094
+    role: canonical_correct
+    note: 'Null pull_id rows count — expected 0 gaps (all seed rows have pull_id);
+      fixture is [{null_pull_count: 0}] not []'
+- id: dq_baseline_deviation_check
+  question: Examine la déviation de la métrique sessions GA4 par rapport à sa baseline
+    sur les 30 derniers jours.
+  as_of: '2026-07-15'
+  surface: dq
+  difficulty: medium
+  tags:
+  - dq
+  - baseline
+  expected_citations: []
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT connector, metric, rolling_mean, rolling_stddev FROM marts.metric_baselines
+      WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
+      'sessions'
+    expected_result_fixture: fixtures/dq_baseline_deviation_check.json
+    fixture_sha256: b2044ee8ec54fdbf28bea5a895120b8ea3c30f2b4f15bbacb30e764a4824a420
+    role: canonical_correct
+    note: Baseline deviation evaluation query
+- id: as_of_ga4_sessions_historical_replay
+  question: Obtiens les sessions quotidiennes GA4 rejouées à la date as_of du 2026-06-30.
+  as_of: '2026-06-30'
+  surface: as_of
+  difficulty: medium
+  tags:
+  - as_of
+  - ga4
+  - sessions
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT date, SUM(value) AS sessions FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
+      AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-01' AND '2026-06-30'
+      GROUP BY date ORDER BY date
+    expected_result_fixture: fixtures/as_of_ga4_sessions_historical_replay.json
+    fixture_sha256: 808cea60d6dbf09f72af809c07106fe7baa1cdc91e58e368f64156a8005daaac
+    role: canonical_correct
+    note: GA4 daily sessions replayed as of June 30 2026
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-06-01'
+        end: '2026-06-30'
+      as_of: '2026-06-30T23:59:59Z'
+    result_selector:
+      kind: fact_sum_by_date
+      connector: google-analytics
+      metric: sessions
+      breakdown_dimension: country
+      round: null
+- id: as_of_meta_cost_replay
+  question: Obtiens le coût Meta Ads rejoué à la date as_of du 2026-06-15 sur les
+    14 jours précédents.
+  as_of: '2026-06-15'
+  surface: as_of
+  difficulty: medium
+  tags:
+  - as_of
+  - meta-ads
+  - cost
+  expected_citations:
+  - source_system: meta-ads
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT date, SUM(value) AS cost FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'meta-ads' AND metric = 'cost' AND breakdown_dimension
+      = 'campaign_id' AND date BETWEEN '2026-06-02' AND '2026-06-15' GROUP BY date
+      ORDER BY date
+    expected_result_fixture: fixtures/as_of_meta_cost_replay.json
+    fixture_sha256: 0446020d69a043f996199458821a09d3e524bf0c1ce5d43e03dd644f6b6d369d
+    role: canonical_correct
+    note: Meta cost replayed as of June 15 2026
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - meta-ads
+      date_range:
+        start: '2026-06-02'
+        end: '2026-06-15'
+      as_of: '2026-06-15T23:59:59Z'
+    result_selector:
+      kind: fact_sum_by_date
+      connector: meta-ads
+      metric: cost
+      breakdown_dimension: campaign_id
+      round: null
+- id: as_of_gsc_clicks_historical
+  question: Obtiens les clics GSC enregistrés jusqu'à la date as_of du 2026-05-31.
+  as_of: '2026-05-31'
+  surface: as_of
+  difficulty: medium
+  tags:
+  - as_of
+  - gsc
+  - clicks
+  expected_citations:
+  - source_system: gsc
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS clicks FROM marts.fact_daily_kpi WHERE project_id
+      = 'default' AND connector = 'gsc' AND metric = 'clicks' AND breakdown_dimension
+      = 'page' AND date BETWEEN '2026-05-01' AND '2026-05-31'
+    expected_result_fixture: fixtures/as_of_gsc_clicks_historical.json
+    fixture_sha256: 0be7e8c5cd185ad7563b8304d3275bae65ce8d25d89135c6a27372ec318b1eab
+    role: canonical_correct
+    note: GSC clicks total for May 2026 as_of anchor
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - gsc
+      date_range:
+        start: '2026-05-01'
+        end: '2026-05-31'
+      as_of: '2026-05-31T23:59:59Z'
+    result_selector:
+      kind: fact_sum
+      connector: gsc
+      metric: clicks
+      breakdown_dimension: page
+      round: null
+- id: as_of_notebook_execution_window
+  question: Exécute le bloc de notebook pour les conversions GA4 ancré au 2026-06-30.
+  as_of: '2026-06-30'
+  surface: as_of
+  difficulty: medium
+  tags:
+  - as_of
+  - notebook
+  - ga4
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT date, SUM(value) AS conversions FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
+      'conversions' AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16'
+      AND '2026-06-30' GROUP BY date ORDER BY date
+    expected_result_fixture: fixtures/as_of_notebook_execution_window.json
+    fixture_sha256: ed0342845c350437f95c627e93bce566004cb57133f1dffde93a3150bb96dc5c
+    role: canonical_correct
+    note: Notebook execution window as of June 30 2026
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-06-16'
+        end: '2026-06-30'
+      as_of: '2026-06-30T23:59:59Z'
+    result_selector:
+      kind: fact_sum_by_date
+      connector: google-analytics
+      metric: conversions
+      breakdown_dimension: country
+      round: null
+- id: as_of_gsc_impressions_replay
+  question: Affiche les impressions GSC rejouées jusqu'à la date as_of du 2026-06-30.
+  as_of: '2026-06-30'
+  surface: as_of
+  difficulty: medium
+  tags:
+  - as_of
+  - gsc
+  - impressions
+  expected_citations:
+  - source_system: gsc
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS impressions FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'gsc' AND metric = 'impressions' AND
+      breakdown_dimension = 'page' AND date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/as_of_gsc_impressions_replay.json
+    fixture_sha256: 6e67df9863335dd8130afb5570bc7e935938966f920e190a6746928b578cc5fb
+    role: canonical_correct
+    note: GSC impressions total for June 2026 as_of anchor
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - gsc
+      date_range:
+        start: '2026-06-01'
+        end: '2026-06-30'
+      as_of: '2026-06-30T23:59:59Z'
+    result_selector:
+      kind: fact_sum
+      connector: gsc
+      metric: impressions
+      breakdown_dimension: page
+      round: null
+- id: grain_trap_ga4_sessions_multi_breakdown
+  question: Quel est le total de sessions Google Analytics sur juin 2026 ?
+  as_of: '2026-07-15'
+  surface: grain_trap
+  difficulty: hard
+  tags:
+  - ga4
+  - sessions
+  - grain_trap
+  - double_count
+  grain_trap_note: 'summing sessions across all breakdown_dimension values in fact_daily_kpi
+    inflates the total by N× (where N = number of parallel session series: country,
+    country>device, device_category, user_type, session_source_medium, session_campaign,
+    etc.); pinning to one canonical breakdown_dimension=''country'' is required'
+  expected_citations: []
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_sessions_WRONG FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
+      'sessions' AND date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_ga4_sessions_multi_breakdown__naive_wrong.json
+    fixture_sha256: e3ef46e47bc20fd5208057bd5e7b613862226a6a05f65a7b616ef74702245fbc
+    role: naive_wrong
+    note: Naive sum across all breakdown_dimensions — produces 3x the correct total
+  - reference_sql: SELECT SUM(value) AS total_sessions FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
+      AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_ga4_sessions_multi_breakdown__canonical_correct.json
+    fixture_sha256: d5393aba65ea26b6871dd6f564046cb3c414b212c33e1251a26b71dbe21aa930
+    role: canonical_correct
+    note: Pin to country breakdown — the lexicographic MIN for GA4
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-06-01'
+        end: '2026-06-30'
+    result_selector:
+      kind: fact_sum
+      connector: google-analytics
+      metric: sessions
+      breakdown_dimension: country
+      round: null
+- id: grain_trap_ga4_conversions_attribution
+  question: Combien de conversions GA4 ai-je eu en tout en juin 2026 ?
+  as_of: '2026-07-15'
+  surface: grain_trap
+  difficulty: hard
+  tags:
+  - ga4
+  - conversions
+  - grain_trap
+  - attribution
+  grain_trap_note: summing conversions across all breakdown_dimension values inflates
+    the count by N× because each attribution series (country, device_category, user_type,
+    session_source_medium, session_campaign, first_user_source_medium) independently
+    totals the same day's conversions; pinning to breakdown_dimension='country' yields
+    the canonical single total
+  expected_citations: []
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_conversions_WRONG FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
+      'conversions' AND date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_ga4_conversions_attribution__naive_wrong.json
+    fixture_sha256: 7a74ecfbb898d67865c65be887ebff605876a97972a5025e02655030930a97cc
+    role: naive_wrong
+    note: Naive sum across all attribution breakdowns
+  - reference_sql: SELECT SUM(value) AS total_conversions FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
+      'conversions' AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-01'
+      AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_ga4_conversions_attribution__canonical_correct.json
+    fixture_sha256: 6b3829194b40edec842197373b4a5a1f1f17a1ef379426b40d4a2943c905df56
+    role: canonical_correct
+    note: Pin to country breakdown — canonical series for GA4
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-06-01'
+        end: '2026-06-30'
+    result_selector:
+      kind: fact_sum
+      connector: google-analytics
+      metric: conversions
+      breakdown_dimension: country
+      round: null
+- id: grain_trap_gsc_average_position
+  question: What is the overall average position for GSC in June 2026?
+  as_of: '2026-07-15'
+  surface: grain_trap
+  difficulty: hard
+  tags:
+  - gsc
+  - average_position
+  - grain_trap
+  - non_additive
+  grain_trap_note: SUM(value) on metric='average_position' in fact_daily_kpi returns
+    null because average_position is non-additive and NOT stored in fact_daily_kpi
+    at all; the correct approach queries marts.semantic_avg_position and computes
+    the impression-weighted mean SUM(average_position * impressions_weight) / NULLIF(SUM(impressions_weight),
+    0) over the window — a single scalar
+  expected_citations: []
+  updated_at: '2026-07-21T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS avg_position_WRONG FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND connector = 'gsc' AND metric = 'average_position'
+      AND date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_gsc_average_position__naive_wrong.json
+    fixture_sha256: 014bf9a439d00f2382742f26ebd4f037815d308d612ec86fc4199c263c20d91b
+    role: naive_wrong
+    note: Naive SUM against fact_daily_kpi returns one null row — avg_position not
+      in this mart
+  - reference_sql: SELECT ROUND(SUM(average_position * impressions_weight) / NULLIF(SUM(impressions_weight),
+      0), 2) AS overall_avg_position FROM marts.semantic_avg_position WHERE project_id
+      = 'default' AND connector = 'gsc' AND date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_gsc_average_position__canonical_correct.json
+    fixture_sha256: 512d1996921e5f34b8578dc85a704c9d8f30f4d53f40b6f67917135850be0019
+    role: canonical_correct
+    note: 'Impression-weighted overall average position: SUM(average_position * impressions_weight)
+      / NULLIF(SUM(impressions_weight), 0) — one scalar for June 2026, matching the
+      grain_trap_note'
+- id: grain_trap_meta_ctr_ratio
+  question: What is the CTR for Meta Ads over June 2026?
+  as_of: '2026-07-15'
+  surface: grain_trap
+  difficulty: hard
+  tags:
+  - meta-ads
+  - ctr
+  - grain_trap
+  - ratio
+  grain_trap_note: AVG(value) on metric='ctr' in fact_daily_kpi returns null because
+    ctr is a derived ratio not stored in fact_daily_kpi; the correct approach queries
+    marts.semantic_ctr which computes ratio-of-sums SUM(clicks)/NULLIF(SUM(impressions),0)
+    and weights days correctly by impression volume
+  expected_citations: []
+  updated_at: '2026-07-21T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT AVG(value) AS ctr_WRONG FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'meta-ads' AND metric = 'ctr' AND date
+      BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_meta_ctr_ratio__naive_wrong.json
+    fixture_sha256: 9f185da57db2beaa893ab5e002697918466db5c0a530915fab21f876ed9a9b0f
+    role: naive_wrong
+    note: Naive AVG against fact_daily_kpi returns one null row — ctr not stored in
+      this mart
+  - reference_sql: SELECT date, breakdown_dimension, breakdown_value, ctr FROM marts.semantic_ctr
+      WHERE project_id = 'default' AND connector = 'meta-ads' AND date BETWEEN '2026-06-01'
+      AND '2026-06-30' ORDER BY date, breakdown_dimension, breakdown_value
+    expected_result_fixture: fixtures/grain_trap_meta_ctr_ratio__canonical_correct.json
+    fixture_sha256: 046150e2df02d6e02e369c137f1cce61dd4ae57a00fbd10ae0ff0c43c1ea36c7
+    role: canonical_correct
+    note: Query dedicated semantic_ctr mart for ratio-of-sums (real rows with actual
+      CTR values)
+- id: grain_trap_meta_data_level_double_count
+  question: Quel est le total de clics Meta Ads sur juin 2026 ?
+  as_of: '2026-07-15'
+  surface: grain_trap
+  difficulty: hard
+  tags:
+  - meta-ads
+  - clicks
+  - grain_trap
+  - data_level
+  grain_trap_note: summing across ALL breakdown_dimension rows (campaign + adset +
+    ad) triples the total because each data_level is a parallel series of the full
+    day
+  expected_citations: []
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS clicks_WRONG FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'meta-ads' AND metric = 'clicks' AND
+      date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_meta_data_level_double_count__naive_wrong.json
+    fixture_sha256: 2a71283844477b1c8e7a5724954fa3cb84af25d9070112b559520c8948605684
+    role: naive_wrong
+    note: Naive sum across all data_levels — triples total
+  - reference_sql: SELECT SUM(value) AS total_clicks FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'meta-ads' AND metric = 'clicks' AND
+      breakdown_dimension = 'campaign_id' AND date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_meta_data_level_double_count__canonical_correct.json
+    fixture_sha256: d2b340598fb559c00ce3207bc0fe10cedc1124df35fcc3e163f31f0499b7e3a9
+    role: canonical_correct
+    note: Pin breakdown_dimension = 'campaign_id'
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - meta-ads
+      date_range:
+        start: '2026-06-01'
+        end: '2026-06-30'
+    result_selector:
+      kind: fact_sum
+      connector: meta-ads
+      metric: clicks
+      breakdown_dimension: campaign_id
+      round: null
+- id: grain_trap_cross_source_conversions_dedup
+  question: Combien de conversions ai-je eu au total (toutes sources) sur juin 2026
+    ?
+  as_of: '2026-07-15'
+  surface: grain_trap
+  difficulty: hard
+  tags:
+  - cross-connector
+  - conversions
+  - grain_trap
+  - dedup
+  grain_trap_note: SUM(value) WHERE metric='conversions' across ALL connectors in
+    fact_daily_kpi counts each conversion attributed by EVERY régie that claimed it
+    — a user converting via GA4 and Meta Ads is counted twice; the canonical approach
+    queries marts.cross_source_conversions, which applies Rule P priority deduplication
+    to pick one winning connector per (project_id, date) and sum only that connector's
+    conversions on its canonical breakdown dimension
+  expected_citations: []
+  updated_at: '2026-07-21T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS conversions_WRONG FROM marts.fact_daily_kpi
+      WHERE project_id = 'default' AND metric = 'conversions' AND date BETWEEN '2026-06-01'
+      AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_cross_source_conversions_dedup__naive_wrong.json
+    fixture_sha256: ebf95770ca574fe6e0612e57dac5f843b5607a538c7b8e39d3a4093b83d26dda
+    role: naive_wrong
+    note: Naive sum across ALL connectors and ALL breakdown dims — over-counts cross-régie
+      attributions by N× the number of parallel series
+  - reference_sql: SELECT SUM(conversions_total) AS total_deduped_conversions FROM
+      marts.cross_source_conversions WHERE project_id = 'default' AND date BETWEEN
+      '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_cross_source_conversions_dedup__canonical_correct.json
+    fixture_sha256: 7d434c722554e77de09d03ca063a4311f4b8d95a8ee096c7f82d054506638c49
+    role: canonical_correct
+    note: 'Rule P dedup via marts.cross_source_conversions: one winning connector
+      per (project_id, date), summed over June 2026 — a real substantive number, strictly
+      less than the naive total'
+- id: grain_trap_klaviyo_campaign_vs_flow
+  question: What is the total number of Klaviyo email sends (campaigns + flows) in
+    June 2026?
+  as_of: '2026-07-15'
+  surface: grain_trap
+  difficulty: hard
+  tags:
+  - klaviyo
+  - sends
+  - grain_trap
+  grain_trap_note: filtering breakdown_dimension='campaign_id' alone excludes all
+    flow-originated email sends; campaign and flow series are mutually exclusive in
+    Klaviyo and must both be included for the complete channel send total
+  expected_citations: []
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS sends_WRONG FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'klaviyo' AND metric = 'sends' AND breakdown_dimension
+      = 'campaign_id' AND date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_klaviyo_campaign_vs_flow__naive_wrong.json
+    fixture_sha256: bffdf0c06f78bdaeb3b3aa3f77b58f1bd8207cd8aefdee2670b40ca3755d091c
+    role: naive_wrong
+    note: Naive filter campaign_id alone — omits all flow sends
+  - reference_sql: SELECT SUM(value) AS total_sends FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'klaviyo' AND metric = 'sends' AND breakdown_dimension
+      IN ('campaign_id', 'flow_id') AND date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_klaviyo_campaign_vs_flow__canonical_correct.json
+    fixture_sha256: dc94d92ec288ab813f7deb464c53a5495d12f90b3d2be4053284c54138c30231
+    role: canonical_correct
+    note: Union campaign_id and flow_id breakdowns for total Klaviyo sends
+- id: grain_trap_linkedin_campaign_vs_group
+  question: What is the total LinkedIn cost for June 2026?
+  as_of: '2026-07-15'
+  surface: grain_trap
+  difficulty: hard
+  tags:
+  - linkedin-ads
+  - cost
+  - grain_trap
+  grain_trap_note: summing across both campaign_id and campaign_group_id double-counts
+    because campaign_groups are roll-ups of campaigns; one grain must be picked
+  expected_citations: []
+  updated_at: '2026-07-20T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS cost_WRONG FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'linkedin-ads' AND metric = 'cost' AND
+      date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_linkedin_campaign_vs_group__naive_wrong.json
+    fixture_sha256: e782cd65132f3e934d819810b16633a240071e7282b390f51d349b9a19ca8899
+    role: naive_wrong
+    note: Naive sum across campaign and campaign_group series
+  - reference_sql: SELECT SUM(value) AS total_cost FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'linkedin-ads' AND metric = 'cost' AND
+      breakdown_dimension = 'campaign_id' AND date BETWEEN '2026-06-01' AND '2026-06-30'
+    expected_result_fixture: fixtures/grain_trap_linkedin_campaign_vs_group__canonical_correct.json
+    fixture_sha256: 24ef0333bedf9cfbe60077467614779d20acb3545a981c4cb293033b43ebad4f
+    role: canonical_correct
+    note: Pin breakdown_dimension = 'campaign_id'
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - linkedin-ads
+      date_range:
+        start: '2026-06-01'
+        end: '2026-06-30'
+    result_selector:
+      kind: fact_sum
+      connector: linkedin-ads
+      metric: cost
+      breakdown_dimension: campaign_id
+      round: null

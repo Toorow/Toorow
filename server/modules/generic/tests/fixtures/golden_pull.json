@@ -1,0 +1,20 @@
+[
+  {
+    "date": "2026-07-01",
+    "cost": 120.5,
+    "revenue": 350.0,
+    "campaign": "summer_sale"
+  },
+  {
+    "date": "2026-07-02",
+    "cost": 98.0,
+    "revenue": 280.0,
+    "campaign": "summer_sale"
+  },
+  {
+    "date": "2026-07-03",
+    "cost": 145.0,
+    "revenue": 410.0,
+    "campaign": "retargeting"
+  }
+]

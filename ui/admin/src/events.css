@@ -1,0 +1,130 @@
+/**
+ * events.css — page-specific styles for the Business Context (events) surface.
+ *
+ * Follows the sources.css conventions: shell/layout classes (panel, page-header,
+ * header-actions, section-header, table, signal-label, primary-button,
+ * secondary-button, sr-only) live in application.css and are global. This file
+ * only adds the events-specific pieces: the add-event form layout, its field
+ * rows, the inline validation notes, and the events-table cell treatments.
+ *
+ * Tokenized: every color references an application.css CSS variable so both the
+ * light and dark schemes resolve. Numbers (dates) use the Geist tabular
+ * treatment via the .number class from application.css.
+ */
+
+.events-layout {
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .events-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Add-event form panel ---------------------------------------------------- */
+
+.event-form {
+  padding: 20px;
+}
+.event-form .field {
+  margin-top: 16px;
+}
+.event-form .field:first-of-type {
+  margin-top: 18px;
+}
+.event-form .field label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.event-form .field-input,
+.event-form .field-select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.event-form .field-input:focus-visible,
+.event-form .field-select:focus-visible {
+  outline: 2px solid var(--focus, var(--info));
+  outline-offset: 1px;
+}
+
+/* Inline form notices (error / success), tokenized to the signal palette. */
+.form-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.form-note.error {
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--surface));
+  background: color-mix(in srgb, var(--error) 9%, var(--surface));
+  color: var(--ink);
+}
+.form-note.success {
+  border: 1px solid color-mix(in srgb, var(--success) 30%, var(--surface));
+  background: color-mix(in srgb, var(--success) 9%, var(--surface));
+  color: var(--ink);
+}
+.form-note button {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.event-form .primary-button {
+  width: 100%;
+  margin-top: 20px;
+}
+
+/* Events table panel ------------------------------------------------------ */
+
+.events-panel {
+  overflow: hidden;
+}
+.events-table td.date {
+  white-space: nowrap;
+}
+.events-table .type-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+/* Loading / empty / error states inside the panel. */
+.events-state {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+.events-state.error {
+  color: var(--error);
+}

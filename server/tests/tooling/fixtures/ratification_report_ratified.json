@@ -1,0 +1,44 @@
+{
+  "account": "properties/123456789",
+  "api_version": "GA4 Data API v1",
+  "coverage": {
+    "empty": 1,
+    "ok": 3,
+    "rejected": 0,
+    "unprobed": 0,
+    "unsupported": 0
+  },
+  "connection_ref": "conn_***a1b2",
+  "error_probe": {
+    "invalid_request": {
+      "classified": "invalid_request",
+      "expected": "invalid_request",
+      "match": true,
+      "probed": true
+    },
+    "invalid_token": {
+      "classified": null,
+      "expected": "auth_expired_or_revoked",
+      "match": null,
+      "probed": false
+    }
+  },
+  "fields": {
+    "active_users": "ok",
+    "conversions": "ok",
+    "country": "empty",
+    "sessions": "ok"
+  },
+  "module": "google-analytics",
+  "probed_at": "2026-07-21T12:00:00Z",
+  "request_style": "report_statistics",
+  "schema_version": "1",
+  "tiers": ["core"],
+  "topology_probe": {
+    "account_reachable": true,
+    "declared": true,
+    "probed": true,
+    "reachable_count": 2
+  },
+  "verdict": "ratified"
+}

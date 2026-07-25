@@ -1,0 +1,117 @@
+{
+  "connector": "stripe",
+  "api_version": "2024-06-20",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "official_fields.json is curated from the Stripe API reference objects (charges, balance_transactions, invoices, subscriptions, refunds, payouts, customers). Fields are derived from the official object schemas at docs.stripe.com/api. Reporting-relevant scalar and aggregate fields are included; deeply-nested payment-method variant fields (e.g. payment_method_details.card.checks.*, card_present.receipt.*) are excluded as they do not bear reporting metrics. The Stripe API is versioned via a request header (Stripe-Version), not the URL path; api_version refers to the header value pinned in connector.py.",
+    "manifest_field_coverage": "All 9 fields in manifest.json source_capabilities.fields are present in official_fields.json with matching kind and source_field. These 9 fields are marked exposure='exposed'; all remaining fields are 'planned'.",
+    "supermetrics_enrichment": "Supermetrics catalog for Stripe lists 62 metrics / 206 dimensions (fetched 2026-07-21 from https://docs.supermetrics.com/docs/stripe-fields.md). Enrichment-only fields (e.g. coupon_id, app_fee_id, balance_source_card counts, transaction_charge_percent) are documented in this file but NOT emitted in official_fields.json — enrichment is never the authority per the playbook. Supermetrics coverage is used to validate tier assignments and discover missed sections."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://docs.stripe.com/api/charges/object",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "balance_transactions_object",
+          "url": "https://docs.stripe.com/api/balance_transactions/object",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "invoices_object",
+          "url": "https://docs.stripe.com/api/invoices/object",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "subscriptions_object",
+          "url": "https://docs.stripe.com/api/subscriptions/object",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "refunds_object",
+          "url": "https://docs.stripe.com/api/refunds/object",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "payouts_object",
+          "url": "https://docs.stripe.com/api/payouts/object",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "customers_object",
+          "url": "https://docs.stripe.com/api/customers/object",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "error_codes_and_types",
+          "url": "https://docs.stripe.com/api/errors",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "file": "supermetrics.md",
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/stripe-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/stripe-fields.md -o server/modules/stripe/catalog_sources/supermetrics.md   # DO NOT COMMIT this file (enrichment snapshot only)"
+    }
+  ],
+  "section_tier_map": {
+    "CHARGE": "core",
+    "BALANCE TRANSACTION": "core",
+    "CUSTOMER": "core",
+    "INVOICE": "standard",
+    "SUBSCRIPTION": "standard",
+    "REFUND": "advanced",
+    "PAYOUT": "advanced",
+    "PLATFORM CONTRACT": "core"
+  },
+  "field_tier_overrides": {
+    "charge_id": "core",
+    "date": "core",
+    "amount": "core",
+    "amount_refunded": "core",
+    "fee_amount": "core",
+    "transaction_count": "core",
+    "order_count": "core",
+    "payment_intent_id": "core",
+    "client_reference_id": "core",
+    "charge_currency": "core",
+    "charge_status": "core",
+    "customer_id": "core",
+    "customer_email": "standard",
+    "customer_name": "standard",
+    "bt_id": "standard",
+    "bt_type": "standard",
+    "bt_net": "standard",
+    "invoice_id": "standard",
+    "invoice_status": "standard",
+    "invoice_total": "standard",
+    "subscription_id": "standard",
+    "subscription_status": "standard",
+    "refund_id": "advanced",
+    "refund_amount": "advanced",
+    "payout_id": "advanced",
+    "payout_amount": "advanced"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "report_statistics",
+    "batch_size": 20,
+    "structural_note": "Stripe list endpoints return whole objects over a created[] window (limit=1) with expand[] for nested fields (e.g. balance_transaction.fee). Fields are ratified by presence in the returned object; a field absent from a non-empty object is recorded empty, an expand target Stripe rejects is recorded unsupported after bisection."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {
+    "CUSTOMER": "Customer object is not expanded by the charge fetch; charge.customer contains only the customer id string, not the full Customer object. Requires a separate /v1/customers/{id} call per charge, which is not performed by the daily pull.",
+    "INVOICE": "Invoice objects are not fetched by the daily pull; requires additional endpoint fetches (/v1/invoices). The daily pull reads /v1/charges only.",
+    "SUBSCRIPTION": "Subscription objects are not fetched by the daily pull; requires additional endpoint fetches (/v1/subscriptions). The daily pull reads /v1/charges only.",
+    "REFUND": "Individual Refund sub-objects are not fetched by the daily pull; charge.amount_refunded (already exposed as the refunds metric via PLATFORM CONTRACT) is a scalar total on the Charge, not the list of Refund objects. Requires a separate /v1/refunds call, which is not performed by the daily pull.",
+    "PAYOUT": "Payout objects are not fetched by the daily pull; requires additional endpoint fetches (/v1/payouts). The daily pull reads /v1/charges only."
+  },
+  "_exposure_note": "Story 25.9: exposure_policy=catalog_driven. Fetchable sections (CHARGE, BALANCE TRANSACTION, PLATFORM CONTRACT) have their fields set to exposure=catalog_driven in api_catalog.json; excluded sections (CUSTOMER, INVOICE, SUBSCRIPTION, REFUND, PAYOUT) have their fields set to exposure=excluded with honest reasons. The daily pull calls /v1/charges with expand[]=data.balance_transaction, making Charge fields and their embedded BalanceTransaction available; all other object types require separate endpoint calls not performed here."
+}

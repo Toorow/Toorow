@@ -1,0 +1,22 @@
+[
+  {
+    "landing_page": "/",
+    "sessions": 36248.0
+  },
+  {
+    "landing_page": "/pricing",
+    "sessions": 16745.0
+  },
+  {
+    "landing_page": "/features",
+    "sessions": 10902.0
+  },
+  {
+    "landing_page": "/blog",
+    "sessions": 8133.0
+  },
+  {
+    "landing_page": "/about",
+    "sessions": 6768.0
+  }
+]

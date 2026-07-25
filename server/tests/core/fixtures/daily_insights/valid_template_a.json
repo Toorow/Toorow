@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1",
+  "slot": 0,
+  "insight": {
+    "title": "Spend rises without verified gain",
+    "summary": "Meta Ads spends more while verified conversions stay flat.",
+    "whyItMatters": "Declared progress does not show in the project's source of truth.",
+    "recommendedAction": "Review the responsible campaigns before increasing budget.",
+    "confidence": "high",
+    "limitations": []
+  },
+  "period": {
+    "dateFrom": "2026-07-21",
+    "dateTo": "2026-07-21",
+    "comparison": "previous_7_days"
+  },
+  "card": {
+    "mode": "template",
+    "template": "conversions",
+    "metrics": ["conversions", "cost"]
+  },
+  "evidenceRefs": ["ev_1"],
+  "sourceRefs": ["report:meta/daily"]
+}

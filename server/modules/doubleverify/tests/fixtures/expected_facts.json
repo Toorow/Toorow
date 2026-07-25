@@ -1,0 +1,44 @@
+[
+  {
+    "pull_id": "pull_doubleverify_001",
+    "connector": "doubleverify",
+    "date": "2026-07-01",
+    "advertiser_name": "Acme Corp",
+    "campaign": "Summer Brand Push",
+    "monitored_ads": 100000,
+    "measured_impressions": 95000,
+    "viewable_impressions": 72000,
+    "fraud_sivt_incidents": 1200,
+    "fraud_sivt_free_ads": 98800,
+    "brand_suitability_incidents": 800,
+    "brand_suitable_ads": 99200
+  },
+  {
+    "pull_id": "pull_doubleverify_001",
+    "connector": "doubleverify",
+    "date": "2026-07-01",
+    "advertiser_name": "Acme Corp",
+    "campaign": "Always-On Prospecting",
+    "monitored_ads": 54000,
+    "measured_impressions": 51300,
+    "viewable_impressions": 38900,
+    "fraud_sivt_incidents": 430,
+    "fraud_sivt_free_ads": 53570,
+    "brand_suitability_incidents": 260,
+    "brand_suitable_ads": 53740
+  },
+  {
+    "pull_id": "pull_doubleverify_002",
+    "connector": "doubleverify",
+    "date": "2026-07-02",
+    "advertiser_name": "Acme Corp",
+    "campaign": "Summer Brand Push",
+    "monitored_ads": 110500,
+    "measured_impressions": 104900,
+    "viewable_impressions": 80100,
+    "fraud_sivt_incidents": 1310,
+    "fraud_sivt_free_ads": 109190,
+    "brand_suitability_incidents": 905,
+    "brand_suitable_ads": 109595
+  }
+]

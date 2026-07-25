@@ -1,0 +1,26 @@
+{
+  "schema_version": "1",
+  "name": "BrokenModule",
+  "display_name": "Broken Module (test fixture)",
+  "auth_type": "unknown",
+  "report_profiles": [
+    {
+      "id": "broken_report",
+      "display_name": "Broken Report",
+      "metrics": ["some_metric"],
+      "dimensions": ["some_dim"],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      }
+    }
+  ],
+  "canonical_metric_mapping": {
+    "some_metric": "some_metric"
+  },
+  "canonical_dimension_mapping": {
+    "some_dim": "some_dim"
+  },
+  "widget_ref": "ui://broken-module/default"
+}

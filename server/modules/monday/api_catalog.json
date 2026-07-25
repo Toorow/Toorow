@@ -1,0 +1,189 @@
+{
+  "api_version": "2026-07",
+  "catalog_version": "1",
+  "connector": "monday",
+  "fields": [
+    {
+      "description": "Opaque monday board identifier.",
+      "exposure": "exposed",
+      "field_id": "board_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BOARD",
+      "source_field": "boards.id",
+      "tier": "core"
+    },
+    {
+      "description": "Runtime board column identifier.",
+      "exposure": "exposed",
+      "field_id": "column_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DYNAMIC COLUMNS",
+      "source_field": "items_page.items.column_values.id",
+      "tier": "core"
+    },
+    {
+      "description": "Uncoerced typed column JSON at item-column grain.",
+      "exposure": "exposed",
+      "field_id": "column_raw_value",
+      "kind": "dimension",
+      "physical_type": "json",
+      "section": "DYNAMIC COLUMNS",
+      "source_field": "items_page.items.column_values.value",
+      "tier": "core"
+    },
+    {
+      "description": "Human-readable column text.",
+      "exclusion_reason": "internal provenance field, not projected to fact_daily_kpi",
+      "exposure": "excluded",
+      "field_id": "column_text",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DYNAMIC COLUMNS",
+      "source_field": "items_page.items.column_values.text",
+      "tier": "core"
+    },
+    {
+      "description": "Runtime monday column type.",
+      "exposure": "exposed",
+      "field_id": "column_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DYNAMIC COLUMNS",
+      "source_field": "items_page.items.column_values.type",
+      "tier": "core"
+    },
+    {
+      "description": "Typed board-specific column values with raw JSON preserved.",
+      "exposure": "exposed",
+      "field_id": "column_values",
+      "kind": "dimension",
+      "physical_type": "json",
+      "section": "DYNAMIC COLUMNS",
+      "source_field": "items_page.items.column_values",
+      "tier": "core"
+    },
+    {
+      "description": "Date of a board change.",
+      "exposure": "exposed",
+      "field_id": "event_date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "EVENT",
+      "source_field": "updates.updated_at",
+      "tier": "core"
+    },
+    {
+      "description": "Stable board-change label.",
+      "exposure": "exposed",
+      "field_id": "event_label",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "EVENT",
+      "source_field": "updates.id",
+      "tier": "core"
+    },
+    {
+      "description": "Board group identifier.",
+      "exposure": "exposed",
+      "field_id": "group_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ITEM",
+      "source_field": "items_page.items.group.id",
+      "tier": "core"
+    },
+    {
+      "description": "Opaque monday item identifier.",
+      "exposure": "exposed",
+      "field_id": "item_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ITEM",
+      "source_field": "items_page.items.id",
+      "tier": "core"
+    },
+    {
+      "description": "Item display name.",
+      "exposure": "exposed",
+      "field_id": "item_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ITEM",
+      "source_field": "items_page.items.name",
+      "tier": "core"
+    },
+    {
+      "description": "True when the column type is in the known-type registry.",
+      "exclusion_reason": "internal provenance flag, not projected to fact_daily_kpi",
+      "exposure": "excluded",
+      "field_id": "known_type",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "DYNAMIC COLUMNS",
+      "source_field": "items_page.items.column_values.type",
+      "tier": "core"
+    },
+    {
+      "description": "Board update or validated webhook change.",
+      "exposure": "exposed",
+      "field_id": "monday_change",
+      "kind": "event",
+      "physical_type": "datetime",
+      "section": "EVENT",
+      "source_field": "updates",
+      "tier": "core"
+    },
+    {
+      "description": "Parent identifier for a subitem.",
+      "exposure": "exposed",
+      "field_id": "parent_item_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ITEM",
+      "source_field": "items_page.items.parent_item.id",
+      "tier": "core"
+    },
+    {
+      "description": "Opaque pull run identifier for lineage.",
+      "exclusion_reason": "internal lineage field",
+      "exposure": "excluded",
+      "field_id": "pull_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "INTERNAL",
+      "source_field": "pull_id",
+      "tier": "core"
+    },
+    {
+      "description": "SHA-256 fingerprint of the board column schema at pull time.",
+      "exclusion_reason": "internal lineage field for schema drift detection",
+      "exposure": "excluded",
+      "field_id": "schema_fingerprint",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "INTERNAL",
+      "source_field": "boards.columns",
+      "tier": "core"
+    },
+    {
+      "description": "Last item update timestamp.",
+      "exposure": "exposed",
+      "field_id": "updated_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ITEM",
+      "source_field": "items_page.items.updated_at",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-22",
+      "kind": "official",
+      "url": "https://developer.monday.com/api-reference/reference/items-page"
+    }
+  ]
+}

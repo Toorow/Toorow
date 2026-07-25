@@ -1,0 +1,122 @@
+[
+  {
+    "field_id": "date",
+    "source_field": "variables/daterangeday",
+    "kind": "dimension",
+    "data_type": "date",
+    "section": "DIMENSION",
+    "description": "Report-suite-local calendar day."
+  },
+  {
+    "field_id": "rsid",
+    "source_field": "rsid",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Selected report suite id."
+  },
+  {
+    "field_id": "dimension",
+    "source_field": "dimension",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Dynamic reportable dimension id."
+  },
+  {
+    "field_id": "item_id",
+    "source_field": "rows.itemId",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Stable component item id."
+  },
+  {
+    "field_id": "item_value",
+    "source_field": "rows.value",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Human-readable component value."
+  },
+  {
+    "field_id": "parent_item_id",
+    "source_field": "rowContainer.rowId",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Stable parent item for bounded breakdowns."
+  },
+  {
+    "field_id": "segment_ids",
+    "source_field": "globalFilters.segmentId",
+    "kind": "dimension",
+    "data_type": "json",
+    "section": "DIMENSION",
+    "description": "Exact selected segment ids."
+  },
+  {
+    "field_id": "occurrences",
+    "source_field": "metrics/occurrences",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Occurrences at full report grain."
+  },
+  {
+    "field_id": "page_views",
+    "source_field": "metrics/pageviews",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Page views at full report grain."
+  },
+  {
+    "field_id": "orders",
+    "source_field": "metrics/orders",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Orders at full report grain."
+  },
+  {
+    "field_id": "revenue",
+    "source_field": "metrics/revenue",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Revenue in the report-suite currency."
+  },
+  {
+    "field_id": "visits",
+    "source_field": "metrics/visits",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Visits at exact report grain."
+  },
+  {
+    "field_id": "visitors",
+    "source_field": "metrics/visitors",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Visitors at exact report grain."
+  },
+  {
+    "field_id": "bounce_rate",
+    "source_field": "metrics/bouncerate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Non-additive bounce rate."
+  },
+  {
+    "field_id": "average_time_spent",
+    "source_field": "metrics/averagetimespent",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Non-additive average time spent."
+  }
+]

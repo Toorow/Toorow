@@ -1,0 +1,202 @@
+[
+  {
+    "field_id": "business_impressions_desktop_maps",
+    "source_field": "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Business impressions on Google Maps on Desktop. Deduplicated per unique user per day. Additive daily count (Performance API DailyMetric).",
+    "section": "PERFORMANCE - IMPRESSIONS"
+  },
+  {
+    "field_id": "business_impressions_desktop_search",
+    "source_field": "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Business impressions on Google Search on Desktop. Deduplicated per unique user per day. Additive daily count.",
+    "section": "PERFORMANCE - IMPRESSIONS"
+  },
+  {
+    "field_id": "business_impressions_mobile_maps",
+    "source_field": "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Business impressions on Google Maps on Mobile. Deduplicated per unique user per day. Additive daily count.",
+    "section": "PERFORMANCE - IMPRESSIONS"
+  },
+  {
+    "field_id": "business_impressions_mobile_search",
+    "source_field": "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Business impressions on Google Search on Mobile. Deduplicated per unique user per day. Additive daily count. Total impressions = sum of the 4 BUSINESS_IMPRESSIONS_* metrics (Google exposes no single combined metric).",
+    "section": "PERFORMANCE - IMPRESSIONS"
+  },
+  {
+    "field_id": "business_conversations",
+    "source_field": "BUSINESS_CONVERSATIONS",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of message conversations received on the business profile. Additive daily count.",
+    "section": "PERFORMANCE - ACTIONS"
+  },
+  {
+    "field_id": "business_direction_requests",
+    "source_field": "BUSINESS_DIRECTION_REQUESTS",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of times directions to the business location were requested. Additive daily count.",
+    "section": "PERFORMANCE - ACTIONS"
+  },
+  {
+    "field_id": "call_clicks",
+    "source_field": "CALL_CLICKS",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of times the call button was clicked. Additive daily count.",
+    "section": "PERFORMANCE - ACTIONS"
+  },
+  {
+    "field_id": "website_clicks",
+    "source_field": "WEBSITE_CLICKS",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of times the website link was clicked. Additive daily count.",
+    "section": "PERFORMANCE - ACTIONS"
+  },
+  {
+    "field_id": "business_bookings",
+    "source_field": "BUSINESS_BOOKINGS",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of bookings made from the profile via Reserve with Google. Additive daily count.",
+    "section": "PERFORMANCE - ACTIONS"
+  },
+  {
+    "field_id": "business_food_orders",
+    "source_field": "BUSINESS_FOOD_ORDERS",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of food orders received from the profile. Additive daily count.",
+    "section": "PERFORMANCE - ACTIONS"
+  },
+  {
+    "field_id": "business_food_menu_clicks",
+    "source_field": "BUSINESS_FOOD_MENU_CLICKS",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of clicks to view/interact with menu content. Deduplicated per unique user per day. Additive daily count.",
+    "section": "PERFORMANCE - ACTIONS"
+  },
+  {
+    "field_id": "date",
+    "source_field": "date",
+    "kind": "dimension",
+    "data_type": "date",
+    "description": "Reporting day (YYYY-MM-DD), from the Performance API datedValues[].date. Daily grain. Zero-days may be omitted by the API and are gap-filled to 0 by the connector.",
+    "section": "TIME"
+  },
+  {
+    "field_id": "location_id",
+    "source_field": "location_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "The reporting entity: Business Profile location id (resource name locations/{location_id}). Stamped on every row; the Performance and Reviews endpoints are scoped by this id. Discovered via Account Management accounts.list -> Business Information accounts.locations.list.",
+    "section": "TOPOLOGY"
+  },
+  {
+    "field_id": "account_id",
+    "source_field": "account_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Business Profile account id (accounts/{account_id}) owning the location. Structural; planned (not extracted into the daily fact by v1).",
+    "section": "TOPOLOGY"
+  },
+  {
+    "field_id": "location_title",
+    "source_field": "title",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Human-readable location name (Business Information Location.title). Label for the location_id. Planned.",
+    "section": "TOPOLOGY"
+  },
+  {
+    "field_id": "search_keyword",
+    "source_field": "searchKeyword",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "A search term users typed to find the business (searchkeywords.impressions.monthly). MONTHLY granularity only -- a separate monthly fact, never merged with the daily metrics stream. Planned.",
+    "section": "SEARCH KEYWORDS"
+  },
+  {
+    "field_id": "search_keyword_impressions",
+    "source_field": "insightsValue",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Monthly impression count for a search keyword. Union insightsValue.{value|threshold}: threshold = a floor for low-volume keywords (e.g. '<15') Google will not report exactly -- model as nullable/threshold-flagged. MONTHLY, additive within a month. Planned.",
+    "section": "SEARCH KEYWORDS"
+  },
+  {
+    "field_id": "review_id",
+    "source_field": "reviewId",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Encrypted unique review id (legacy My Business API v4 accounts.locations.reviews.list). Planned (v4 allowlist-gated).",
+    "section": "REVIEWS"
+  },
+  {
+    "field_id": "review_star_rating",
+    "source_field": "starRating",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Review star rating enum: STAR_RATING_UNSPECIFIED, ONE, TWO, THREE, FOUR, FIVE. Planned (v4-gated). The derived average rating is NON-ADDITIVE.",
+    "section": "REVIEWS"
+  },
+  {
+    "field_id": "review_comment",
+    "source_field": "comment",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Review free-text body. Planned (v4-gated).",
+    "section": "REVIEWS"
+  },
+  {
+    "field_id": "review_create_time",
+    "source_field": "createTime",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Review creation timestamp (RFC 3339). Planned (v4-gated).",
+    "section": "REVIEWS"
+  },
+  {
+    "field_id": "reviewer_display_name",
+    "source_field": "reviewer.displayName",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Reviewer display name (only when reviewer.isAnonymous=false). Planned (v4-gated).",
+    "section": "REVIEWS"
+  },
+  {
+    "field_id": "review_reply_comment",
+    "source_field": "reviewReply.comment",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Owner reply text to the review (<=4096 bytes). Planned (v4-gated).",
+    "section": "REVIEWS"
+  },
+  {
+    "field_id": "average_rating",
+    "source_field": "averageRating",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Location average star rating (reviews.list aggregate). NON-ADDITIVE (an average -- never summed). Planned (v4-gated).",
+    "section": "REVIEWS"
+  },
+  {
+    "field_id": "total_review_count",
+    "source_field": "totalReviewCount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Location total review count (reviews.list aggregate). Point-in-time count. Planned (v4-gated).",
+    "section": "REVIEWS"
+  }
+]

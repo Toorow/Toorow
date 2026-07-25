@@ -1,0 +1,86 @@
+{
+  "api_version": "toorow-generic-contract v1",
+  "catalog_version": "1",
+  "connector": "generic",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Declared canonical metric target for click count. Accepted as an allowed_target in the toorow-generic-contract v1.",
+      "exposure": "exposed",
+      "field_id": "clicks",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "GENERIC",
+      "source_field": "clicks",
+      "tier": "core"
+    },
+    {
+      "description": "Declared canonical metric target for conversion count. Accepted as an allowed_target in the toorow-generic-contract v1.",
+      "exposure": "exposed",
+      "field_id": "conversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "GENERIC",
+      "source_field": "conversions",
+      "tier": "core"
+    },
+    {
+      "description": "Declared canonical metric target for spend / cost. A source column mapped to this target via connection_config['mappings'] is written to raw_generic_daily with metric='cost'. Accepted as an allowed_target in the toorow-generic-contract v1.",
+      "exposure": "exposed",
+      "field_id": "cost",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "GENERIC",
+      "source_field": "cost",
+      "tier": "core"
+    },
+    {
+      "description": "Reporting date. Auto-detected from the input column (heuristic: name matches 'date', 'jour', 'day', 'datum', 'fecha', case-insensitive) or overridden via connection_config['date_column']. Normalized to canonical UTC ISO-8601 (YYYY-MM-DD) using connection_config['date_format'] and connection_config['source_timezone'].",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "GENERIC",
+      "source_field": "runtime_date_column",
+      "tier": "core"
+    },
+    {
+      "description": "Declared canonical metric target for impression count. Accepted as an allowed_target in the toorow-generic-contract v1.",
+      "exposure": "exposed",
+      "field_id": "impressions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "GENERIC",
+      "source_field": "impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Declared canonical metric target for revenue. Accepted as an allowed_target in the toorow-generic-contract v1.",
+      "exposure": "exposed",
+      "field_id": "revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "GENERIC",
+      "source_field": "revenue",
+      "tier": "core"
+    },
+    {
+      "description": "Declared canonical metric target for session count. Accepted as an allowed_target in the toorow-generic-contract v1.",
+      "exposure": "exposed",
+      "field_id": "sessions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "GENERIC",
+      "source_field": "sessions",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "server/modules/generic/connector.py"
+    }
+  ]
+}

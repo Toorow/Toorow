@@ -1,0 +1,84 @@
+{
+  "connector": "shopify",
+  "api_version": "2026-07",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "official_fields.json is curated from the Shopify Admin REST API Order object reference (https://shopify.dev/docs/api/admin-rest/latest/resources/order). Fields cover Order root properties, line_items sub-object, customer sub-object, billing/shipping address sub-objects, and refunds sub-object — all relevant to e-commerce reporting. Supermetrics enrichment (shopify-fields.md, 21 metrics / 134 dimensions) surfaces computed aggregates (gross_profit, cost_of_goods_sold, ordered/returned/net quantity, avg_order_value) that require cross-object JOIN logic beyond the single-order JSON payload; these are enrichment_only and not emitted in the official catalog. The connector extracts only at the order grain (orders_daily profile); line_item-grain extraction is not yet implemented.",
+    "manifest_fields_check": "All 5 manifest source_capabilities.fields appear in official_fields.json with matching kind and source_field: order(metric/order), total_price(metric/total_price), total_refunded(metric/total_refunded), created_at(dimension/created_at), transaction_id(dimension/transaction_id).",
+    "supermetrics_enrichment_only_justification": "Supermetrics computes SALES section metrics (gross_profit, cost_of_goods_sold, ordered_quantity, returned_quantity, net_quantity, units_per_transaction, avg_total_sales) by joining the inventory_items API and applying refund_line_items logic. These cross-object aggregations are not scalars on the Order REST resource and are therefore enrichment_only in this catalog — suspects to verify, never emitted as official fields."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://shopify.dev/docs/api/admin-rest/latest/resources/order",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "order_object_reference",
+          "url": "https://shopify.dev/docs/api/admin-rest/latest/resources/order",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "refund_object_reference",
+          "url": "https://shopify.dev/docs/api/admin-rest/latest/resources/refund",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "customer_object_reference",
+          "url": "https://shopify.dev/docs/api/admin-rest/latest/resources/customer",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "error_codes",
+          "url": "https://shopify.dev/docs/api/usage/response-codes",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "file": "supermetrics.md",
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/shopify-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/shopify-fields.md -o server/modules/shopify/catalog_sources/supermetrics.md   # DO NOT COMMIT this file (enrichment snapshot only)"
+    }
+  ],
+  "section_tier_map": {
+    "ORDER": "core",
+    "REFUND": "core",
+    "LINE ITEM": "standard",
+    "PRODUCT": "standard",
+    "CUSTOMER": "standard",
+    "CUSTOMER GEO": "standard",
+    "TRAFFIC SOURCE": "standard",
+    "BILLING ADDRESS": "advanced",
+    "SHIPPING ADDRESS": "advanced",
+    "SALES": "standard",
+    "INVENTORY ITEM": "advanced",
+    "PLATFORM CONTRACT": "core"
+  },
+  "field_tier_overrides": {
+    "total_price": "core",
+    "total_refunded": "core",
+    "order": "core",
+    "created_at": "core",
+    "transaction_id": "core",
+    "currency": "core",
+    "financial_status": "core",
+    "id": "core",
+    "customer_id": "standard",
+    "product_id": "standard",
+    "variant_id": "standard"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "fields_param",
+    "batch_size": 20,
+    "structural_note": "Shopify REST takes a fields= list selecting object properties over a created_at window (limit=1). The probe batches up to 20 fields per request; a field absent from the returned object is recorded empty (Shopify silently omits unknown fields rather than rejecting), so unsupported/empty are distinguished by presence."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {}
+}

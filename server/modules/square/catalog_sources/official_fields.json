@@ -1,0 +1,410 @@
+[
+  {
+    "field_id": "payment_id",
+    "source_field": "payment_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier for the Payment object (payment.id).",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "payment_status",
+    "source_field": "status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Payment status: APPROVED, PENDING, COMPLETED, CANCELED, or FAILED.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "source_type",
+    "source_field": "source_type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Payment source: CARD, BANK_ACCOUNT, WALLET, BUY_NOW_PAY_LATER, SQUARE_ACCOUNT, CASH, EXTERNAL.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "receipt_number",
+    "source_field": "receipt_number",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Payment receipt number (up to 4 chars).",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "receipt_url",
+    "source_field": "receipt_url",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "URL for the payment's receipt page.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "reference_id",
+    "source_field": "reference_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Merchant-supplied reference id associated with the payment.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "note",
+    "source_field": "note",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Optional note attached to the payment.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "order_id",
+    "source_field": "order_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "ID of the associated Square Order (payment.order_id). Nullable; Orders-API join key.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "location_id",
+    "source_field": "location_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "ID of the location associated with the payment (payment.location_id). Topology key.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "customer_id",
+    "source_field": "customer_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "ID of the customer associated with the payment (id only on the payment object).",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "team_member_id",
+    "source_field": "team_member_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "ID of the team member (staff) that took the payment.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "risk_evaluation_level",
+    "source_field": "risk_evaluation.risk_level",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Square risk evaluation level for the payment: PENDING, NORMAL, MODERATE, or HIGH.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "delay_action",
+    "source_field": "delay_action",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Action applied to the payment when delay_duration elapses: CANCEL or COMPLETE.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "payment_currency",
+    "source_field": "amount_money.currency",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Three-letter ISO currency code of the payment amount (amount_money.currency).",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "date",
+    "source_field": "created_at",
+    "kind": "dimension",
+    "data_type": "date",
+    "description": "Date the payment was created (day grain, UTC, derived from the RFC 3339 created_at timestamp).",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "updated_at",
+    "source_field": "updated_at",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Timestamp of the most recent update to the payment (RFC 3339).",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "transaction_count",
+    "source_field": "transaction_count",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of payment transactions (1 per payment, aggregated at day grain).",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "order_count",
+    "source_field": "order_count",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of orders represented by payments (1 per payment, aggregated at day grain).",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "total_amount",
+    "source_field": "total_money.amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total amount for the payment including tip (total_money.amount), smallest currency unit.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "approved_amount",
+    "source_field": "approved_money.amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Amount of money approved for the payment (approved_money.amount), smallest currency unit.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "tip_amount",
+    "source_field": "tip_money.amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Amount designated as a tip (tip_money.amount), smallest currency unit.",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "app_fee_amount",
+    "source_field": "app_fee_money.amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Amount the developer takes as a fee for facilitating the payment (app_fee_money.amount).",
+    "section": "PAYMENT"
+  },
+  {
+    "field_id": "processing_fee_type",
+    "source_field": "processing_fee.type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Type of a processing-fee line: INITIAL or ADJUSTMENT.",
+    "section": "PROCESSING FEE"
+  },
+  {
+    "field_id": "processing_fee_effective_at",
+    "source_field": "processing_fee.effective_at",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Timestamp the processing-fee line took effect (RFC 3339).",
+    "section": "PROCESSING FEE"
+  },
+  {
+    "field_id": "processing_fee_amount",
+    "source_field": "processing_fee.amount_money.amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Amount of a single processing-fee line (processing_fee[].amount_money.amount), smallest currency unit.",
+    "section": "PROCESSING FEE"
+  },
+  {
+    "field_id": "card_status",
+    "source_field": "card_details.status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Card payment status: AUTHORIZED, CAPTURED, VOIDED, or FAILED.",
+    "section": "CARD DETAILS"
+  },
+  {
+    "field_id": "card_brand",
+    "source_field": "card_details.card.card_brand",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Card brand: VISA, MASTERCARD, AMERICAN_EXPRESS, DISCOVER, JCB, etc.",
+    "section": "CARD DETAILS"
+  },
+  {
+    "field_id": "card_last4",
+    "source_field": "card_details.card.last_4",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Last four digits of the card used.",
+    "section": "CARD DETAILS"
+  },
+  {
+    "field_id": "card_exp_month",
+    "source_field": "card_details.card.exp_month",
+    "kind": "dimension",
+    "data_type": "integer",
+    "description": "Expiration month of the card used.",
+    "section": "CARD DETAILS"
+  },
+  {
+    "field_id": "card_exp_year",
+    "source_field": "card_details.card.exp_year",
+    "kind": "dimension",
+    "data_type": "integer",
+    "description": "Expiration year of the card used.",
+    "section": "CARD DETAILS"
+  },
+  {
+    "field_id": "card_entry_method",
+    "source_field": "card_details.entry_method",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "How the card was presented: KEYED, SWIPED, EMV, ON_FILE, or CONTACTLESS.",
+    "section": "CARD DETAILS"
+  },
+  {
+    "field_id": "card_cvv_status",
+    "source_field": "card_details.cvv_status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Status of the CVV verification: CVV_ACCEPTED, CVV_REJECTED, or CVV_NOT_CHECKED.",
+    "section": "CARD DETAILS"
+  },
+  {
+    "field_id": "avs_status",
+    "source_field": "card_details.avs_status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Status of the AVS verification: AVS_ACCEPTED, AVS_REJECTED, or AVS_NOT_CHECKED.",
+    "section": "CARD DETAILS"
+  },
+  {
+    "field_id": "location_name",
+    "source_field": "name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Human-readable name of the location (Location.name).",
+    "section": "LOCATION"
+  },
+  {
+    "field_id": "location_status",
+    "source_field": "status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Location status: ACTIVE or INACTIVE.",
+    "section": "LOCATION"
+  },
+  {
+    "field_id": "location_currency",
+    "source_field": "currency",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Currency used for all transactions at this location (ISO 4217).",
+    "section": "LOCATION"
+  },
+  {
+    "field_id": "location_country",
+    "source_field": "country",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Country of the location in ISO 3166-1 alpha-2 format.",
+    "section": "LOCATION"
+  },
+  {
+    "field_id": "location_type",
+    "source_field": "type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Location type: PHYSICAL or MOBILE.",
+    "section": "LOCATION"
+  },
+  {
+    "field_id": "order_state",
+    "source_field": "state",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "State of the Square Order: OPEN, COMPLETED, or CANCELED.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "order_source_name",
+    "source_field": "source.name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Name of the source (application) that created the order.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "order_total_amount",
+    "source_field": "total_money.amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total amount of money for the Square Order (Order.total_money.amount), smallest currency unit.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "refund_id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier for the PaymentRefund object.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_status",
+    "source_field": "status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Refund status: PENDING, COMPLETED, REJECTED, or FAILED.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_reason",
+    "source_field": "reason",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Reason attached to the refund.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_amount",
+    "source_field": "amount_money.amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Amount of a PaymentRefund (refund.amount_money.amount), smallest currency unit.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "customer_email",
+    "source_field": "email_address",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Customer's email address (Customer.email_address).",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_given_name",
+    "source_field": "given_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Customer's given (first) name.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_family_name",
+    "source_field": "family_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Customer's family (last) name.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "revenue",
+    "source_field": "amount",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "revenue exposed by Square. Platform contract field carried from the module manifest; official-name divergence (payment.amount_money.amount) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+    "section": "PLATFORM CONTRACT"
+  },
+  {
+    "field_id": "refunds",
+    "source_field": "refunded",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "refunds exposed by Square. Platform contract field carried from the module manifest; official-name divergence (payment.refunded_money.amount) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+    "section": "PLATFORM CONTRACT"
+  },
+  {
+    "field_id": "fees",
+    "source_field": "fee_amount",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "fees exposed by Square. Platform contract field carried from the module manifest; official-name divergence (SUM of payment.processing_fee[].amount_money.amount) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+    "section": "PLATFORM CONTRACT"
+  }
+]

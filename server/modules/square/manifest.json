@@ -1,0 +1,395 @@
+{
+    "schema_version": "1.2",
+    "name": "square",
+    "display_name": "Square",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "commerce_billing",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract (no Square test account available -- see no-connector-test-accounts)."
+        }
+    },
+    "module_kind": "kpi",
+    "auth_type": "oauth2",
+    "report_profiles": [
+        {
+            "id": "payments_daily",
+            "display_name": "Payments (daily revenue of record)",
+            "metrics": [
+                "revenue",
+                "refunds",
+                "fees",
+                "transaction_count",
+                "order_count"
+            ],
+            "dimensions": [
+                "date",
+                "payment_id",
+                "order_id",
+                "location_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 100,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven daily (any selected field)",
+            "metrics": [
+                "revenue",
+                "refunds",
+                "fees",
+                "transaction_count",
+                "order_count"
+            ],
+            "dimensions": [
+                "date",
+                "payment_id",
+                "order_id",
+                "location_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 100,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        }
+    ],
+    "canonical_metric_mapping": {
+        "amount": "revenue",
+        "refunded": "refunds",
+        "fee_amount": "fees",
+        "transaction_count": "transaction_count",
+        "order_count": "order_count"
+    },
+    "canonical_dimension_mapping": {
+        "payment_id": "payment_id",
+        "order_id": "order_id",
+        "location_id": "location_id"
+    },
+    "quota": {
+        "window_seconds": 1,
+        "budget_points": 100,
+        "read_cost": 1,
+        "write_cost": 1
+    },
+    "widget_ref": "ui://core/daily-report",
+    "amount_unit": {
+        "source": "minor_unit_centimes",
+        "landed": "major_unit_currency",
+        "note": "Square renvoie TOUS les montants (amount_money.amount, refunded_money.amount, processing_fee[].amount_money.amount) dans la plus PETITE unite de la devise (centimes pour EUR/USD). Le connecteur DIVISE par 100 a l'ingestion (_amount_to_units), SAUF pour les devises zero-decimal (JPY, KRW, ...) deja en unite. Conversion EXPLICITE (jamais silencieuse), commentee et testee. La normalisation FX projet (pattern 4.2) est un etage SEPARE en staging dbt via fx_rates. Meme discipline que Stripe 15.7."
+    },
+    "revenue_dedup_rule": {
+        "rule": "priority_declarative",
+        "shared_metric": "revenue",
+        "priority_seed": "dbt/seeds/metric_source_priority.csv",
+        "cross_source_view": "dbt/models/marts/cross_source_revenue.sql",
+        "note": "CRITIQUE (AD-4) : le revenue Square, le revenue Shopify et le revenue Stripe peuvent mesurer la MEME vente (un paiement Square qui regle une commande e-commerce, ou un POS in-store). Ils ne sont JAMAIS sommes dans un total croise. Regle DECLARATIVE (miroir EXACT de Stripe 15.7) : metric_source_priority.csv porte revenue -> shopify priorite 1 (source de verite ventes e-commerce), stripe priorite 2, adjust priorite 3, square priorite 4 ; la vue cross_source_revenue.sql choisit UNE source gagnante par (projet, jour). Square est place en dernier (defaut conservateur) : quand un meme (projet, jour) chevauche plusieurs sources, les sources e-commerce/paiement en ligne gagnent ; un marchand POS Square-seul reste toujours gagnant car source unique. Les lignes par source restent independamment interrogeables dans fact_daily_kpi (metric='revenue', connector distinct). JUSTIFICATION : revenue Square = MEME grandeur canonique (ventes en devise), donc priorite de source, PAS non-agregation. Un marchand Square-seul (POS pur) ne declenche aucun conflit."
+    },
+    "_ai_53_notes": {
+        "verified_on": "2026-07-21",
+        "endpoint": "AI-53 verifie le 2026-07-21 (doc officielle developer.squareup.com/reference/square/payments-api/list-payments): GET https://connect.squareup.com/v2/payments, versionne par le header Square-Version (PAS par le chemin). Parametres: begin_time/end_time (RFC 3339) pour la fenetre, sort_field=CREATED_AT + sort_order=ASC|DESC, location_id (filtre optionnel par emplacement), limit<=100, cursor=<opaque> pour la pagination curseur (le champ 'cursor' de la reponse est vide sur la derniere page). Reponse: {payments:[...], cursor, errors}. A CONFIRMER en passe live: shape exact des Payment, disponibilite de processing_fee sans reglement (settlement), et si l'Orders API (SearchOrders) est preferee aux Payments bruts pour un fait daily order-level.",
+        "quota": "AI-53 verifie le 2026-07-21 (doc officielle developer.squareup.com/docs/build-basics/general-considerations/rate-limits + handling-errors): Square applique un rate limit et renvoie HTTP 429 (category RATE_LIMITED) au depassement. Square N'EXPOSE PAS de limite QPS publique chiffree par endpoint ni d'API de quota -- la doc recommande d'observer les 429 et d'appliquer un backoff exponentiel avec jitter. Profil retenu: window 1s / 100 points (approximation conservatrice, meme profil que Stripe). review fixed-window: l'engine core est FIXED-WINDOW, ce profil autorise un BURST de 100 req/fenetre 1s, PAS un debit 100 req/s SOUTENU. Le vrai garde-fou reste le handler 429 -> RateLimitError. A RECALIBRER en passe live via les 429 observes. Note: Square N'ENVOIE PAS toujours de header Retry-After -> retry_after=None en fallback.",
+        "auth": "AI-53 verifie le 2026-07-21: Square s'authentifie par un ACCESS TOKEN Bearer. Deux modes: (1) OAuth 2.0 (production multi-marchands, un access token par seller, refresh token) -- RETENU (auth_type='oauth2') car toorow sert plusieurs marchands et le stack non-Google passe par Nango (AD-3, exception Google AD-21 non applicable) ; (2) Personal Access Token (marchand unique, dashboard) est une alternative dev/sandbox. Scope minimal lecture: PAYMENTS_READ (+ MERCHANT_PROFILE_READ pour ListLocations / discover_accounts). Le secret transite via Nango UNIQUEMENT et n'est jamais stocke/logge cote module. A confirmer en passe live: scopes minimaux effectifs.",
+        "amount_unit": "AI-53 verifie le 2026-07-21 (doc officielle developer.squareup.com/reference/square/objects/Money): les objets Money portent {amount, currency}, amount EN PLUS PETITE UNITE de la devise (centimes ; 555 = 5,55 USD). Zero-decimal currencies (JPY, KRW, ...) deja en unite. Conversion /100 EXPLICITE a l'ingestion, sauf zero-decimal.",
+        "topology": "AI-53 verifie le 2026-07-21 (doc officielle developer.squareup.com/reference/square/locations-api/list-locations): un access token seller donne acces a TOUS les emplacements (locations) du marchand. GET /v2/locations retourne {locations:[{id,name,status,currency,country,...}]}. Le location_id retourne est le meme identifiant utilise comme filtre par /v2/payments (location_id). Topologie = un niveau plat 'location' ; selection_level='location' ; discover_accounts() implemente l'appel. JAMAIS de location en variable d'environnement (AD, comme meta-ads 25.5).",
+        "reconciliation_key": "AI-53 verifie le 2026-07-21: cle de reconciliation Square. payment.order_id -> Square Order (joignable via Orders API), payment.id -> identifiant de transaction. Square N'A PAS de champ client_reference_id/GA4 natif universel (contrairement a checkout.Session.client_reference_id de Stripe). order_id est expose comme DIMENSION DE DETAIL (joignable Orders API quand present, souvent present pour Checkout/eCom, absent pour certains POS). CONCLUSION HONNETE: la reconciliation Epic 17 cote Square reste au niveau AGREGE (verified = revenue jour), PAS au niveau transaction. A confirmer en passe live: taux de presence d'order_id selon le canal (POS vs Online Checkout).",
+        "refunds_fees_decision": "DECISION (meme discipline que Stripe 15.7 / Shopify 15.4): refunds et fees sont stockes en COLONNES DEDIEES (metriques additives positives), JAMAIS soustraits silencieusement de revenue. Le net (revenue - refunds - fees) se calcule au niveau semantique de facon explicite et auditable (AD-9 no-black-box). refunds = payment.refunded_money.amount (total rembourse a date, scalaire sur le Payment). fees = SOMME de payment.processing_fee[].amount_money.amount (Square peut renvoyer plusieurs lignes de frais par paiement). transaction_count = 1 par payment ; order_count = 1 par payment (proxy jour ; un split-tender -- plusieurs payments pour un meme order_id -- peut sur-compter les orders : documente honnetement, a raffiner via Orders API en passe live). transaction_count/order_count NE SONT PAS mappes sur 'conversions' (un paiement Square est une VENTE, pas une conversion regie -- pas de collision avec la regle 3.7)."
+    },
+    "error_map": {
+        "401:ACCESS_TOKEN_EXPIRED": "auth_expired",
+        "401:UNAUTHORIZED": "auth_expired",
+        "401:ACCESS_TOKEN_REVOKED": "auth_revoked",
+        "401:CLIENT_DISABLED": "auth_revoked",
+        "403:INSUFFICIENT_SCOPES": "permission_denied",
+        "403:FORBIDDEN": "permission_denied",
+        "400:BAD_REQUEST": "invalid_request",
+        "400:VALUE_TOO_LOW": "invalid_request",
+        "400:VALUE_TOO_HIGH": "invalid_request",
+        "500:INTERNAL_SERVER_ERROR": "provider_transient",
+        "_error_map_note": "Square error responses carry a LIST shape: {errors:[{category, code, detail, field}]} (category in AUTHENTICATION_ERROR|INVALID_REQUEST_ERROR|RATE_LIMITED|API_ERROR). This differs from the {error:{code}} shape core._extract_provider_code recognises, so the connector NORMALISES the body before classify_http_error: it surfaces the first error's code at the top level ({code: <CODE>, category: <CAT>, errors: [<originals preserved as evidence>]}), which core's generic extractor reads via the top-level 'code' branch. The canonical HTTP classification (401->auth_expired, 403->permission_denied, 400->invalid_request, 5xx->provider_transient) is already correct for Square without refinement; the entries above add specificity for the most actionable codes -- notably distinguishing ACCESS_TOKEN_REVOKED (auth_revoked, credential gone) from ACCESS_TOKEN_EXPIRED (auth_expired, refreshable) which BOTH return 401 and would otherwise both fall back to auth_expired. RATE_LIMITED (429) never reaches classify_http_error -- the connector raises core.quota.RateLimitError on 429."
+    },
+    "account_topology": {
+        "_comment": "Story 25.5 stitch (miroir meta-ads): Square topology is a single flat level -- the seller LOCATIONS reachable by the access token (GET /v2/locations). The selected reporting entity is the LOCATION; pulls pass its id as the /v2/payments location_id filter. A single OAuth access token (or Personal Access Token) reaches ALL of a seller's locations, so discovery is one call. NEVER a location in an env var.",
+        "levels": [
+            {
+                "id": "location",
+                "label": "Location"
+            }
+        ],
+        "selection_level": "location",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    },
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "revenue",
+                "source_field": "amount",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "revenue exposed by Square.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "revenue",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "refunds",
+                "source_field": "refunded",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "refunds exposed by Square.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "refunds",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "fees",
+                "source_field": "fee_amount",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "fees exposed by Square.",
+                "semantic_hints": [
+                    "spend",
+                    "currency"
+                ],
+                "canonical_target": "fees",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "transaction_count",
+                "source_field": "transaction_count",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "transaction count exposed by Square.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "transaction_count",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "order_count",
+                "source_field": "order_count",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "order count exposed by Square.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "order_count",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "created_at",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "date exposed by Square.",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "payment_id",
+                "source_field": "payment_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "payment id exposed by Square.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "payment_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "order_id",
+                "source_field": "order_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "order id exposed by Square.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "order_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "location_id",
+                "source_field": "location_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "location id exposed by Square.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "location_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "payments_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "revenue",
+                    "refunds",
+                    "fees",
+                    "transaction_count",
+                    "order_count"
+                ],
+                "dimensions": [
+                    "date",
+                    "payment_id",
+                    "order_id",
+                    "location_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "payment_id",
+                        "order_id",
+                        "location_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 100,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull"
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "revenue",
+                    "refunds",
+                    "fees",
+                    "transaction_count",
+                    "order_count"
+                ],
+                "dimensions": [
+                    "date",
+                    "payment_id",
+                    "order_id",
+                    "location_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "payment_id",
+                        "order_id",
+                        "location_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 100,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                }
+            }
+        ]
+    }
+}

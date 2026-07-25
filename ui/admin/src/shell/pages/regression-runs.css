@@ -1,0 +1,46 @@
+/**
+ * regression-runs.css — page-specific styles for RegressionRuns.
+ *
+ * The eval-run history surface for the Test workspace. Shell/layout classes
+ * (page-header, panel, metric-strip, section-header, secondary-button, table,
+ * signal-label, signal-mark, muted, number) already live in application.css and
+ * are global — this file only adds the pieces the run history needs on top of
+ * them: the scroll container for the runs table (mirrors Sources' .table-scroll)
+ * and column sizing + Geist score cell.
+ *
+ * Tokenized: every color references an application.css CSS variable, so the page
+ * is dark-safe. Numbers use Geist tabular-nums via the shared .number class and
+ * the .score-cell rule below.
+ */
+
+/* Horizontal scroll container for the runs table (not in application.css). */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.runs-panel {
+  overflow: hidden;
+}
+
+.runs-table {
+  table-layout: fixed;
+}
+.runs-table th:nth-child(1) { width: 30%; }
+.runs-table th:nth-child(2) { width: 16%; }
+.runs-table th:nth-child(3) { width: 16%; }
+.runs-table th:nth-child(4) { width: 18%; }
+.runs-table th:nth-child(5) { width: 20%; }
+
+/* Score reads as a single tabular figure, e.g. "48 / 50". */
+.score-cell {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Honest empty state when the real run history is empty. */
+.runs-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 24px;
+  line-height: 1.6;
+}

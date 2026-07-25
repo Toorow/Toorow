@@ -1,0 +1,8 @@
+# pnpm workspace for the connector UI.
+# tokens/ is intentionally NOT a workspace member — it is a JSON DTCG token file
+# (Story 1.2), not a Node package; it will be consumed by Style Dictionary later.
+packages:
+  - "widgets/*"
+  - "shell"
+  - "admin"
+  - "cards/*"

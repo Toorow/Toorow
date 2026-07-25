@@ -1,0 +1,32 @@
+[
+  {
+    "connector": "google-analytics"
+  },
+  {
+    "connector": "google-sheets"
+  },
+  {
+    "connector": "gsc"
+  },
+  {
+    "connector": "hubspot"
+  },
+  {
+    "connector": "klaviyo"
+  },
+  {
+    "connector": "linkedin-ads"
+  },
+  {
+    "connector": "meta-ads"
+  },
+  {
+    "connector": "shopify"
+  },
+  {
+    "connector": "stripe"
+  },
+  {
+    "connector": "tiktok-ads"
+  }
+]

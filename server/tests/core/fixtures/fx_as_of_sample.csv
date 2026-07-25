@@ -1,0 +1,4 @@
+from_currency,to_currency,rate,rate_date
+USD,EUR,0.90,2024-01-02
+USD,EUR,0.93,2025-06-16
+USD,EUR,0.92,2026-07-01

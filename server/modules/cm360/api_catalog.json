@@ -1,0 +1,156 @@
+{
+  "api_version": "dfareporting-v5",
+  "catalog_version": "1",
+  "connector": "cm360",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Advertiser id.",
+      "exposure": "exposed",
+      "field_id": "advertiser_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STANDARD",
+      "source_field": "dfa:advertiser",
+      "tier": "core"
+    },
+    {
+      "description": "Average frequency.",
+      "exposure": "exposed",
+      "field_id": "average_frequency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "REACH",
+      "source_field": "dfa:averageFrequency",
+      "tier": "standard"
+    },
+    {
+      "description": "Campaign id.",
+      "exposure": "exposed",
+      "field_id": "campaign_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STANDARD",
+      "source_field": "dfa:campaign",
+      "tier": "core"
+    },
+    {
+      "description": "Recorded clicks.",
+      "exposure": "exposed",
+      "field_id": "clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "STANDARD",
+      "source_field": "dfa:clicks",
+      "tier": "core"
+    },
+    {
+      "description": "Conversion value.",
+      "exposure": "exposed",
+      "field_id": "conversion_value",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "FLOODLIGHT",
+      "source_field": "dfa:totalConversionsRevenue",
+      "tier": "core"
+    },
+    {
+      "description": "Attributed conversions.",
+      "exposure": "exposed",
+      "field_id": "conversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "FLOODLIGHT",
+      "source_field": "dfa:totalConversions",
+      "tier": "core"
+    },
+    {
+      "description": "Media cost.",
+      "exposure": "exposed",
+      "field_id": "cost",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "STANDARD",
+      "source_field": "dfa:mediaCost",
+      "tier": "core"
+    },
+    {
+      "description": "Country or provider sentinel.",
+      "exposure": "exposed",
+      "field_id": "country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REACH",
+      "source_field": "dfa:country",
+      "tier": "standard"
+    },
+    {
+      "description": "Creative id.",
+      "exposure": "exposed",
+      "field_id": "creative_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STANDARD",
+      "source_field": "dfa:creative",
+      "tier": "core"
+    },
+    {
+      "description": "CM360 reporting day.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "STANDARD",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "Floodlight activity id.",
+      "exposure": "exposed",
+      "field_id": "floodlight_activity_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FLOODLIGHT",
+      "source_field": "dfa:activity",
+      "tier": "core"
+    },
+    {
+      "description": "Served impressions.",
+      "exposure": "exposed",
+      "field_id": "impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "STANDARD",
+      "source_field": "dfa:impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Placement id.",
+      "exposure": "exposed",
+      "field_id": "placement_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STANDARD",
+      "source_field": "dfa:placement",
+      "tier": "core"
+    },
+    {
+      "description": "Unique reach.",
+      "exposure": "exposed",
+      "field_id": "unique_reach",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "REACH",
+      "source_field": "dfa:uniqueReachImpressions",
+      "tier": "standard"
+    }
+  ],
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-22",
+      "kind": "official",
+      "url": "https://developers.google.com/doubleclick-advertisers/v5/dimensions"
+    }
+  ]
+}

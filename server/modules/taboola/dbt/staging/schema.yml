@@ -1,0 +1,16 @@
+version: 2
+sources:
+  - name: raw_taboola
+    schema: main
+    tables:
+      - name: raw_taboola_daily
+      - name: raw_taboola_history
+models:
+  - name: stg_taboola_daily
+    columns:
+      - name: metric
+        tests: [not_null]
+  - name: stg_taboola_history
+    columns:
+      - name: record_id
+        tests: [not_null, unique]

@@ -1,0 +1,2518 @@
+[
+  {
+    "data_type": "integer",
+    "description": "The number of distinct active users on your site or app within a 1-day period.",
+    "field_id": "active1DayUsers",
+    "kind": "metric",
+    "section": "USER"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of distinct active users on your site or app within a 28-day period.",
+    "field_id": "active28DayUsers",
+    "kind": "metric",
+    "section": "USER"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of distinct active users on your site or app within a 7-day period.",
+    "field_id": "active7DayUsers",
+    "kind": "metric",
+    "section": "USER"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of distinct users who visited your site or app.",
+    "field_id": "active_users",
+    "kind": "metric",
+    "section": "USER",
+    "source_field": "activeUsers"
+  },
+  {
+    "data_type": "string",
+    "description": "The achievement ID in a game for an event.",
+    "field_id": "achievementId",
+    "kind": "dimension",
+    "section": "GAMING"
+  },
+  {
+    "data_type": "string",
+    "description": "Describes the way ads looked and where they appeared.",
+    "field_id": "adFormat",
+    "kind": "dimension",
+    "section": "PUBLISHER"
+  },
+  {
+    "data_type": "string",
+    "description": "The source network that served the ad.",
+    "field_id": "adSourceName",
+    "kind": "dimension",
+    "section": "PUBLISHER"
+  },
+  {
+    "data_type": "integer",
+    "description": "The time (milliseconds) an ad unit was exposed to a user.",
+    "field_id": "adUnitExposure",
+    "kind": "metric",
+    "section": "PUBLISHER"
+  },
+  {
+    "data_type": "string",
+    "description": "The name chosen to describe this ad unit.",
+    "field_id": "adUnitName",
+    "kind": "dimension",
+    "section": "PUBLISHER"
+  },
+  {
+    "data_type": "integer",
+    "description": "The total number of times users clicked on your ad.",
+    "field_id": "advertiserAdClicks",
+    "kind": "metric",
+    "section": "ADS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The total amount you paid for your ads.",
+    "field_id": "advertiserAdCost",
+    "kind": "metric",
+    "section": "ADS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The ad cost per click (CPC).",
+    "field_id": "advertiserAdCostPerClick",
+    "kind": "metric",
+    "section": "ADS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The ad cost per key event.",
+    "field_id": "advertiserAdCostPerKeyEvent",
+    "kind": "metric",
+    "section": "ADS"
+  },
+  {
+    "data_type": "integer",
+    "description": "The total number of impressions.",
+    "field_id": "advertiserAdImpressions",
+    "kind": "metric",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The numeric identifier of an audience.",
+    "field_id": "audienceId",
+    "kind": "dimension",
+    "section": "AUDIENCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The given name of an audience.",
+    "field_id": "audienceName",
+    "kind": "dimension",
+    "section": "AUDIENCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The resource name of this audience.",
+    "field_id": "audienceResourceName",
+    "kind": "dimension",
+    "section": "AUDIENCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average duration (seconds) of users' sessions.",
+    "field_id": "averageSessionDuration",
+    "kind": "metric",
+    "section": "SESSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average purchase revenue in the transaction group of events.",
+    "field_id": "averagePurchaseRevenue",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average revenue per paying user (ARPPU).",
+    "field_id": "averagePurchaseRevenuePerPayingUser",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average purchase revenue per active user.",
+    "field_id": "averagePurchaseRevenuePerUser",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average revenue per active user (ARPU).",
+    "field_id": "averageRevenuePerUser",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The percentage of sessions that were not engaged.",
+    "field_id": "bounceRate",
+    "kind": "metric",
+    "section": "SESSION"
+  },
+  {
+    "data_type": "string",
+    "description": "Interests demonstrated by users higher in the shopping funnel.",
+    "field_id": "brandingInterest",
+    "kind": "dimension",
+    "section": "USER"
+  },
+  {
+    "data_type": "string",
+    "description": "The browsers used to view your website.",
+    "field_id": "browser",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The version of the browser.",
+    "field_id": "browserVersion",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The number of users who added a product to their cart divided by the number who viewed it.",
+    "field_id": "cartToViewRate",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The player character in a game for an event.",
+    "field_id": "character",
+    "kind": "dimension",
+    "section": "GAMING"
+  },
+  {
+    "data_type": "string",
+    "description": "The city from which the user activity originated.",
+    "field_id": "city",
+    "kind": "dimension",
+    "section": "GEO"
+  },
+  {
+    "data_type": "string",
+    "description": "The geographic ID of the city from which activity originated.",
+    "field_id": "cityId",
+    "kind": "dimension",
+    "section": "GEO"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 account ID that led to the key event.",
+    "field_id": "cm360AccountId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 account name that led to the key event.",
+    "field_id": "cm360AccountName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 advertiser ID that led to the key event.",
+    "field_id": "cm360AdvertiserId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 advertiser name that led to the key event.",
+    "field_id": "cm360AdvertiserName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 campaign ID that led to the key event.",
+    "field_id": "cm360CampaignId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 campaign name that led to the key event.",
+    "field_id": "cm360CampaignName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative format that led to the key event.",
+    "field_id": "cm360CreativeFormat",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative ID that led to the key event.",
+    "field_id": "cm360CreativeId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative name that led to the key event.",
+    "field_id": "cm360CreativeName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative type that led to the key event.",
+    "field_id": "cm360CreativeType",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative type ID that led to the key event.",
+    "field_id": "cm360CreativeTypeId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative version that led to the key event.",
+    "field_id": "cm360CreativeVersion",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 medium that led to the key event.",
+    "field_id": "cm360Medium",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 account ID that led to the session.",
+    "field_id": "sessionCm360AccountId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "How the CM360 media cost is calculated (e.g. CPM).",
+    "field_id": "cm360PlacementCostStructure",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "Identifies a CM360 placement.",
+    "field_id": "cm360PlacementId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The given name for a CM360 placement.",
+    "field_id": "cm360PlacementName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 rendering ID that led to the key event.",
+    "field_id": "cm360RenderingId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 site ID that led to the key event.",
+    "field_id": "cm360SiteId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 site name from which the ad space was purchased.",
+    "field_id": "cm360SiteName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 source (also referred to as site name).",
+    "field_id": "cm360Source",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 source medium that led to the key event.",
+    "field_id": "cm360SourceMedium",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The cohort's name in the request.",
+    "field_id": "cohort",
+    "kind": "dimension",
+    "section": "DAILY COHORT"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of users in the cohort who are active in the time window.",
+    "field_id": "cohortActiveUsers",
+    "kind": "metric",
+    "section": "DAILY COHORT"
+  },
+  {
+    "data_type": "string",
+    "description": "The day offset relative to firstSessionDate within the cohort.",
+    "field_id": "cohortNthDay",
+    "kind": "dimension",
+    "section": "DAILY COHORT"
+  },
+  {
+    "data_type": "string",
+    "description": "The month offset relative to firstSessionDate within the cohort.",
+    "field_id": "cohortNthMonth",
+    "kind": "dimension",
+    "section": "DAILY COHORT"
+  },
+  {
+    "data_type": "string",
+    "description": "The week offset relative to firstSessionDate within the cohort.",
+    "field_id": "cohortNthWeek",
+    "kind": "dimension",
+    "section": "DAILY COHORT"
+  },
+  {
+    "data_type": "integer",
+    "description": "The total number of users in the cohort.",
+    "field_id": "cohortTotalUsers",
+    "kind": "metric",
+    "section": "DAILY COHORT"
+  },
+  {
+    "data_type": "string",
+    "description": "The continent from which the user activity originated.",
+    "field_id": "continent",
+    "kind": "dimension",
+    "section": "GEO"
+  },
+  {
+    "data_type": "string",
+    "description": "The geographic ID of the continent from which activity originated.",
+    "field_id": "continentId",
+    "kind": "dimension",
+    "section": "GEO"
+  },
+  {
+    "data_type": "string",
+    "description": "A category that applies to items of published content.",
+    "field_id": "contentGroup",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The identifier of the selected content.",
+    "field_id": "contentId",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The category of the selected content.",
+    "field_id": "contentType",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "integer",
+    "description": "The count of key events (legacy apiName 'conversions'; GA4 UI 'Key events').",
+    "field_id": "conversions",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The country from which the user activity originated.",
+    "field_id": "country",
+    "kind": "dimension",
+    "section": "GEO"
+  },
+  {
+    "data_type": "string",
+    "description": "The geographic ID of the country (ISO 3166-1 alpha-2).",
+    "field_id": "countryId",
+    "kind": "dimension",
+    "section": "GEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of users who logged a crash in this row of the report.",
+    "field_id": "crashAffectedUsers",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The percentage of users without crash events in this row of the report.",
+    "field_id": "crashFreeUsersRate",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The local currency code (ISO 4217) of the e-commerce event.",
+    "field_id": "currencyCode",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The rolling percentage of 30-day active users who are also 1-day active users.",
+    "field_id": "dauPerMau",
+    "kind": "metric",
+    "section": "USER"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The rolling percentage of 7-day active users who are also 1-day active users.",
+    "field_id": "dauPerWau",
+    "kind": "metric",
+    "section": "USER"
+  },
+  {
+    "data_type": "date",
+    "description": "The date of the event, formatted as YYYYMMDD.",
+    "field_id": "date",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The combined values of date and hour (YYYYMMDDHH).",
+    "field_id": "dateHour",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The combined values of date, hour, and minute (YYYYMMDDHHMM).",
+    "field_id": "dateHourMinute",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The day of the month, a two-digit number from 01 to 31.",
+    "field_id": "day",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "integer",
+    "description": "The integer day of the week (0-6, Sunday first).",
+    "field_id": "dayOfWeek",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The day of the week in English.",
+    "field_id": "dayOfWeekName",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The key event's default channel group based on source and medium.",
+    "field_id": "defaultChannelGroup",
+    "kind": "dimension",
+    "section": "SESSION SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The type of device: Desktop, Tablet, or Mobile.",
+    "field_id": "device_category",
+    "kind": "dimension",
+    "section": "DEVICE",
+    "source_field": "deviceCategory"
+  },
+  {
+    "data_type": "string",
+    "description": "The mobile device model (example: iPhone 10,6).",
+    "field_id": "deviceModel",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 advertiser ID that led to the key event.",
+    "field_id": "dv360AdvertiserId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 advertiser name that led to the key event.",
+    "field_id": "dv360AdvertiserName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 campaign ID that led to the key event.",
+    "field_id": "dv360CampaignId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 campaign name that led to the key event.",
+    "field_id": "dv360CampaignName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 creative format (expandable, video, native).",
+    "field_id": "dv360CreativeFormat",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 creative ID that led to the key event.",
+    "field_id": "dv360CreativeId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 creative name that led to the key event.",
+    "field_id": "dv360CreativeName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 exchange ID that led to the key event.",
+    "field_id": "dv360ExchangeId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 exchange name that led to the key event.",
+    "field_id": "dv360ExchangeName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 insertion order ID that led to the key event.",
+    "field_id": "dv360InsertionOrderId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 insertion order name that led to the key event.",
+    "field_id": "dv360InsertionOrderName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 line item ID that led to the key event.",
+    "field_id": "dv360LineItemId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 line item name that led to the key event.",
+    "field_id": "dv360LineItemName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 medium that led to the key event (e.g. cpm).",
+    "field_id": "dv360Medium",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 partner ID that led to the key event.",
+    "field_id": "dv360PartnerId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 partner name that led to the key event.",
+    "field_id": "dv360PartnerName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 source (site name where the ad displayed).",
+    "field_id": "dv360Source",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 source medium that led to the key event.",
+    "field_id": "dv360SourceMedium",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of times users completed a purchase.",
+    "field_id": "ecommercePurchases",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of sessions that lasted longer than 10 seconds, had a key event, or had 2+ screen/page views.",
+    "field_id": "engagedSessions",
+    "kind": "metric",
+    "section": "SESSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The percentage of engaged sessions.",
+    "field_id": "engagementRate",
+    "kind": "metric",
+    "section": "SESSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "The count of events.",
+    "field_id": "eventCount",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average number of events per user.",
+    "field_id": "eventCountPerUser",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The name of the event.",
+    "field_id": "eventName",
+    "kind": "dimension",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The sum of the event parameter named 'value'.",
+    "field_id": "eventValue",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average number of events per session.",
+    "field_id": "eventsPerSession",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The extension of the downloaded file (e.g. pdf, txt).",
+    "field_id": "fileExtension",
+    "kind": "dimension",
+    "section": "LINKS"
+  },
+  {
+    "data_type": "string",
+    "description": "The page path of the downloaded file.",
+    "field_id": "fileName",
+    "kind": "dimension",
+    "section": "LINKS"
+  },
+  {
+    "data_type": "string",
+    "description": "The date (YYYYMMDD) the user's first session occurred.",
+    "field_id": "firstSessionDate",
+    "kind": "dimension",
+    "section": "USER"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 account ID that originally acquired the user.",
+    "field_id": "firstUserCm360AccountId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 account name that originally acquired the user.",
+    "field_id": "firstUserCm360AccountName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 advertiser ID that originally acquired the user.",
+    "field_id": "firstUserCm360AdvertiserId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 advertiser name that originally acquired the user.",
+    "field_id": "firstUserCm360AdvertiserName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 campaign ID that originally acquired the user.",
+    "field_id": "firstUserCm360CampaignId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 campaign name that originally acquired the user.",
+    "field_id": "firstUserCm360CampaignName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative format that originally acquired the user.",
+    "field_id": "firstUserCm360CreativeFormat",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative ID that originally acquired the user.",
+    "field_id": "firstUserCm360CreativeId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative name that originally acquired the user.",
+    "field_id": "firstUserCm360CreativeName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative type that originally acquired the user.",
+    "field_id": "firstUserCm360CreativeType",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative type ID that originally acquired the user.",
+    "field_id": "firstUserCm360CreativeTypeId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative version that originally acquired the user.",
+    "field_id": "firstUserCm360CreativeVersion",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 medium that originally acquired the user.",
+    "field_id": "firstUserCm360Medium",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 account name that led to the session.",
+    "field_id": "sessionCm360AccountName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 placement ID that originally acquired the user.",
+    "field_id": "firstUserCm360PlacementId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 placement name that originally acquired the user.",
+    "field_id": "firstUserCm360PlacementName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 placement cost structure that originally acquired the user.",
+    "field_id": "firstUserCm360PlacementCostStructure",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 rendering ID that originally acquired the user.",
+    "field_id": "firstUserCm360RenderingId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 site ID that originally acquired the user.",
+    "field_id": "firstUserCm360SiteId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 site name that originally acquired the user.",
+    "field_id": "firstUserCm360SiteName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 source that originally acquired the user.",
+    "field_id": "firstUserCm360Source",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 source medium that originally acquired the user.",
+    "field_id": "firstUserCm360SourceMedium",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The default channel group that first acquired the user.",
+    "field_id": "firstUserDefaultChannelGroup",
+    "kind": "dimension",
+    "section": "USER SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 advertiser ID that originally acquired the user.",
+    "field_id": "firstUserDv360AdvertiserId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 advertiser name that originally acquired the user.",
+    "field_id": "firstUserDv360AdvertiserName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 campaign ID that originally acquired the user.",
+    "field_id": "firstUserDv360CampaignId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 campaign name that originally acquired the user.",
+    "field_id": "firstUserDv360CampaignName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 creative format that originally acquired the user.",
+    "field_id": "firstUserDv360CreativeFormat",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 creative ID that originally acquired the user.",
+    "field_id": "firstUserDv360CreativeId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 creative name that originally acquired the user.",
+    "field_id": "firstUserDv360CreativeName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 exchange ID that originally acquired the user.",
+    "field_id": "firstUserDv360ExchangeId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 exchange name that originally acquired the user.",
+    "field_id": "firstUserDv360ExchangeName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 insertion order ID that originally acquired the user.",
+    "field_id": "firstUserDv360InsertionOrderId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 insertion order name that originally acquired the user.",
+    "field_id": "firstUserDv360InsertionOrderName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 line item ID that originally acquired the user.",
+    "field_id": "firstUserDv360LineItemId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 line item name that originally acquired the user.",
+    "field_id": "firstUserDv360LineItemName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 medium that originally acquired the user.",
+    "field_id": "firstUserDv360Medium",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 partner ID that originally acquired the user.",
+    "field_id": "firstUserDv360PartnerId",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 partner name that originally acquired the user.",
+    "field_id": "firstUserDv360PartnerName",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 source that originally acquired the user.",
+    "field_id": "firstUserDv360Source",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The DV360 source medium that originally acquired the user.",
+    "field_id": "firstUserDv360SourceMedium",
+    "kind": "dimension",
+    "section": "DV360"
+  },
+  {
+    "data_type": "string",
+    "description": "The account name from Google Ads that first acquired the user.",
+    "field_id": "firstUserGoogleAdsAccountName",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The ad group ID that first acquired the user.",
+    "field_id": "firstUserGoogleAdsAdGroupId",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The ad group name that first acquired the user.",
+    "field_id": "firstUserGoogleAdsAdGroupName",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The advertising network that first acquired the user.",
+    "field_id": "firstUserGoogleAdsAdNetworkType",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The identifier of the Google Ads campaign that first acquired the user.",
+    "field_id": "firstUserGoogleAdsCampaignId",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The name of the Google Ads campaign that first acquired the user.",
+    "field_id": "firstUserGoogleAdsCampaignName",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The Google Ads campaign type that first acquired the user.",
+    "field_id": "firstUserGoogleAdsCampaignType",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The Google Ads creative ID that first acquired the user.",
+    "field_id": "firstUserGoogleAdsCreativeId",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The customer ID from Google Ads that first acquired the user.",
+    "field_id": "firstUserGoogleAdsCustomerId",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The Google Ads keyword text that first acquired the user.",
+    "field_id": "firstUserGoogleAdsKeyword",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The search query that first acquired the user.",
+    "field_id": "firstUserGoogleAdsQuery",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual campaign ID (utm_id) that first acquired the user.",
+    "field_id": "firstUserManualCampaignId",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual campaign name (utm_campaign) that first acquired the user.",
+    "field_id": "firstUserManualCampaignName",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The ad content (utm_content) that first acquired the user.",
+    "field_id": "firstUserManualContent",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual creative format (utm_creative_format) that first acquired the user.",
+    "field_id": "firstUserManualCreativeFormat",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual marketing tactic (utm_marketing_tactic) that first acquired the user.",
+    "field_id": "firstUserManualMarketingTactic",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual medium (utm_medium) that first acquired the user.",
+    "field_id": "firstUserManualMedium",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual source (utm_source) that first acquired the user.",
+    "field_id": "firstUserManualSource",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The combination of the manual source and medium that first acquired the user.",
+    "field_id": "firstUserManualSourceMedium",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual source platform (utm_source_platform) that first acquired the user.",
+    "field_id": "firstUserManualSourcePlatform",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The term (utm_term) that first acquired the user.",
+    "field_id": "firstUserManualTerm",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The medium that first acquired the user.",
+    "field_id": "firstUserMedium",
+    "kind": "dimension",
+    "section": "USER SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The primary channel group that first acquired the user.",
+    "field_id": "firstUserPrimaryChannelGroup",
+    "kind": "dimension",
+    "section": "USER SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 ad group ID that originally acquired the user.",
+    "field_id": "firstUserSa360AdGroupId",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 ad group name that originally acquired the user.",
+    "field_id": "firstUserSa360AdGroupName",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 campaign ID that originally acquired the user.",
+    "field_id": "firstUserSa360CampaignId",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 campaign name that originally acquired the user.",
+    "field_id": "firstUserSa360CampaignName",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 creative format that originally acquired the user.",
+    "field_id": "firstUserSa360CreativeFormat",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 engine account ID that originally acquired the user.",
+    "field_id": "firstUserSa360EngineAccountId",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 engine account name that originally acquired the user.",
+    "field_id": "firstUserSa360EngineAccountName",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 engine account type that originally acquired the user.",
+    "field_id": "firstUserSa360EngineAccountType",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 keyword text that originally acquired the user.",
+    "field_id": "firstUserSa360KeywordText",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 manager account ID that originally acquired the user.",
+    "field_id": "firstUserSa360ManagerAccountId",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 manager account name that originally acquired the user.",
+    "field_id": "firstUserSa360ManagerAccountName",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 medium that originally acquired the user.",
+    "field_id": "firstUserSa360Medium",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 query that originally acquired the user.",
+    "field_id": "firstUserSa360Query",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 source that originally acquired the user.",
+    "field_id": "firstUserSa360Source",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 source medium that originally acquired the user.",
+    "field_id": "firstUserSa360SourceMedium",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The source that first acquired the user.",
+    "field_id": "firstUserSource",
+    "kind": "dimension",
+    "section": "USER SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The combined source and medium that first acquired the user.",
+    "field_id": "first_user_source_medium",
+    "kind": "dimension",
+    "section": "USER SOURCE",
+    "source_field": "firstUserSourceMedium"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The percentage of active users who made their first-ever purchase.",
+    "field_id": "firstTimePurchaserConversionRate",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The percentage of active users who made their first purchase.",
+    "field_id": "firstTimePurchaserRate",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of users who made their first purchase.",
+    "field_id": "firstTimePurchasers",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The hostname, page path, and query string of visited web pages.",
+    "field_id": "fullPageUrl",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The account name from Google Ads for the key event.",
+    "field_id": "googleAdsAccountName",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The Google Ads ad group ID attributed to the key event.",
+    "field_id": "googleAdsAdGroupId",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The ad group name attributed to the key event.",
+    "field_id": "googleAdsAdGroupName",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The advertising network type (Google search, Display, etc.).",
+    "field_id": "googleAdsAdNetworkType",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The campaign ID for the Google Ads campaign attributed to the key event.",
+    "field_id": "googleAdsCampaignId",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The campaign name for the Google Ads campaign attributed to the key event.",
+    "field_id": "googleAdsCampaignName",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The Google Ads campaign type (Search, Display, Shopping, Video, etc.).",
+    "field_id": "googleAdsCampaignType",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The ID of the Google Ads creative.",
+    "field_id": "googleAdsCreativeId",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The customer ID from Google Ads.",
+    "field_id": "googleAdsCustomerId",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The matched keyword that led to the key event.",
+    "field_id": "googleAdsKeyword",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The search query that led to the key event.",
+    "field_id": "googleAdsQuery",
+    "kind": "dimension",
+    "section": "ADS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The sum of revenue from purchases, before refunds.",
+    "field_id": "grossPurchaseRevenue",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The total revenue from items only, before refunds.",
+    "field_id": "grossItemRevenue",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The player group ID in a game for an event.",
+    "field_id": "groupId",
+    "kind": "dimension",
+    "section": "GAMING"
+  },
+  {
+    "data_type": "string",
+    "description": "Includes the subdomain and domain names of a URL.",
+    "field_id": "hostName",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The two-digit hour of day (00-23) in property time zone.",
+    "field_id": "hour",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "boolean",
+    "description": "The string 'true' if the event is a key event.",
+    "field_id": "isKeyEvent",
+    "kind": "dimension",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "string",
+    "description": "ISO week number, where each week starts on Monday.",
+    "field_id": "isoWeek",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The ISO year of the event.",
+    "field_id": "isoYear",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The combined values of isoWeek and isoYear.",
+    "field_id": "isoYearIsoWeek",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The name or code of the affiliate/partner for the item.",
+    "field_id": "itemAffiliation",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The brand name of the item.",
+    "field_id": "itemBrand",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The hierarchical category in which the item is classified.",
+    "field_id": "itemCategory",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The hierarchical category in which the item is classified (second level).",
+    "field_id": "itemCategory2",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The hierarchical category in which the item is classified (third level).",
+    "field_id": "itemCategory3",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The hierarchical category in which the item is classified (fourth level).",
+    "field_id": "itemCategory4",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The hierarchical category in which the item is classified (fifth level).",
+    "field_id": "itemCategory5",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The ID of the item.",
+    "field_id": "itemId",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of times users clicked an item that appeared in a list.",
+    "field_id": "itemListClickEvents",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The number of users who selected a list divided by the number who viewed the same list.",
+    "field_id": "itemListClickThroughRate",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The ID of the item list.",
+    "field_id": "itemListId",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The name of the item list.",
+    "field_id": "itemListName",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of times an item list was viewed.",
+    "field_id": "itemListViewEvents",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The physical location associated with the item.",
+    "field_id": "itemLocationID",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The name of the item.",
+    "field_id": "itemName",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The position of an item in a list.",
+    "field_id": "itemListPosition",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The name of the item-promotion creative.",
+    "field_id": "itemPromotionCreativeName",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The name of the promotional creative slot.",
+    "field_id": "itemPromotionCreativeSlot",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The ID of the item promotion.",
+    "field_id": "itemPromotionId",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The name of the promotion for the item.",
+    "field_id": "itemPromotionName",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The number of users who selected a promotion divided by the number who viewed it.",
+    "field_id": "itemPromotionClickThroughRate",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The item refund amount is the total refunded transaction revenue from items only.",
+    "field_id": "itemRefundAmount",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The total revenue from items only.",
+    "field_id": "itemRevenue",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The specific variation of a product (XS, S, M, L).",
+    "field_id": "itemVariant",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of times the item details were viewed.",
+    "field_id": "itemViewEvents",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of units added to cart for a single item.",
+    "field_id": "itemsAddedToCart",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of units checked out for a single item.",
+    "field_id": "itemsCheckedOut",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of units clicked in a list for a single item.",
+    "field_id": "itemsClickedInList",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of units clicked in a promotion for a single item.",
+    "field_id": "itemsClickedInPromotion",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of units for a single item included in purchase events.",
+    "field_id": "itemsPurchased",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of units viewed for a single item.",
+    "field_id": "itemsViewed",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of units viewed in a list for a single item.",
+    "field_id": "itemsViewedInList",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of units viewed in a promotion for a single item.",
+    "field_id": "itemsViewedInPromotion",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The count of key events.",
+    "field_id": "keyEvents",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The language setting of the user's browser or device.",
+    "field_id": "language",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The language setting of the user's browser or device (ISO 639).",
+    "field_id": "languageCode",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The page path associated with the first pageview in a session.",
+    "field_id": "landing_page",
+    "kind": "dimension",
+    "section": "CONTENT",
+    "source_field": "landingPage"
+  },
+  {
+    "data_type": "string",
+    "description": "The page path + query string associated with the first pageview in a session.",
+    "field_id": "landingPagePlusQueryString",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The player's level in a game.",
+    "field_id": "level",
+    "kind": "dimension",
+    "section": "GAMING"
+  },
+  {
+    "data_type": "string",
+    "description": "The HTML class attribute for an outbound link or file download.",
+    "field_id": "linkClasses",
+    "kind": "dimension",
+    "section": "LINKS"
+  },
+  {
+    "data_type": "string",
+    "description": "The destination domain of the outbound link.",
+    "field_id": "linkDomain",
+    "kind": "dimension",
+    "section": "LINKS"
+  },
+  {
+    "data_type": "string",
+    "description": "The HTML ID attribute for an outbound link or file download.",
+    "field_id": "linkId",
+    "kind": "dimension",
+    "section": "LINKS"
+  },
+  {
+    "data_type": "string",
+    "description": "The link text of the file download.",
+    "field_id": "linkText",
+    "kind": "dimension",
+    "section": "LINKS"
+  },
+  {
+    "data_type": "string",
+    "description": "The full URL for an outbound link or file download.",
+    "field_id": "linkUrl",
+    "kind": "dimension",
+    "section": "LINKS"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual campaign ID (utm_id) that led to the key event.",
+    "field_id": "manualCampaignId",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual campaign name (utm_campaign) that led to the key event.",
+    "field_id": "manualCampaignName",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The ad content (utm_content) that led to the key event.",
+    "field_id": "manualContent",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The creative format (utm_creative_format) that led to the key event.",
+    "field_id": "manualCreativeFormat",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The targeting criteria (utm_marketing_tactic) that led to the key event.",
+    "field_id": "manualMarketingTactic",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual medium (utm_medium) that led to the key event.",
+    "field_id": "manualMedium",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The manual source (utm_source) that led to the key event.",
+    "field_id": "manualSource",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The combination of the manual source and medium.",
+    "field_id": "manualSourceMedium",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The platform (utm_source_platform) that led to the key event.",
+    "field_id": "manualSourcePlatform",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The term (utm_term) attributed to the key event.",
+    "field_id": "manualTerm",
+    "kind": "dimension",
+    "section": "MANUAL SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The medium attributed to the key event.",
+    "field_id": "medium",
+    "kind": "dimension",
+    "section": "SESSION SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The two-digit minute of the hour (00-59) in property time zone.",
+    "field_id": "minute",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "Manufacturer or branded name (Samsung, HTC, Verizon).",
+    "field_id": "mobileDeviceBranding",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The branded device name (Galaxy S10 or P30 Pro).",
+    "field_id": "mobileDeviceMarketingName",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The mobile device model name (iPhone X or SM-G950F).",
+    "field_id": "mobileDeviceModel",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The month of the event, a two-digit integer from 01 to 12.",
+    "field_id": "month",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of users who interacted with your site or launched your app for the first time.",
+    "field_id": "newUsers",
+    "kind": "metric",
+    "section": "USER"
+  },
+  {
+    "data_type": "string",
+    "description": "New users (0 prior sessions) or returning users (1+ prior sessions).",
+    "field_id": "newVsReturning",
+    "kind": "dimension",
+    "section": "USER"
+  },
+  {
+    "data_type": "string",
+    "description": "The number of days since the start of the date range.",
+    "field_id": "nthDay",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The number of hours since the start of the date range.",
+    "field_id": "nthHour",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The number of minutes since the start of the date range.",
+    "field_id": "nthMinute",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The number of months since the start of the date range.",
+    "field_id": "nthMonth",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The number of weeks since the start of the date range.",
+    "field_id": "nthWeek",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The number of years since the start of the date range.",
+    "field_id": "nthYear",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "The operating systems used by visitors.",
+    "field_id": "operatingSystem",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The operating system versions (Android 10, iOS 13.5.1).",
+    "field_id": "operatingSystemVersion",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The operating system and version combined.",
+    "field_id": "operatingSystemWithVersion",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The code for the order-level coupon.",
+    "field_id": "orderCoupon",
+    "kind": "dimension",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "Returns 'true' if the link led to a site outside the domain.",
+    "field_id": "outbound",
+    "kind": "dimension",
+    "section": "LINKS"
+  },
+  {
+    "data_type": "string",
+    "description": "The portion of the URL between the hostname and the query string.",
+    "field_id": "page",
+    "kind": "dimension",
+    "section": "CONTENT",
+    "source_field": "pagePath"
+  },
+  {
+    "data_type": "string",
+    "description": "The protocol, hostname, page path, and query string for web pages visited.",
+    "field_id": "pageLocation",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The portion of the URL following the hostname (path + query string).",
+    "field_id": "pagePathPlusQueryString",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The full referring URL including the hostname and path.",
+    "field_id": "pageReferrer",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The web page titles used on your site.",
+    "field_id": "pageTitle",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The percentage down the page that the user scrolled (e.g. 90).",
+    "field_id": "percentScrolled",
+    "kind": "dimension",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The platform on which your app or website ran (web, iOS, Android).",
+    "field_id": "platform",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The platform and type of device combined.",
+    "field_id": "platformDeviceCategory",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "string",
+    "description": "The primary channel group attributed to the key event.",
+    "field_id": "primaryChannelGroup",
+    "kind": "dimension",
+    "section": "SESSION SOURCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of publisher_ad_click events.",
+    "field_id": "publisherAdClicks",
+    "kind": "metric",
+    "section": "PUBLISHER"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of ad impressions logged by publisher_ad_impression events.",
+    "field_id": "publisherAdImpressions",
+    "kind": "metric",
+    "section": "PUBLISHER"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The sum of revenue from purchases made in your app or site.",
+    "field_id": "purchase_revenue",
+    "kind": "metric",
+    "section": "ECOMMERCE",
+    "source_field": "purchaseRevenue"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The percentage of active users who made one or more purchases.",
+    "field_id": "purchaserRate",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The total refunded transaction revenues.",
+    "field_id": "refundAmount",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of refunded transactions.",
+    "field_id": "refunds",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The geographic region from which the user activity originated.",
+    "field_id": "region",
+    "kind": "dimension",
+    "section": "GEO"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Return on ad spend (ROAS): total revenue divided by advertiser ad cost.",
+    "field_id": "returnOnAdSpend",
+    "kind": "metric",
+    "section": "ADS"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 ad group ID that led to the key event.",
+    "field_id": "sa360AdGroupId",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 ad group name that led to the key event.",
+    "field_id": "sa360AdGroupName",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 campaign ID that led to the key event.",
+    "field_id": "sa360CampaignId",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 campaign name that led to the key event.",
+    "field_id": "sa360CampaignName",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 creative format that led to the key event.",
+    "field_id": "sa360CreativeFormat",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 engine account ID that led to the key event.",
+    "field_id": "sa360EngineAccountId",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 engine account name that led to the key event.",
+    "field_id": "sa360EngineAccountName",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 engine account type that led to the key event.",
+    "field_id": "sa360EngineAccountType",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 keyword text that led to the key event.",
+    "field_id": "sa360KeywordText",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 manager account ID that led to the key event.",
+    "field_id": "sa360ManagerAccountId",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 manager account name that led to the key event.",
+    "field_id": "sa360ManagerAccountName",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 medium that led to the key event.",
+    "field_id": "sa360Medium",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 query that led to the key event.",
+    "field_id": "sa360Query",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 source that led to the key event.",
+    "field_id": "sa360Source",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "string",
+    "description": "The SA360 source medium that led to the key event.",
+    "field_id": "sa360SourceMedium",
+    "kind": "dimension",
+    "section": "SA360"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of app screens or web pages your users viewed.",
+    "field_id": "screen_page_views",
+    "kind": "metric",
+    "section": "CONTENT",
+    "source_field": "screenPageViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average number of screens/pages viewed per session.",
+    "field_id": "screenPageViewsPerSession",
+    "kind": "metric",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average number of screens/pages viewed per user.",
+    "field_id": "screenPageViewsPerUser",
+    "kind": "metric",
+    "section": "CONTENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The screen resolution of the user's monitor (1920x1080).",
+    "field_id": "screenResolution",
+    "kind": "dimension",
+    "section": "DEVICE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of unique users who scrolled down at least 90% of the page.",
+    "field_id": "scrolledUsers",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "string",
+    "description": "The term searched by the user.",
+    "field_id": "searchTerm",
+    "kind": "dimension",
+    "section": "SEARCH"
+  },
+  {
+    "data_type": "string",
+    "description": "The marketing campaign name for a session.",
+    "field_id": "session_campaign",
+    "kind": "dimension",
+    "section": "SESSION SOURCE",
+    "source_field": "sessionCampaignName"
+  },
+  {
+    "data_type": "string",
+    "description": "The marketing campaign ID for a session.",
+    "field_id": "sessionCampaignId",
+    "kind": "dimension",
+    "section": "SESSION SOURCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 advertiser ID that led to the session.",
+    "field_id": "sessionCm360AdvertiserId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 advertiser name that led to the session.",
+    "field_id": "sessionCm360AdvertiserName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 campaign ID that led to the session.",
+    "field_id": "sessionCm360CampaignId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 campaign name that led to the session.",
+    "field_id": "sessionCm360CampaignName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative format that led to the session.",
+    "field_id": "sessionCm360CreativeFormat",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative ID that led to the session.",
+    "field_id": "sessionCm360CreativeId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative name that led to the session.",
+    "field_id": "sessionCm360CreativeName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative type that led to the session.",
+    "field_id": "sessionCm360CreativeType",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative type ID that led to the session.",
+    "field_id": "sessionCm360CreativeTypeId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 creative version that led to the session.",
+    "field_id": "sessionCm360CreativeVersion",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 medium that led to the session.",
+    "field_id": "sessionCm360Medium",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 placement cost structure that led to the session.",
+    "field_id": "sessionCm360PlacementCostStructure",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 placement ID that led to the session.",
+    "field_id": "sessionCm360PlacementId",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The CM360 placement name that led to the session.",
+    "field_id": "sessionCm360PlacementName",
+    "kind": "dimension",
+    "section": "CM360"
+  },
+  {
+    "data_type": "string",
+    "description": "The combined source and medium that led to the session.",
+    "field_id": "session_source_medium",
+    "kind": "dimension",
+    "section": "SESSION SOURCE",
+    "source_field": "sessionSourceMedium"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of sessions that began on your site or app.",
+    "field_id": "sessions",
+    "kind": "metric",
+    "section": "SESSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The percentage of sessions in which any key event was triggered.",
+    "field_id": "sessionKeyEventRate",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average number of sessions per user.",
+    "field_id": "sessionsPerUser",
+    "kind": "metric",
+    "section": "SESSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The shipping amount associated with a transaction.",
+    "field_id": "shippingAmount",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "string",
+    "description": "The source attributed to the key event.",
+    "field_id": "source",
+    "kind": "dimension",
+    "section": "SESSION SOURCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The tax amount associated with a transaction.",
+    "field_id": "taxAmount",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The total advertising revenue from both AdMob and third-party sources.",
+    "field_id": "totalAdRevenue",
+    "kind": "metric",
+    "section": "PUBLISHER"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The sum of revenue from purchases, subscriptions, and advertising.",
+    "field_id": "totalRevenue",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The number of users who made a purchase in the reporting date range.",
+    "field_id": "totalPurchasers",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "integer",
+    "description": "The total number of unique users who logged an event.",
+    "field_id": "totalUsers",
+    "kind": "metric",
+    "section": "USER"
+  },
+  {
+    "data_type": "string",
+    "description": "The ID of the e-commerce transaction.",
+    "field_id": "transaction_id",
+    "kind": "dimension",
+    "section": "ECOMMERCE",
+    "source_field": "transactionId"
+  },
+  {
+    "data_type": "integer",
+    "description": "The count of transaction events with purchase revenue.",
+    "field_id": "transactions",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The average number of transactions per purchaser.",
+    "field_id": "transactionsPerPurchaser",
+    "kind": "metric",
+    "section": "ECOMMERCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The total time (seconds) your website or app was in the foreground of users' devices.",
+    "field_id": "userEngagementDuration",
+    "kind": "metric",
+    "section": "SESSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The percentage of users who triggered any key event.",
+    "field_id": "userKeyEventRate",
+    "kind": "metric",
+    "section": "EVENT"
+  },
+  {
+    "data_type": "decimal",
+    "description": "The rolling percentage of 30-day active users who are also 7-day active users.",
+    "field_id": "wauPerMau",
+    "kind": "metric",
+    "section": "USER"
+  }
+]

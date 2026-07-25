@@ -1,0 +1,466 @@
+[
+  {
+    "field_id": "order",
+    "source_field": "order",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Count of orders (1 per order record).",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "total",
+    "source_field": "total",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Grand total of the order in the store currency (includes items, shipping, taxes, fees minus discounts).",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "total_tax",
+    "source_field": "total_tax",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Sum of all taxes on the order in the store currency.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "subtotal_tax",
+    "source_field": "subtotal_tax",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Sum of line item taxes before discounts, in the store currency.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "discount_total",
+    "source_field": "discount_total",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Total discount amount applied to the order in the store currency.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "discount_tax",
+    "source_field": "discount_tax",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Total tax on the discount amount in the store currency.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "shipping_total",
+    "source_field": "shipping_total",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Total shipping amount for the order in the store currency.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "shipping_tax",
+    "source_field": "shipping_tax",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Total shipping tax amount for the order in the store currency.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "cart_tax",
+    "source_field": "cart_tax",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Sum of line item taxes only (cart-level tax) in the store currency.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "id",
+    "description": "Unique identifier for the order (order ID).",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "number",
+    "source_field": "number",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Order number (display value, may differ from the internal id).",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "order_key",
+    "source_field": "order_key",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Order key, a unique auto-generated token for the order.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "status",
+    "source_field": "status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Order status. Values: pending, processing, on-hold, completed, cancelled, refunded, failed, trash. Only completed/processing count as a sale.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "currency",
+    "source_field": "currency",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "The three-letter ISO 4217 code for the order currency.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "date_created",
+    "source_field": "date_created",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "The date the order was created, in the site timezone. Day-grain date extracted for reporting.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "date_created_gmt",
+    "source_field": "date_created_gmt",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "The date the order was created, as GMT.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "date_modified",
+    "source_field": "date_modified",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "The date the order was last modified, in the site timezone.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "date_paid",
+    "source_field": "date_paid",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "The date the order was paid, in the site timezone.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "date_completed",
+    "source_field": "date_completed",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "The date the order was completed, in the site timezone.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "payment_method",
+    "source_field": "payment_method",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Payment method id (e.g. bacs, stripe, ppcp-gateway).",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "payment_method_title",
+    "source_field": "payment_method_title",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Human-readable payment method title.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "transaction_id",
+    "source_field": "transaction_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Payment-gateway transaction id. OFTEN EMPTY on manual/offline payments. Used as the GA4 x WooCommerce join key (Epic 17).",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "customer_id",
+    "source_field": "customer_id",
+    "kind": "dimension",
+    "data_type": "id",
+    "description": "The customer id who owns the order (0 for guest checkout).",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "customer_note",
+    "source_field": "customer_note",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Note left by the customer during checkout.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "created_via",
+    "source_field": "created_via",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "How the order was created (e.g. checkout, admin, rest-api, pos).",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "prices_include_tax",
+    "source_field": "prices_include_tax",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the order prices include tax.",
+    "section": "ORDER"
+  },
+  {
+    "field_id": "billing_city",
+    "source_field": "billing.city",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "City of the billing address.",
+    "section": "BILLING ADDRESS"
+  },
+  {
+    "field_id": "billing_state",
+    "source_field": "billing.state",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "State/county code of the billing address.",
+    "section": "BILLING ADDRESS"
+  },
+  {
+    "field_id": "billing_postcode",
+    "source_field": "billing.postcode",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Postal code of the billing address.",
+    "section": "BILLING ADDRESS"
+  },
+  {
+    "field_id": "billing_country",
+    "source_field": "billing.country",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Two-letter ISO 3166-1 alpha-2 country code of the billing address.",
+    "section": "BILLING ADDRESS"
+  },
+  {
+    "field_id": "billing_company",
+    "source_field": "billing.company",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Company name of the billing address.",
+    "section": "BILLING ADDRESS"
+  },
+  {
+    "field_id": "billing_email",
+    "source_field": "billing.email",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Email address on the billing details.",
+    "section": "BILLING ADDRESS"
+  },
+  {
+    "field_id": "shipping_city",
+    "source_field": "shipping.city",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "City of the shipping address.",
+    "section": "SHIPPING ADDRESS"
+  },
+  {
+    "field_id": "shipping_state",
+    "source_field": "shipping.state",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "State/county code of the shipping address.",
+    "section": "SHIPPING ADDRESS"
+  },
+  {
+    "field_id": "shipping_postcode",
+    "source_field": "shipping.postcode",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Postal code of the shipping address.",
+    "section": "SHIPPING ADDRESS"
+  },
+  {
+    "field_id": "shipping_country",
+    "source_field": "shipping.country",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Two-letter ISO 3166-1 alpha-2 country code of the shipping address.",
+    "section": "SHIPPING ADDRESS"
+  },
+  {
+    "field_id": "line_item_id",
+    "source_field": "line_items[].id",
+    "kind": "dimension",
+    "data_type": "id",
+    "description": "Unique identifier for a line item in the order.",
+    "section": "LINE ITEM"
+  },
+  {
+    "field_id": "line_item_name",
+    "source_field": "line_items[].name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Product name at the time of sale.",
+    "section": "LINE ITEM"
+  },
+  {
+    "field_id": "line_item_quantity",
+    "source_field": "line_items[].quantity",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Quantity ordered for the line item.",
+    "section": "LINE ITEM"
+  },
+  {
+    "field_id": "line_item_subtotal",
+    "source_field": "line_items[].subtotal",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Line subtotal before discounts, in the store currency.",
+    "section": "LINE ITEM"
+  },
+  {
+    "field_id": "line_item_total",
+    "source_field": "line_items[].total",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Line total after discounts, in the store currency.",
+    "section": "LINE ITEM"
+  },
+  {
+    "field_id": "line_item_sku",
+    "source_field": "line_items[].sku",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Stock keeping unit of the line item product.",
+    "section": "LINE ITEM"
+  },
+  {
+    "field_id": "line_item_price",
+    "source_field": "line_items[].price",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Unit price of the line item product, in the store currency.",
+    "section": "LINE ITEM"
+  },
+  {
+    "field_id": "product_id",
+    "source_field": "line_items[].product_id",
+    "kind": "dimension",
+    "data_type": "id",
+    "description": "The id of the product the line item refers to.",
+    "section": "PRODUCT"
+  },
+  {
+    "field_id": "variant_id",
+    "source_field": "line_items[].variation_id",
+    "kind": "dimension",
+    "data_type": "id",
+    "description": "The id of the product variation the line item refers to (0 if none).",
+    "section": "PRODUCT"
+  },
+  {
+    "field_id": "refund_id",
+    "source_field": "refunds[].id",
+    "kind": "dimension",
+    "data_type": "id",
+    "description": "Unique identifier of a refund on the order.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_reason",
+    "source_field": "refunds[].reason",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Reason for the refund.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_total",
+    "source_field": "refunds[].total",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Refund total as reported by WooCommerce (NEGATIVE amount). The connector takes abs() to build the positive refund_amount.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "coupon_code",
+    "source_field": "coupon_lines[].code",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Coupon code applied to the order.",
+    "section": "COUPON"
+  },
+  {
+    "field_id": "coupon_discount",
+    "source_field": "coupon_lines[].discount",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Discount amount from the coupon, in the store currency.",
+    "section": "COUPON"
+  },
+  {
+    "field_id": "fee_name",
+    "source_field": "fee_lines[].name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Name of an extra fee line on the order.",
+    "section": "FEE"
+  },
+  {
+    "field_id": "fee_total",
+    "source_field": "fee_lines[].total",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Amount of an extra fee line, in the store currency.",
+    "section": "FEE"
+  },
+  {
+    "field_id": "tax_rate_code",
+    "source_field": "tax_lines[].rate_code",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Tax rate code applied to the order.",
+    "section": "TAX"
+  },
+  {
+    "field_id": "tax_line_total",
+    "source_field": "tax_lines[].tax_total",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Tax total for a tax line, in the store currency.",
+    "section": "TAX"
+  },
+  {
+    "field_id": "date",
+    "kind": "dimension",
+    "data_type": "date",
+    "description": "date exposed by WooCommerce. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "date_created"
+  },
+  {
+    "field_id": "orders_count",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "orders count exposed by WooCommerce. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "order"
+  },
+  {
+    "field_id": "refund_amount",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "refund amount exposed by WooCommerce (abs sum of refunds[].total). Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "total_refunded"
+  },
+  {
+    "field_id": "revenue",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "revenue exposed by WooCommerce (order.total). Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "total"
+  }
+]

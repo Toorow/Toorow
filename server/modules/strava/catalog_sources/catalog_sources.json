@@ -1,0 +1,85 @@
+{
+  "connector": "strava",
+  "api_version": "v3",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "The Strava Clubs domain is a STATIC, fully-enumerable swagger schema (no per-account custom fields). official_fields.json transcribes the DetailedClub/SummaryClub/ClubActivity/ClubAthlete/DetailedAthlete models directly from https://developers.strava.com/swagger/swagger.json (+ activity.json for the SportType enum). There is NO enrichment source (Strava is not a Supermetrics source; tap-strava covers athlete/activities, not clubs), so the swagger is the sole authority -- sufficient because the schema is small and static. field_discovery.mode=static. Completeness is proven by this transcription (no dynamic layer, no truncated superset).",
+    "central_design_fact": "SNAPSHOT-ONLY, NO HISTORY. GET /clubs/{id} returns the current value only. member_count/following_count are NON-ADDITIVE point-in-time levels (aggregation_rule=latest); the connector owns the time-series by snapshotting daily into a dated fact. Pre-connection history is unrecoverable.",
+    "competitor_boundary": "GET /clubs/{id} does NOT require membership -> any PUBLIC club is snapshotable by id. Private clubs 404 (skipped, never a zero). No club search endpoint -> competitor ids are per-project config. members/admins/activities are membership-gated -> competitors expose metadata+counts only.",
+    "official_field_count": 40,
+    "official_metrics": 8,
+    "official_dimensions": 32
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.strava.com/swagger/swagger.json",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://developers.strava.com/swagger/swagger.json -o /tmp/strava-sources/swagger.json ; curl -sL https://developers.strava.com/swagger/activity.json -o /tmp/strava-sources/activity.json   # activity.json carries the SportType enum",
+      "_also": [
+        {
+          "purpose": "reference_docs",
+          "url": "https://developers.strava.com/docs/reference/",
+          "fetched_at": "2026-07-21",
+          "_note": "Clubs section: getClubById (DetailedClub), getLoggedInAthleteClubs (SummaryClub[]), getClubMembersById (ClubAthlete[]), getClubAdminsById (SummaryAthlete[]), getClubActivitiesById (ClubActivity[])."
+        },
+        {
+          "purpose": "authentication_and_scopes",
+          "url": "https://developers.strava.com/docs/authentication/",
+          "fetched_at": "2026-07-21",
+          "_note": "OAuth2 authorization_code, scope 'read' covers club feeds. Access token 6h; refresh token rotates."
+        },
+        {
+          "purpose": "rate_limits",
+          "url": "https://developers.strava.com/docs/rate-limits/",
+          "fetched_at": "2026-07-21",
+          "_note": "Default 100 reads/15min, 1000 reads/day. 429 (sometimes 403) on breach; honor Retry-After."
+        }
+      ]
+    }
+  ],
+  "section_tier_map": {
+    "CLUB - IDENTITY": "core",
+    "CLUB - METRICS": "core",
+    "CLUB - LOCATION": "standard",
+    "CLUB - MEDIA": "advanced",
+    "CLUB - MEMBERSHIP FLAGS": "advanced",
+    "CLUB ACTIVITY FEED": "standard",
+    "CLUB MEMBERS": "standard",
+    "ATHLETE (connection key)": "core"
+  },
+  "field_tier_overrides": {
+    "club_id": "core",
+    "club_name": "core",
+    "member_count": "core",
+    "following_count": "core",
+    "sport_type": "core",
+    "date": "core",
+    "is_private": "core",
+    "is_verified": "standard",
+    "club_url": "standard",
+    "is_own_club": "core",
+    "athlete_id": "core"
+  },
+  "default_tier": "advanced",
+  "_field_discovery": {
+    "mode": "static",
+    "note": "Fixed swagger schema, no per-account custom fields. The full field set is committed in api_catalog.json. Declared in manifest source_capabilities.field_discovery."
+  },
+  "_non_additive_metrics": {
+    "note": "member_count / following_count / post_count are POINT-IN-TIME LEVELS. aggregation_rule=latest (manifest canonical_metric_mapping), non_additive=true. Read as last value per (club_id, window) via QUALIFY supersede -- NEVER SUM. They live in the DEDICATED mart fact_strava_club_snapshot, NOT in the additive cross-source fact_daily_kpi (GSC average_position precedent: a non-additive metric has no honest SUM row in the central mart).",
+    "keys": ["member_count", "following_count", "post_count"]
+  },
+  "probe": {
+    "request_style": "path_get",
+    "batch_size": 1,
+    "structural_note": "GET /clubs/{id} for a KNOWN PUBLIC club id (supplied at ratification): the response object carries every DetailedClub field -> each cataloged club field records ok|empty by presence in the JSON. No per-field request to bisect (one GET returns the whole object). own_club_full additionally probes GET /athlete/clubs and, for one own-club id, /members|/admins|/activities. A 404 on a deliberately-absent/private club id confirms the competitor unreachable path."
+  },
+  "_verification": {
+    "status": "blocked",
+    "reason_code": "live_evidence_not_ratified",
+    "note": "No Strava test account (2026-07-21). Ratification deferred: probe one known public club id once a connection exists."
+  }
+}

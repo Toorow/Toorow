@@ -1,0 +1,18 @@
+{
+  "connector": "dv360",
+  "api_version": "display-video-v4+bid-manager-v2",
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.google.com/bid-manager/reference/rest/v2/filters-metrics",
+      "fetched_at": "2026-07-22"
+    }
+  ],
+  "section_tier_map": {"FILTER": "core", "METRIC": "core"},
+  "default_tier": "standard",
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {}
+}

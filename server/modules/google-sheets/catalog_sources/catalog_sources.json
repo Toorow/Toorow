@@ -1,0 +1,34 @@
+{
+  "connector": "google-sheets",
+  "api_version": "sheets-v4 (tabular contract v1)",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "SELF-DECLARED CONTRACT — Google Sheets is a user-defined tabular source. There is no provider field catalog to exhaustively enumerate: the Sheets API returns whatever columns the user has placed in their spreadsheet. The canonical fields declared in official_fields.json are the toorow tabular-objectives contract v1, defined by the product (not by Google). The transport (GET spreadsheets.values endpoint) is documented at the URL below; the field contract is toorow-defined.",
+    "contract_rationale": "Fields represent the three KPI objectives (budget_declared, target_revenue, target_conversions) plus the two structural dimensions (date, sheet_row_id) that every toorow-connected sheet must expose via its datastream column_mapping. This is a closed, minimal contract by design: users declare their own column names; the mapping translates them to these canonical names at pull time.",
+    "drift_ids": [],
+    "enrichment_only_ids": []
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values",
+      "_note": "This URL documents the Sheets API v4 transport (spreadsheets.values.get / batchGet). It is NOT a field catalog — the field contract is toorow-defined (see official_fields.json and the _derivation note above). The response shape is: { 'values': [[header_row], [data_row], ...] }. Field names are user-defined column headers resolved at runtime via the datastream column_mapping.",
+      "fetched_at": "2026-07-21"
+    }
+  ],
+  "section_tier_map": {
+    "TABULAR": "core"
+  },
+  "field_tier_overrides": {},
+  "default_tier": "core",
+  "probe": {
+    "request_style": "none",
+    "batch_size": 0,
+    "structural_note": "Tabular contract: columns are declared by the user-mapped sheet, not enumerable via a provider field API. ratify_connector.py records a structural ratification (catalog==contract by construction) rather than issuing a field-by-field probe."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {},
+  "_exposure_note": "Self-declared tabular contract: the 5 fields are the extraction contract by construction."
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "date": "2026-07-01",
+    "advertiser_id": "adv-1",
+    "campaign_id": "cmp-1",
+    "placement_id": "(not set)",
+    "creative_id": "cr-1",
+    "impressions": "1000",
+    "clicks": "25",
+    "cost": "14.50"
+  }
+]

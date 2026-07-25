@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toorow.dev/schemas/field-compatibility.schema.json",
+  "title": "FieldCompatibility",
+  "description": "Story 26.1 (B): versioned contract for the declarative pre-call field-compatibility rules a module ships in its catalog_sources.json under the 'field_compatibility' key. Core (server/core/field_compat.py) knows ONLY this schema; every provider-specific rule value lives in the module's own file (AD-2). Rule kinds: mutually_exclusive (selecting from more than one set is refused), requires (a selected field demands companion fields), selectable_set (a context scope such as a resource or report_type restricts the selectable fields), only_alone (a field combines with no other), max_selection (an upper bound on the selection, optionally over a named pool). Any violation is refused BEFORE the API call as a typed invalid_request carrying the rule id.",
+  "type": "object",
+  "required": ["schema_version", "rules"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rule" }
+    }
+  },
+  "patternProperties": {
+    "^_": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "fieldList": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "rule": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "mutually_exclusive",
+            "requires",
+            "selectable_set",
+            "only_alone",
+            "max_selection"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "mutually_exclusive" } } },
+          "then": {
+            "required": ["sets"],
+            "properties": {
+              "id": true,
+              "kind": true,
+              "sets": {
+                "type": "array",
+                "minItems": 2,
+                "items": { "$ref": "#/$defs/fieldList" }
+              }
+            },
+            "patternProperties": { "^_": {} },
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "requires" } } },
+          "then": {
+            "required": ["field", "requires_fields"],
+            "properties": {
+              "id": true,
+              "kind": true,
+              "field": { "type": "string", "minLength": 1 },
+              "requires_fields": { "$ref": "#/$defs/fieldList" }
+            },
+            "patternProperties": { "^_": {} },
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "selectable_set" } } },
+          "then": {
+            "required": ["scope", "allowed_fields"],
+            "properties": {
+              "id": true,
+              "kind": true,
+              "scope": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": { "type": "string", "minLength": 1 }
+              },
+              "allowed_fields": { "$ref": "#/$defs/fieldList" }
+            },
+            "patternProperties": { "^_": {} },
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "only_alone" } } },
+          "then": {
+            "required": ["field"],
+            "properties": {
+              "id": true,
+              "kind": true,
+              "field": { "type": "string", "minLength": 1 }
+            },
+            "patternProperties": { "^_": {} },
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "max_selection" } } },
+          "then": {
+            "required": ["limit"],
+            "properties": {
+              "id": true,
+              "kind": true,
+              "limit": { "type": "integer", "minimum": 1 },
+              "fields": { "$ref": "#/$defs/fieldList" }
+            },
+            "patternProperties": { "^_": {} },
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  }
+}

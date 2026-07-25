@@ -1,0 +1,13 @@
+[
+  {
+    "_fixture_note": "Genere par generate_rows(end_date=date(2026,7,10), days=40, rng=Random(1582026)).",
+    "_fixture_note_2": "Sous-ensemble des 5 premieres lignes emises (offsets 0..1 de la boucle).",
+    "_fixture_note_3": "Regenerer via: python generate_klaviyo_seed.py --end-date 2026-07-10",
+    "_fixture_note_4": "Le test de conformance (test_golden_fixture_matches_generator) calcule",
+    "_fixture_note_5": "les valeurs directement depuis generate_rows -- ne pas editer ces valeurs a la main.",
+    "_fixture_format": "GOLDEN_SNAPSHOT_V2",
+    "_end_date": "2026-07-10",
+    "_days": 40,
+    "_rng_seed": 1582026
+  }
+]

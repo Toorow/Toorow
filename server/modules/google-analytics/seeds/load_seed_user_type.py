@@ -1,0 +1,236 @@
+"""GA4 user_type_daily seed loader -- Epic 10, story 10.1.
+
+Reads the generated ga4_user_type_seed.csv, stamps each row with a ``pull_id``
+(ULID, prefixed ``pull_`` per AD-7) and a ``loaded_at`` UTC timestamp, then
+inserts rows into a local DuckDB file or BigQuery (append-only, never overwrite),
+targeting the raw_ga4_user_type_daily table.
+
+Parallel, non-interfering with load_seed.py (which targets
+raw_ga4_standard_daily). This loader lands the user_type profile only.
+
+# AD-7: pull_id minted once per invocation; append-only; never overwrite.
+
+Usage (DuckDB -- default local mode):
+    python load_seed_user_type.py
+    python load_seed_user_type.py --csv-path ga4_user_type_seed.csv --duckdb-path local.duckdb
+
+Usage (BigQuery -- requires GCP credentials):
+    python load_seed_user_type.py --mode bigquery --bq-project my-gcp-project
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+from ulid import ULID
+
+# ---------------------------------------------------------------------------
+# Raw table schema (AD-7: append-only, never overwrite).
+#
+# raw_ga4_user_type_daily:
+#   date         VARCHAR   (ISO-8601 date string from seed CSV)
+#   user_type    VARCHAR   (new / returning / unknown)
+#   sessions     INTEGER
+#   active_users INTEGER
+#   conversions  INTEGER
+#   pull_id      VARCHAR   -- e.g. pull_01J...
+#   loaded_at    VARCHAR   (UTC ISO-8601 timestamp)
+#   project_id   VARCHAR   -- 'default' for seeded data
+# ---------------------------------------------------------------------------
+
+_CREATE_DDL_USER_TYPE = """
+CREATE TABLE IF NOT EXISTS raw_ga4_user_type_daily (
+    date         VARCHAR,
+    user_type    VARCHAR,
+    sessions     INTEGER,
+    active_users INTEGER,
+    conversions  INTEGER,
+    pull_id      VARCHAR,
+    loaded_at    VARCHAR,
+    project_id   VARCHAR
+)
+"""
+
+_INSERT_SQL_USER_TYPE = """
+INSERT INTO raw_ga4_user_type_daily
+    (date, user_type, sessions, active_users, conversions,
+     pull_id, loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+
+def _mint_pull_id() -> str:
+    """Mint a single pull_id for this invocation. Format: pull_<ULID-string> (AD-7)."""
+    return f"pull_{ULID()}"
+
+
+def load_user_type_duckdb(
+    rows: list[dict],
+    pull_id: str,
+    loaded_at: str,
+    duckdb_path: str,
+    project_id: str = "default",
+) -> int:
+    """Insert *rows* into raw_ga4_user_type_daily in a DuckDB file (local fallback).
+
+    Creates the database and table if they do not exist. Always appends (AD-7).
+    """
+    import duckdb  # noqa: PLC0415 -- optional local dep
+
+    con = duckdb.connect(duckdb_path)
+    con.execute(_CREATE_DDL_USER_TYPE)
+    con.execute(
+        "ALTER TABLE raw_ga4_user_type_daily ADD COLUMN IF NOT EXISTS "
+        "project_id VARCHAR DEFAULT 'default'"
+    )
+    values = [
+        (
+            r["date"],
+            r["user_type"],
+            int(r["sessions"]),
+            int(r["active_users"]),
+            int(r["conversions"]),
+            pull_id,
+            loaded_at,
+            project_id,
+        )
+        for r in rows
+    ]
+    con.executemany(_INSERT_SQL_USER_TYPE, values)
+    con.close()
+    return len(values)
+
+
+def load_user_type_bigquery(
+    rows: list[dict],
+    pull_id: str,
+    loaded_at: str,
+    bq_project: str,
+    project_id: str = "default",
+) -> int:
+    """Insert *rows* into raw_ga4.raw_ga4_user_type_daily in BigQuery (WRITE_APPEND)."""
+    from google.cloud import bigquery  # noqa: PLC0415 -- optional prod dep
+
+    client = bigquery.Client(project=bq_project)
+
+    dataset_ref = bigquery.DatasetReference(bq_project, "raw_ga4")
+    try:
+        client.get_dataset(dataset_ref)
+    except Exception:
+        client.create_dataset(dataset_ref)
+
+    schema = [
+        bigquery.SchemaField("date", "STRING"),
+        bigquery.SchemaField("user_type", "STRING"),
+        bigquery.SchemaField("sessions", "INTEGER"),
+        bigquery.SchemaField("active_users", "INTEGER"),
+        bigquery.SchemaField("conversions", "INTEGER"),
+        bigquery.SchemaField("pull_id", "STRING"),
+        bigquery.SchemaField("loaded_at", "STRING"),
+        bigquery.SchemaField("project_id", "STRING"),
+    ]
+    table_ref = dataset_ref.table("raw_ga4_user_type_daily")
+    table = bigquery.Table(table_ref, schema=schema)
+    client.create_table(table, exists_ok=True)
+
+    bq_rows = [
+        {
+            "date": r["date"],
+            "user_type": r["user_type"],
+            "sessions": int(r["sessions"]),
+            "active_users": int(r["active_users"]),
+            "conversions": int(r["conversions"]),
+            "pull_id": pull_id,
+            "loaded_at": loaded_at,
+            "project_id": project_id,
+        }
+        for r in rows
+    ]
+
+    job_config = bigquery.LoadJobConfig(
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+    )
+    job = client.load_table_from_json(bq_rows, table_ref, job_config=job_config)
+    job.result()
+    return len(bq_rows)
+
+
+def load_csv(csv_path: str) -> list[dict]:
+    """Read the user_type seed CSV and return rows as list of dicts."""
+    with open(csv_path, newline="", encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
+def run(
+    csv_path: str,
+    mode: str,
+    duckdb_path: str,
+    bq_project: str | None,
+    _rows_override: list[dict] | None = None,
+    project_id: str = "default",
+) -> tuple[str, int]:
+    """Main load routine -- returns (pull_id, row_count).
+
+    _rows_override: for testing only -- pass pre-built rows instead of reading csv_path.
+    """
+    pull_id = _mint_pull_id()
+    loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    rows = _rows_override if _rows_override is not None else load_csv(csv_path)
+
+    if mode == "duckdb":
+        count = load_user_type_duckdb(rows, pull_id, loaded_at, duckdb_path, project_id=project_id)
+    elif mode == "bigquery":
+        if not bq_project:
+            raise ValueError("--bq-project is required for BigQuery mode")
+        count = load_user_type_bigquery(
+            rows, pull_id, loaded_at, bq_project, project_id=project_id
+        )
+    else:
+        raise ValueError(f"Unknown mode: {mode!r} -- expected 'duckdb' or 'bigquery'")
+
+    return pull_id, count
+
+
+def main() -> None:
+    here = Path(__file__).parent
+    default_csv = str(here / "ga4_user_type_seed.csv")
+    default_duckdb = str(here / "local.duckdb")
+
+    default_mode = os.environ.get("TOOROW_DB_MODE", "duckdb")
+    default_duckdb_path = os.environ.get("TOOROW_DUCKDB_PATH", default_duckdb)
+
+    parser = argparse.ArgumentParser(
+        description="Load GA4 user_type_daily seed CSV into local or BigQuery warehouse"
+    )
+    parser.add_argument("--csv-path", default=default_csv, help="Path to ga4_user_type_seed.csv")
+    parser.add_argument(
+        "--mode",
+        choices=["duckdb", "bigquery"],
+        default=default_mode,
+        help="Storage backend (default: duckdb)",
+    )
+    parser.add_argument(
+        "--duckdb-path",
+        default=default_duckdb_path,
+        help="DuckDB file path (duckdb mode only)",
+    )
+    parser.add_argument("--bq-project", default=None, help="GCP project ID (bigquery mode only)")
+    args = parser.parse_args()
+
+    pull_id, count = run(
+        csv_path=args.csv_path,
+        mode=args.mode,
+        duckdb_path=args.duckdb_path,
+        bq_project=args.bq_project,
+    )
+    print(f"Loaded {count} user_type rows  pull_id={pull_id}")
+
+
+if __name__ == "__main__":
+    main()

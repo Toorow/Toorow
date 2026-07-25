@@ -1,0 +1,116 @@
+/**
+ * widget-feedback.css — page-specific styles for WidgetFeedback.
+ *
+ * The shared shell classes (page-header, panel, metric-strip / metric,
+ * section-header, table, signal-label / signal-mark, provider-logo, number,
+ * mono, muted, sr-only) already live in application.css and are global. This
+ * file only adds the pieces the shell does not have for this screen: the
+ * feedback panel wrapper, the loading / empty / error states with their spinner,
+ * and the comment/source cell layouts.
+ *
+ * Tokenized: every color references an application.css CSS variable, so the
+ * screen is dark-safe. Numbers and dates use Geist tabular via the shared
+ * .number class; report refs use JetBrains Mono via the shared .mono class.
+ */
+
+.feedback-panel {
+  overflow: hidden;
+}
+
+/* Horizontal scroll container for the responses table (not in application.css). */
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* Column widths for the fixed feedback table so the mono/date cells stay tidy. */
+.feedback-table {
+  table-layout: fixed;
+}
+.feedback-table th:nth-child(1) { width: 15%; }
+.feedback-table th:nth-child(2) { width: 38%; }
+.feedback-table th:nth-child(3) { width: 18%; }
+.feedback-table th:nth-child(4) { width: 15%; }
+.feedback-table th:nth-child(5) { width: 14%; }
+
+/* Comment cell: wrap long free text within the column. */
+.feedback-comment {
+  display: block;
+  color: var(--ink);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* Source cell: connector mark + module id, vertically centered. */
+.feedback-source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.feedback-source > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Report ref renders via the shared .mono class; nudge the size to match other
+   inline IDs in the app. */
+.feedback-table .mono {
+  font-size: 13px;
+}
+
+/* Shared frame for the loading / empty / error states — centered inside the
+   panel body, below the section header. */
+.feedback-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 260px;
+  padding: 48px 24px;
+  text-align: center;
+}
+.feedback-state p {
+  max-width: 420px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.feedback-state strong {
+  font: 600 17px "Lexend", Arial, sans-serif;
+  color: var(--ink);
+}
+
+/* Empty state: a slightly softer surface to read as "designed", not broken. */
+.feedback-state--empty strong {
+  margin-bottom: 2px;
+}
+
+/* Error state keeps the signal-label error mark supplied by application.css. */
+.feedback-state--error .signal-label {
+  font-size: 15px;
+}
+
+/* Loading spinner — tokenized ring, honors reduced motion. */
+.feedback-spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--track);
+  border-top-color: var(--info);
+  border-radius: 50%;
+  animation: feedback-spin 0.9s linear infinite;
+}
+@keyframes feedback-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feedback-spinner {
+    animation: none;
+    border-color: var(--info);
+  }
+}

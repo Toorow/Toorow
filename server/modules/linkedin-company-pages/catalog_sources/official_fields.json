@@ -1,0 +1,154 @@
+[
+  {
+    "field_id": "organization_urn",
+    "source_field": "organizationalEntity",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Selected administered organization URN."
+  },
+  {
+    "field_id": "entity_id",
+    "source_field": "share",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Organic post/share id."
+  },
+  {
+    "field_id": "interval_start",
+    "source_field": "timeRange.start",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "section": "DIMENSION",
+    "description": "Interval start."
+  },
+  {
+    "field_id": "interval_end",
+    "source_field": "timeRange.end",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "section": "DIMENSION",
+    "description": "Interval end."
+  },
+  {
+    "field_id": "facet",
+    "source_field": "facet",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Lifetime snapshot facet."
+  },
+  {
+    "field_id": "facet_value",
+    "source_field": "facetValue",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Lifetime snapshot facet value."
+  },
+  {
+    "field_id": "organic_follower_gain",
+    "source_field": "followerGains.organicFollowerGain",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Organic follower gain."
+  },
+  {
+    "field_id": "paid_follower_gain",
+    "source_field": "followerGains.paidFollowerGain",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Paid follower gain retained separately."
+  },
+  {
+    "field_id": "follower_count",
+    "source_field": "followerCounts",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "NON_ADDITIVE",
+    "description": "Lifetime follower snapshot."
+  },
+  {
+    "field_id": "page_views",
+    "source_field": "totalPageStatistics.views.allPageViews.pageViews",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Page views."
+  },
+  {
+    "field_id": "desktop_page_views",
+    "source_field": "totalPageStatistics.views.allDesktopPageViews.pageViews",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Desktop page views."
+  },
+  {
+    "field_id": "mobile_page_views",
+    "source_field": "totalPageStatistics.views.allMobilePageViews.pageViews",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Mobile page views."
+  },
+  {
+    "field_id": "clicks",
+    "source_field": "clickCount",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Organic clicks."
+  },
+  {
+    "field_id": "impressions",
+    "source_field": "impressionCount",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Organic impressions."
+  },
+  {
+    "field_id": "unique_impressions",
+    "source_field": "uniqueImpressionsCount",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "NON_ADDITIVE",
+    "description": "Unique impressions at exact grain."
+  },
+  {
+    "field_id": "likes",
+    "source_field": "likeCount",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Organic likes; legitimate negative values are preserved."
+  },
+  {
+    "field_id": "comments",
+    "source_field": "commentCount",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Organic comments."
+  },
+  {
+    "field_id": "shares",
+    "source_field": "shareCount",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Organic reshares."
+  },
+  {
+    "field_id": "engagement",
+    "source_field": "engagement",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "NON_ADDITIVE",
+    "description": "Provider engagement ratio at exact grain."
+  }
+]

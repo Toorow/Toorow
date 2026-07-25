@@ -1,0 +1,109 @@
+# infra/nango/docker-compose.yml
+#
+# Local dev: Nango OSS + its own Postgres + our platform Postgres.
+# All secrets come from infra/nango/.env (gitignored; copy from .env.example).
+#
+# Image pins (recorded in Story 2.2 Dev Notes):
+#   nango:       nangohq/nango-server:hosted-0.70.9
+#   postgres:    postgres:17
+#
+# Start:  docker compose -f infra/nango/docker-compose.yml up -d
+# Stop:   docker compose -f infra/nango/docker-compose.yml down
+# Reset:  docker compose -f infra/nango/docker-compose.yml down -v
+
+services:
+  # ---------------------------------------------------------------------------
+  # Nango's internal Postgres (managed by Nango — do not write to it directly)
+  # Container port 5432 mapped to host 5433 to avoid collision with platform-db
+  # ---------------------------------------------------------------------------
+  nango-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: nango
+      POSTGRES_PASSWORD: ${NANGO_DB_PASSWORD:-nango_dev_only}
+      POSTGRES_DB: nango
+    volumes:
+      - nango_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - nango_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nango -d nango"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Nango OSS server
+  # UI + API at http://localhost:3003
+  # ---------------------------------------------------------------------------
+  nango:
+    image: nangohq/nango-server:hosted-0.70.9
+    environment:
+      # Nango-internal Postgres
+      NANGO_DB_HOST: nango-postgres
+      NANGO_DB_PORT: 5432
+      NANGO_DB_USER: nango
+      NANGO_DB_PASSWORD: ${NANGO_DB_PASSWORD:-nango_dev_only}
+      NANGO_DB_NAME: nango
+      # Encryption key (256-bit, base64-encoded — see .env.example for generation)
+      NANGO_ENCRYPTION_KEY: ${NANGO_ENCRYPTION_KEY}
+      # Server URL (must match redirect URI registered in Google Cloud Console)
+      NANGO_SERVER_URL: ${NANGO_SERVER_URL:-http://localhost:3003}
+      # Google OAuth credentials (loaded from .env — never hardcode here)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # nango-server (hosted image) listens on 8080 internally
+      NANGO_PORT: 8080
+    ports:
+      - "3003:8080"
+    networks:
+      - nango_internal
+    depends_on:
+      nango-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Platform Postgres (our application DB — future Cloud SQL)
+  # Owns schema `app` and the connection_ref table (Story 2.2 migration).
+  # Container port 5432 mapped to host 5432 for local dev tools (psql, pgAdmin).
+  # ---------------------------------------------------------------------------
+  platform-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: connector
+      POSTGRES_PASSWORD: ${PLATFORM_DB_PASSWORD:-connector_dev_only}
+      POSTGRES_DB: connector
+    volumes:
+      - platform_pgdata:/var/lib/postgresql/data
+      - ./migrations:/migrations:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - platform_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U connector -d connector"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+networks:
+  nango_internal:
+    driver: bridge
+  platform_internal:
+    driver: bridge
+
+volumes:
+  nango_pgdata:
+    driver: local
+  platform_pgdata:
+    driver: local

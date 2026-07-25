@@ -1,0 +1,12 @@
+{
+  "data": {
+    "boards": [{
+      "id": "9007199254740993",
+      "name": "Roadmap",
+      "columns": [{"id": "status", "title": "Status", "type": "status", "settings_str": "{}"}],
+      "groups": [{"id": "topics", "title": "Topics"}],
+      "items_page": {"cursor": null, "items": [{"id": "42", "name": "Ship", "updated_at": "2026-07-22T10:00:00Z", "group": {"id": "topics"}, "parent_item": null, "column_values": [{"id": "status", "type": "status", "text": "Done", "value": "{\"index\":1}"}]}]}
+    }]
+  },
+  "_provenance": "Shape transcribed from monday API reference; sanitized documentation fixture pending replacement by ratified live evidence."
+}

@@ -1,0 +1,51 @@
+[
+  {
+    "pull_id": "pull_msads_001",
+    "connector": "microsoft-ads",
+    "time_period": "2026-07-01",
+    "account_id": "135792468",
+    "campaign_id": "22334455",
+    "campaign_name": "Brand - Search - FR",
+    "campaign_type": "Search",
+    "campaign_status": "Active",
+    "currency_code": "EUR",
+    "spend": "118.40",
+    "impressions": "12040",
+    "clicks": "640",
+    "conversions": "42",
+    "revenue": "3120.75"
+  },
+  {
+    "pull_id": "pull_msads_001",
+    "connector": "microsoft-ads",
+    "time_period": "2026-07-01",
+    "account_id": "135792468",
+    "campaign_id": "22334466",
+    "campaign_name": "Generic - Shopping - FR",
+    "campaign_type": "Shopping",
+    "campaign_status": "Active",
+    "currency_code": "EUR",
+    "device_type": "Smartphone",
+    "spend": "20.125",
+    "impressions": "5310",
+    "clicks": "122",
+    "conversions": "6",
+    "revenue": "410",
+    "ctr": "2.30%"
+  },
+  {
+    "pull_id": "pull_msads_002",
+    "connector": "microsoft-ads",
+    "time_period": "2026-07-02",
+    "account_id": "135792468",
+    "campaign_id": "22334455",
+    "ad_group_id": "77889900",
+    "keyword": "toorow pricing",
+    "search_query": "toorow pricing plans",
+    "spend": "5.25",
+    "impressions": "180",
+    "clicks": "21",
+    "conversions": "2",
+    "revenue": "150"
+  }
+]

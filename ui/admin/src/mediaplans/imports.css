@@ -1,0 +1,426 @@
+/**
+ * imports.css — page-specific styles for the Data > Imports (media plans) surface.
+ *
+ * Follows the sources.css / project-mapping.css conventions: shell/layout classes
+ * (frame, sidebar, topbar, main, panel, page-header, header-actions, selector,
+ * buttons, signal-label, signal-mark, table-scroll, sr-only, number, mono) live in
+ * application.css and are global. This file only adds the imports-specific pieces:
+ * the summary cards, the plan/version/mapping/pacing tables, tab bar, the import
+ * report cells, the split editor, the diff blocks, and the create-plan overlay.
+ *
+ * Tokenized: every color references an application.css CSS variable so the surface
+ * is dark-safe. Numbers use the Geist tabular treatment via .number / dedicated
+ * rules below.
+ */
+
+/* --- Section spacing inside the shell <main> --- */
+.imports-surface .page-header { margin-bottom: 22px; }
+.imports-section { margin-bottom: 26px; }
+.imports-section:last-child { margin-bottom: 0; }
+.imports-section-title {
+  margin: 0 0 4px;
+  font: 600 17px "Lexend", Arial, sans-serif;
+}
+.imports-section-note {
+  margin: 0 0 14px;
+  max-width: 720px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.imports-subnote {
+  display: block;
+  margin: 2px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- Summary cards (plan list) --- */
+.imports-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin-bottom: 20px;
+}
+.imports-card { min-height: 108px; padding: 20px; }
+.imports-card > span { color: var(--muted); font-size: 13px; }
+.imports-card > strong {
+  display: block;
+  margin-top: 9px;
+  font: 600 26px "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.imports-card > p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+
+/* --- Panel header (title + tools) --- */
+.imports-panel { overflow: hidden; }
+.imports-panel-header {
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.imports-panel-header h2 { margin: 0; font: 600 19px "Lexend", sans-serif; }
+.imports-panel-header p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+
+/* --- Tables (shared shape across plan list / versions / mappings / pacing) --- */
+.imports-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+.imports-table th {
+  height: 42px;
+  padding: 0 16px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+.imports-table td {
+  height: 60px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.imports-table tbody tr.clickable { cursor: pointer; }
+.imports-table tbody tr.clickable:hover { background: var(--surface-2); }
+.imports-table .num {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.imports-table th.num { text-align: right; }
+.imports-cell-strong { display: block; font-weight: 600; }
+.imports-cell-sub { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.imports-cell-muted { color: var(--muted); }
+.imports-mono { font-family: "JetBrains Mono", monospace; font-size: 12px; }
+
+/* --- Status chips (text + color, never color alone) --- */
+.imports-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.imports-chip.success { border-color: color-mix(in srgb, var(--success) 40%, var(--line)); color: var(--success); }
+.imports-chip.warning { border-color: color-mix(in srgb, var(--warning) 40%, var(--line)); color: var(--warning); }
+.imports-chip.error { border-color: color-mix(in srgb, var(--error) 40%, var(--line)); color: var(--error); }
+
+/* --- Breadcrumb (detail page) --- */
+.imports-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.imports-breadcrumb .sep { color: var(--line); }
+.imports-breadcrumb strong { color: var(--ink); font-weight: 600; }
+.imports-back {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--info);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.imports-back:hover { text-decoration: underline; text-underline-offset: 3px; }
+.imports-back:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+
+/* --- Tab bar (detail page) --- */
+.imports-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 22px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  width: fit-content;
+}
+.imports-tab {
+  min-height: 34px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.imports-tab.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(17, 17, 17, 0.08);
+}
+.imports-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* --- Inline loading / empty states --- */
+.imports-inline-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.imports-empty {
+  padding: 34px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.imports-empty strong { display: block; color: var(--ink); font-size: 15px; }
+.imports-empty p { margin: 6px 0 0; font-size: 13px; }
+.imports-spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 2px solid var(--lavender);
+  border-top-color: var(--info);
+  border-radius: 50%;
+  animation: imports-spin 0.9s linear infinite;
+}
+@keyframes imports-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .imports-spinner { animation: none; } }
+
+/* --- Alerts (token-driven, replace MUI Alert) --- */
+.imports-alert {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.imports-alert.error { border-color: color-mix(in srgb, var(--error) 34%, var(--line)); background: color-mix(in srgb, var(--error) 8%, var(--surface)); }
+.imports-alert.warning { border-color: color-mix(in srgb, var(--warning) 34%, var(--line)); background: color-mix(in srgb, var(--warning) 8%, var(--surface)); }
+.imports-alert.success { border-color: color-mix(in srgb, var(--success) 34%, var(--line)); background: color-mix(in srgb, var(--success) 8%, var(--surface)); }
+.imports-alert ul { margin: 6px 0 0; padding-left: 20px; }
+.imports-alert-title { display: block; margin-bottom: 3px; font-weight: 700; }
+
+/* --- Form controls (native, tokenized) --- */
+.imports-field { display: block; margin-bottom: 14px; }
+.imports-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.imports-input,
+.imports-select,
+.imports-textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.imports-textarea {
+  min-height: 190px;
+  resize: vertical;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.imports-input:focus-visible,
+.imports-select:focus-visible,
+.imports-textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* --- Editor card (contract JSON, unmapped-actuals frame) --- */
+.imports-editor {
+  margin-bottom: 22px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.imports-editor h3 { margin: 0 0 12px; font-size: 14px; }
+.imports-editor-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* --- Import report sums strip --- */
+.imports-sums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px;
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.imports-sum span { display: block; color: var(--muted); font-size: 12px; }
+.imports-sum strong {
+  display: block;
+  margin-top: 6px;
+  font: 600 20px "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.imports-sum.success strong { color: var(--success); }
+.imports-sum.error strong { color: var(--error); }
+
+/* --- Uploader --- */
+.imports-uploader {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+/* --- Split editor rows (mapping) --- */
+.imports-line-block { margin-bottom: 24px; }
+.imports-line-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.imports-line-head strong { font-size: 14px; }
+.imports-split-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.imports-split-row .grow-1 { flex: 1; min-width: 120px; }
+.imports-split-row .grow-2 { flex: 2; min-width: 160px; }
+.imports-split-row .w-pct { width: 96px; }
+.imports-icon-button {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.imports-icon-button:hover { background: var(--surface-2); }
+.imports-icon-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.imports-sum-indicator {
+  display: block;
+  margin: 4px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.imports-sum-indicator.ok { color: var(--success); }
+.imports-sum-indicator.off { color: var(--error); }
+.imports-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* --- Diff blocks --- */
+.imports-diff-group { margin-bottom: 18px; }
+.imports-diff-heading {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.imports-diff-heading.added { color: var(--success); }
+.imports-diff-heading.removed { color: var(--error); }
+.imports-diff-heading.changed { color: var(--warning); }
+.imports-diff-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 5px;
+  padding-left: 12px;
+  border-left: 3px solid var(--line);
+  font-size: 13px;
+}
+.imports-diff-row.added { border-color: var(--success); }
+.imports-diff-row.removed { border-color: var(--error); }
+.imports-diff-row.changed { border-color: var(--warning); }
+.imports-diff-row .amount { color: var(--muted); font-variant-numeric: tabular-nums; }
+.imports-diff-row del { color: var(--muted); }
+
+/* --- Pace indicator (icon + text, never color alone) --- */
+.imports-pace {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.imports-pace.over { color: var(--error); }
+.imports-pace.under { color: var(--warning); }
+
+/* --- Compare controls --- */
+.imports-compare {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.imports-compare .field { flex: 1; min-width: 200px; }
+
+/* --- Create-plan overlay (native modal, replaces MUI Dialog) --- */
+.imports-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-modal, 80);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.42);
+}
+.imports-dialog {
+  width: min(520px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(17, 17, 17, 0.28);
+}
+.imports-dialog-head {
+  padding: 20px 22px 0;
+}
+.imports-dialog-head h2 { margin: 0; font: 600 20px "Lexend", sans-serif; }
+.imports-dialog-body { padding: 18px 22px; }
+.imports-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 22px 20px;
+}
+
+/* --- Narrow-desktop resilience --- */
+@media (max-width: 1180px) {
+  .imports-summary { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,139 @@
+version: 2
+
+sources:
+  - name: raw_amazon_ads
+    description: "Immutable raw landing zone for Amazon Ads Reporting v3 daily data (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_amazon_ads_daily
+        description: >
+          Raw Amazon Ads daily data, LONG format (Story 26.5): one row per
+          grain x metric x pull_id. Append-only (AD-7): each pull run adds a
+          new batch identified by pull_id. Downloaded from the v3 async flow
+          (pre-signed S3 GZIP JSON, decompressed at download). catalog_daily
+          can land ANY exposed catalog column here (metric, value_num), which
+          is why the landing is long, not wide. Numeric coercion is driven by
+          the catalog physical_type, never by an id suffix.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (timeUnit DAILY 'date' column; profile time zone). Day grain."
+          - name: data_level
+            description: >
+              The v3 reportTypeId that produced this row (spCampaigns |
+              sbCampaigns | sdCampaigns | spTargeting | ...). Part of the
+              grain key so coexisting report grains never double-count.
+          - name: ad_product
+            description: >
+              The v3 adProduct (SPONSORED_PRODUCTS | SPONSORED_BRANDS |
+              SPONSORED_DISPLAY | SPONSORED_TELEVISION). Part of the grain key.
+          - name: region
+            description: "API region of the profile (NA | EU | FE). The 3 hosts are isolated silos."
+          - name: profile_id
+            description: "Amazon Advertising profileId (advertiser x marketplace)."
+          - name: campaign_id
+            description: "Campaign ID ('' on rows whose grain does not carry it)."
+          - name: campaign_name
+            description: "Campaign display name."
+          - name: ad_group_id
+            description: "Ad group ID ('' above ad-group grain)."
+          - name: ad_group_name
+            description: "Ad group display name."
+          - name: ad_id
+            description: "Ad ID ('' above ad grain)."
+          - name: keyword_id
+            description: "Keyword ID (targeting / search-term grains only)."
+          - name: search_term
+            description: "Search term (search-term grain only; clicked terms only per API semantics)."
+          - name: advertised_asin
+            description: "Advertised ASIN (advertised/purchased-product grains)."
+          - name: purchased_asin
+            description: "Purchased ASIN (purchased-product grain only)."
+          - name: segments_json
+            description: >
+              Canonical sorted-key JSON of the selected non-key dimensions
+              (placementClassification, matchType, non-numeric catalog
+              selections, ...). NULL when none were selected. Part of the
+              supersede grain.
+          - name: metric
+            description: >
+              Canonical metric id (catalog field_id after manifest rename,
+              e.g. 'units_sold' for unitsSold). Long-format contract.
+          - name: value_num
+            description: >
+              Column value. Monetary columns are in the profile's local
+              currency (cost_source_currency). Ratio columns selected via
+              catalog_daily are RAW day-grain values: NON-ADDITIVE (AD-4),
+              never SUM them. Conversion columns are restated by Amazon
+              1/7/28 days after the event (refetch ladder 3/14/45).
+          - name: cost_source_currency
+            description: "Profile currency (campaignBudgetCurrencyCode) when selected; NULL otherwise."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: "Project binding (AD-14). 'default' for seeded test data."
+
+models:
+  - name: stg_amazon_ads_daily
+    description: >
+      Staging layer for the Amazon Ads LONG landing (Story 26.5). Supersede
+      semantics (AD-7): QUALIFY keeps only the latest pull per grain
+      (project_id, date, data_level, ad_product, region, profile_id,
+      campaign_id, ad_group_id, ad_id, keyword_id, search_term,
+      advertised_asin, purchased_asin, segments_json, metric) -- attribution
+      restatements re-pulled by the 3/14/45 refetch ladder are absorbed, never
+      double-counted. AD-4: ratio columns land raw and are never summed.
+    tests:
+      # AI-05 grain uniqueness: a duplicate grain row means double-counted
+      # KPIs downstream. The QUALIFY dedup must always hold. COALESCE the
+      # nullable segments_json so rows without segments key cleanly.
+      - unique:
+          name: stg_amazon_ads_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || data_level || '|' || ad_product || '|' || region || '|' || profile_id || '|' || campaign_id || '|' || ad_group_id || '|' || ad_id || '|' || keyword_id || '|' || search_term || '|' || advertised_asin || '|' || purchased_asin || '|' || COALESCE(segments_json, '') || '|' || metric"
+    columns:
+      - name: date
+        description: "ISO-8601 date string. Day grain."
+        tests:
+          - not_null
+      - name: data_level
+        description: "v3 reportTypeId marker (part of the grain key)."
+        tests:
+          - not_null
+      - name: ad_product
+        description: "v3 adProduct marker (part of the grain key)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["SPONSORED_PRODUCTS", "SPONSORED_BRANDS", "SPONSORED_DISPLAY", "SPONSORED_TELEVISION"]
+      - name: region
+        description: "API region (NA | EU | FE)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["NA", "EU", "FE"]
+      - name: profile_id
+        description: "Amazon Advertising profileId."
+        tests:
+          - not_null
+      - name: metric
+        description: "Canonical metric id (long format)."
+        tests:
+          - not_null
+      - name: value_num
+        description: "Column value (local currency for monetary columns)."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding for this row. Propagated from raw_amazon_ads_daily."
+        tests:
+          - not_null

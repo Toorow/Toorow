@@ -1,0 +1,27 @@
+[
+  {
+    "field_id": "impressions",
+    "kind": "metric",
+    "data_type": "int",
+    "section": "AD"
+  },
+  {
+    "field_id": "spend",
+    "kind": "metric",
+    "data_type": "currency",
+    "section": "AD"
+  },
+  {
+    "field_id": "country",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "TARGETING"
+  },
+  {
+    "field_id": "official_only_field",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Present in official only, not in enrichment.",
+    "section": "AD"
+  }
+]

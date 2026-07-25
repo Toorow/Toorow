@@ -1,0 +1,17 @@
+{
+  "id": "daily_summary",
+  "display_name": "Adjust Mobile Performance",
+  "metrics": ["cost", "installs", "clicks", "impressions", "revenue"],
+  "dimensions": ["date", "network", "campaign_id"],
+  "layout": {
+    "chart_type": "line",
+    "order_by": "date",
+    "top_n": 20
+  },
+  "narrative_prompt": "Analyse la performance mobile Adjust : cout par reseau, installs, revenue in-app. Identifie les reseaux dont le cout par install se degrade. Jamais de total croise avec Shopify/Stripe (AD-4).",
+  "date_window": {
+    "default_days": 30,
+    "min_days": 7,
+    "max_days": 90
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "connector": "monday",
+  "product": "monday.com Work Management",
+  "api_version": "2026-07",
+  "generated_at": "2026-07-22T00:00:00Z",
+  "_status": "Structural GraphQL fields are generated from the pinned official query surface. Board columns are tenant-defined and are discovered at runtime per board; their settings and unknown typed values remain raw JSON and fail closed in semantic projection.",
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developer.monday.com/api-reference/reference/items-page",
+      "fetched_at": "2026-07-22"
+    }
+  ],
+  "field_discovery": {"mode": "runtime", "allowed_targets": ["board"]},
+  "default_tier": "core"
+}

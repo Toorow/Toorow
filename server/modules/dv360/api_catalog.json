@@ -1,0 +1,206 @@
+{
+  "api_version": "display-video-v4+bid-manager-v2",
+  "catalog_version": "1",
+  "connector": "dv360",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Selected advertiser identifier.",
+      "exposure": "exposed",
+      "field_id": "advertiser_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FILTER",
+      "source_field": "FILTER_ADVERTISER",
+      "tier": "core"
+    },
+    {
+      "description": "Average impression frequency.",
+      "exposure": "exposed",
+      "field_id": "average_frequency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "METRIC_UNIQUE_REACH_AVERAGE_IMPRESSION_FREQUENCY",
+      "tier": "core"
+    },
+    {
+      "description": "Campaign identifier.",
+      "exposure": "exposed",
+      "field_id": "campaign_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FILTER",
+      "source_field": "FILTER_MEDIA_PLAN",
+      "tier": "core"
+    },
+    {
+      "description": "Recorded clicks.",
+      "exposure": "exposed",
+      "field_id": "clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "METRIC_CLICKS",
+      "tier": "core"
+    },
+    {
+      "description": "Conversion activity.",
+      "exposure": "exposed",
+      "field_id": "conversion_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FILTER",
+      "source_field": "FILTER_FLOODLIGHT_ACTIVITY",
+      "tier": "core"
+    },
+    {
+      "description": "Conversion value in advertiser-currency micros.",
+      "exposure": "exposed",
+      "field_id": "conversion_value_micros",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "METRIC_TOTAL_CONVERSIONS_REVENUE_ADVERTISER",
+      "tier": "core"
+    },
+    {
+      "description": "Attributed conversions.",
+      "exposure": "exposed",
+      "field_id": "conversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "METRIC_TOTAL_CONVERSIONS",
+      "tier": "core"
+    },
+    {
+      "description": "Provider country value.",
+      "exposure": "exposed",
+      "field_id": "country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FILTER",
+      "source_field": "FILTER_COUNTRY",
+      "tier": "core"
+    },
+    {
+      "description": "Creative identifier.",
+      "exposure": "exposed",
+      "field_id": "creative_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FILTER",
+      "source_field": "FILTER_CREATIVE",
+      "tier": "core"
+    },
+    {
+      "description": "Advertiser currency code.",
+      "exposure": "exposed",
+      "field_id": "currency",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FILTER",
+      "source_field": "FILTER_ADVERTISER_CURRENCY",
+      "tier": "core"
+    },
+    {
+      "description": "Advertiser reporting date.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "FILTER",
+      "source_field": "FILTER_DATE",
+      "tier": "core"
+    },
+    {
+      "description": "Recorded impressions.",
+      "exposure": "exposed",
+      "field_id": "impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "METRIC_IMPRESSIONS",
+      "tier": "core"
+    },
+    {
+      "description": "Insertion order identifier.",
+      "exposure": "exposed",
+      "field_id": "insertion_order_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FILTER",
+      "source_field": "FILTER_INSERTION_ORDER",
+      "tier": "core"
+    },
+    {
+      "description": "Line item identifier.",
+      "exposure": "exposed",
+      "field_id": "line_item_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FILTER",
+      "source_field": "FILTER_LINE_ITEM",
+      "tier": "core"
+    },
+    {
+      "description": "Media cost in advertiser-currency micros.",
+      "exposure": "exposed",
+      "field_id": "media_cost_micros",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "METRIC_MEDIA_COST_ADVERTISER",
+      "tier": "core"
+    },
+    {
+      "description": "Advertiser reporting timezone.",
+      "exposure": "exposed",
+      "field_id": "timezone",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FILTER",
+      "source_field": "FILTER_ADVERTISER_TIMEZONE",
+      "tier": "core"
+    },
+    {
+      "description": "Unique reach at exact provider grain.",
+      "exposure": "exposed",
+      "field_id": "unique_reach",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "METRIC_UNIQUE_REACH_IMPRESSION_REACH",
+      "tier": "core"
+    },
+    {
+      "description": "Viewable impression percentage.",
+      "exposure": "exposed",
+      "field_id": "viewability_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "METRIC_ACTIVE_VIEW_VIEWABLE_PERCENT",
+      "tier": "core"
+    },
+    {
+      "description": "YouTube ad group identifier.",
+      "exposure": "exposed",
+      "field_id": "youtube_ad_group_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FILTER",
+      "source_field": "FILTER_YOUTUBE_AD_GROUP",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-22",
+      "kind": "official",
+      "url": "https://developers.google.com/bid-manager/reference/rest/v2/filters-metrics"
+    }
+  ]
+}

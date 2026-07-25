@@ -1,0 +1,25 @@
+{
+  "catalog_version": "1",
+  "connector": "fixture-connector",
+  "api_version": "v2026-01",
+  "sources": [
+    {
+      "url": "https://example.dev/docs/api",
+      "kind": "official",
+      "fetched_at": "2026-07-21T00:00:00Z"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "fields": [
+    {
+      "field_id": "delta_metric",
+      "source_field": "delta_raw",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "description": "A metric planned for future extraction.",
+      "section": "DELTA",
+      "tier": "standard",
+      "exposure": "planned"
+    }
+  ]
+}

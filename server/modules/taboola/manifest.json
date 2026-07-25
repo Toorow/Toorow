@@ -1,0 +1,599 @@
+{
+    "schema_version":  "1.2",
+    "name":  "taboola",
+    "display_name":  "Taboola",
+    "public_catalog":  {
+                           "visibility":  "public",
+                           "category":  "paid_media",
+                           "onboarding_modes":  [
+                                                    "connector_pull"
+                                                ],
+                           "verification":  {
+                                                "status":  "blocked",
+                                                "reason_code":  "live_evidence_not_ratified",
+                                                "follow_up":  "Probe Backstage credentials, advertiser discovery, Summary dimensions, Top Content metadata, History events, billing revisions, types and 429 behavior."
+                                            }
+                       },
+    "auth_type":  "oauth2",
+    "module_kind":  "kpi",
+    "provider_api_version":  "backstage-1.0",
+    "provider_api_base":  "https://backstage.taboola.com/backstage/api/1.0",
+    "_provider_api_note":  "OAuth2 client credentials are brokered by Nango with a 12-hour provider token. Numeric quota is validation-required; 429 is authoritative.",
+    "auth":  {
+                 "type":  "oauth2",
+                 "auth_path":  "nango",
+                 "flow":  "client_credentials",
+                 "token_hours":  12
+             },
+    "account_topology":  {
+                             "levels":  [
+                                            "credentials",
+                                            "advertiser_account"
+                                        ],
+                             "selection_level":  "advertiser_account",
+                             "discovery":  {
+                                               "callable":  "discover_accounts"
+                                           },
+                             "selection":  {
+                                               "required":  true,
+                                               "opaque":  true
+                                           }
+                         },
+    "report_profiles":  [
+                            {
+                                "id":  "campaign_summary",
+                                "display_name":  "Campaign Summary",
+                                "metrics":  [
+                                                "impressions",
+                                                "clicks",
+                                                "spent",
+                                                "conversions",
+                                                "conversion_value"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "account_id",
+                                                   "campaign_id",
+                                                   "site_id",
+                                                   "country",
+                                                   "platform"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            },
+                            {
+                                "id":  "top_campaign_content",
+                                "display_name":  "Top Campaign Content",
+                                "metrics":  [
+                                                "impressions",
+                                                "clicks",
+                                                "spent",
+                                                "conversions",
+                                                "conversion_value"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "account_id",
+                                                   "campaign_id",
+                                                   "item_id"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  1000,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            },
+                            {
+                                "id":  "campaign_history",
+                                "display_name":  "Campaign History",
+                                "landing":  "context_events",
+                                "metrics":  [
+                                                "change_count"
+                                            ],
+                                "dimensions":  [
+                                                   "account_id",
+                                                   "record_id",
+                                                   "change_time",
+                                                   "change_type",
+                                                   "entity_id"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            }
+                        ],
+    "canonical_metric_mapping":  {
+                                     "impressions":  "impressions",
+                                     "clicks":  "clicks",
+                                     "spent":  "cost",
+                                     "conversions":  "conversions",
+                                     "conversion_value":  "conversions_value",
+                                     "change_count":  "events"
+                                 },
+    "canonical_dimension_mapping":  {
+                                        "date":  "date",
+                                        "account_id":  "account_id",
+                                        "campaign_id":  "campaign_id",
+                                        "item_id":  "item_id",
+                                        "site_id":  "site_id",
+                                        "country":  "country",
+                                        "platform":  "platform",
+                                        "record_id":  "event_id",
+                                        "change_time":  "occurred_at",
+                                        "change_type":  "event_type",
+                                        "entity_id":  "entity_id"
+                                    },
+    "error_map":  {
+                      "400:INVALID_DIMENSION":  "invalid_request",
+                      "400:INVALID_FILTER":  "invalid_request",
+                      "401:UNAUTHORIZED":  "auth_expired",
+                      "403:FORBIDDEN":  "permission_denied",
+                      "404:NOT_FOUND":  "invalid_request",
+                      "500:INTERNAL_ERROR":  "provider_transient",
+                      "502:BAD_GATEWAY":  "provider_transient",
+                      "503:UNAVAILABLE":  "provider_transient"
+                  },
+    "quota":  {
+                  "window_seconds":  60,
+                  "budget_points":  999999999,
+                  "read_cost":  1,
+                  "write_cost":  1,
+                  "validation_required":  true,
+                  "backstop":  "429",
+                  "_note":  "No public numeric limit documented; budget_points is a large backstop to avoid false circuit-breaker trips. HTTP 429 is the authoritative rate-limit signal; capture the real limit during the live probe."
+              },
+    "source_capabilities":  {
+                                "contract_version":  "1",
+                                "field_discovery":  {
+                                                        "mode":  "runtime",
+                                                        "allowed_targets":  [
+                                                                                "impressions",
+                                                                                "clicks",
+                                                                                "cost",
+                                                                                "conversions",
+                                                                                "conversions_value",
+                                                                                "events"
+                                                                            ]
+                                                    },
+                                "fields":  [
+                                               {
+                                                   "field_id":  "date",
+                                                   "source_field":  "date",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "date",
+                                                   "description":  "Advertiser-local report day.",
+                                                   "semantic_hints":  [
+                                                                          "date",
+                                                                          "timezone"
+                                                                      ],
+                                                   "canonical_target":  "date",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "account_id",
+                                                   "source_field":  "account_id",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Selected advertiser account.",
+                                                   "semantic_hints":  [
+                                                                          "account",
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "account_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "campaign_id",
+                                                   "source_field":  "campaign_id",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Campaign id.",
+                                                   "semantic_hints":  [
+                                                                          "campaign",
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "campaign_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "item_id",
+                                                   "source_field":  "item_id",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Top content item id.",
+                                                   "semantic_hints":  [
+                                                                          "content",
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "item_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "site_id",
+                                                   "source_field":  "site_id",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Publisher site id.",
+                                                   "semantic_hints":  [
+                                                                          "site",
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "site_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "country",
+                                                   "source_field":  "country",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Country breakdown.",
+                                                   "semantic_hints":  [
+                                                                          "country"
+                                                                      ],
+                                                   "canonical_target":  "country",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "platform",
+                                                   "source_field":  "platform",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Platform breakdown.",
+                                                   "semantic_hints":  [
+                                                                          "platform"
+                                                                      ],
+                                                   "canonical_target":  "platform",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "record_id",
+                                                   "source_field":  "record_id",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Immutable history record id.",
+                                                   "semantic_hints":  [
+                                                                          "event",
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "event_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "change_time",
+                                                   "source_field":  "change_time",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "datetime",
+                                                   "description":  "History change time.",
+                                                   "semantic_hints":  [
+                                                                          "event",
+                                                                          "time"
+                                                                      ],
+                                                   "canonical_target":  "occurred_at",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "change_type",
+                                                   "source_field":  "change_type",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "History change type.",
+                                                   "semantic_hints":  [
+                                                                          "event"
+                                                                      ],
+                                                   "canonical_target":  "event_type",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "entity_id",
+                                                   "source_field":  "entity_id",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Changed entity id.",
+                                                   "semantic_hints":  [
+                                                                          "entity",
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "entity_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "impressions",
+                                                   "source_field":  "impressions",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "Impressions.",
+                                                   "semantic_hints":  [
+                                                                          "delivery"
+                                                                      ],
+                                                   "canonical_target":  "impressions",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "clicks",
+                                                   "source_field":  "clicks",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "Clicks.",
+                                                   "semantic_hints":  [
+                                                                          "delivery"
+                                                                      ],
+                                                   "canonical_target":  "clicks",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "spent",
+                                                   "source_field":  "spent",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Spend in account currency.",
+                                                   "semantic_hints":  [
+                                                                          "cost",
+                                                                          "currency"
+                                                                      ],
+                                                   "canonical_target":  "cost",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "conversions",
+                                                   "source_field":  "conversions",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Physical conversion count.",
+                                                   "semantic_hints":  [
+                                                                          "conversion"
+                                                                      ],
+                                                   "canonical_target":  "conversions",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "conversion_value",
+                                                   "source_field":  "conversion_value",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Conversion value.",
+                                                   "semantic_hints":  [
+                                                                          "conversion",
+                                                                          "currency"
+                                                                      ],
+                                                   "canonical_target":  "conversions_value",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "change_count",
+                                                   "source_field":  "change_count",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "One immutable history change record.",
+                                                   "semantic_hints":  [
+                                                                          "event"
+                                                                      ],
+                                                   "canonical_target":  "events",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               }
+                                           ],
+                                "reports":  [
+                                                {
+                                                    "id":  "campaign_summary",
+                                                    "selection_mode":  "catalog_driven",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "impressions",
+                                                                    "clicks",
+                                                                    "spent",
+                                                                    "conversions",
+                                                                    "conversion_value"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "account_id",
+                                                                       "campaign_id",
+                                                                       "site_id",
+                                                                       "country",
+                                                                       "platform"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "account_id",
+                                                                                 "campaign_id",
+                                                                                 "site_id",
+                                                                                 "country",
+                                                                                 "platform"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "page",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_campaign_summary"
+                                                                 }
+                                                },
+                                                {
+                                                    "id":  "top_campaign_content",
+                                                    "selection_mode":  "catalog_driven",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "impressions",
+                                                                    "clicks",
+                                                                    "spent",
+                                                                    "conversions",
+                                                                    "conversion_value"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "account_id",
+                                                                       "campaign_id",
+                                                                       "item_id"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "account_id",
+                                                                                 "campaign_id",
+                                                                                 "item_id"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "page",
+                                                                       "completeness":  "top_n",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  1000,
+                                                                       "truncation_signal":  "explicit"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_top_campaign_content"
+                                                                 }
+                                                },
+                                                {
+                                                    "id":  "campaign_history",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "change_count"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "account_id",
+                                                                       "record_id",
+                                                                       "change_time",
+                                                                       "change_type",
+                                                                       "entity_id"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "account_id",
+                                                                                 "record_id",
+                                                                                 "change_time",
+                                                                                 "change_type",
+                                                                                 "entity_id"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "change_time",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "page",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_campaign_history"
+                                                                 }
+                                                }
+                                            ]
+                            }
+}

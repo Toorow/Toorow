@@ -1,0 +1,531 @@
+{
+  "api_version": "2026-07-15",
+  "catalog_version": "1",
+  "connector": "klaviyo",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "attributed conversions exposed by Klaviyo. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+      "exposure": "exposed",
+      "field_id": "attributed_conversions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "conversions",
+      "tier": "core"
+    },
+    {
+      "description": "attributed revenue exposed by Klaviyo. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+      "exposure": "exposed",
+      "field_id": "attributed_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "revenue",
+      "tier": "core"
+    },
+    {
+      "description": "Average order value of attributed conversions.",
+      "exposure": "exposed",
+      "field_id": "average_order_value",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSION",
+      "source_field": "average_order_value",
+      "tier": "standard"
+    },
+    {
+      "description": "Ratio of bounced messages to total recipients.",
+      "exposure": "exposed",
+      "field_id": "bounce_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "DELIVERY",
+      "source_field": "bounce_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Number of hard and soft bounced messages.",
+      "exposure": "exposed",
+      "field_id": "bounced",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "DELIVERY",
+      "source_field": "bounced",
+      "tier": "standard"
+    },
+    {
+      "description": "Number of messages that bounced or failed delivery.",
+      "exposure": "exposed",
+      "field_id": "bounced_or_failed",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "DELIVERY",
+      "source_field": "bounced_or_failed",
+      "tier": "advanced"
+    },
+    {
+      "description": "Ratio of bounced or failed messages to total recipients.",
+      "exposure": "exposed",
+      "field_id": "bounced_or_failed_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "DELIVERY",
+      "source_field": "bounced_or_failed_rate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Unique identifier of the Klaviyo campaign. Required grouping field on campaign-values-reports.",
+      "exposure": "exposed",
+      "field_id": "campaign_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "campaign_id",
+      "tier": "core"
+    },
+    {
+      "description": "Unique identifier of the campaign message (variant). Required grouping field on campaign-values-reports.",
+      "exposure": "exposed",
+      "field_id": "campaign_message_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "campaign_message_id",
+      "tier": "core"
+    },
+    {
+      "description": "Name of the campaign message variant.",
+      "exposure": "exposed",
+      "field_id": "campaign_message_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "campaign_message_name",
+      "tier": "standard"
+    },
+    {
+      "description": "campaign name exposed by Klaviyo. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+      "exposure": "exposed",
+      "field_id": "campaign_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "campaign_name",
+      "tier": "core"
+    },
+    {
+      "description": "Ratio of clicks to delivered messages.",
+      "exposure": "exposed",
+      "field_id": "click_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ENGAGEMENT",
+      "source_field": "click_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Ratio of clicks to opens.",
+      "exposure": "exposed",
+      "field_id": "click_to_open_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ENGAGEMENT",
+      "source_field": "click_to_open_rate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Total number of clicks on links in the message.",
+      "exposure": "exposed",
+      "field_id": "clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ENGAGEMENT",
+      "source_field": "clicks",
+      "tier": "core"
+    },
+    {
+      "description": "Unique clicks (one per recipient per message).",
+      "exposure": "exposed",
+      "field_id": "clicks_unique",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ENGAGEMENT",
+      "source_field": "clicks_unique",
+      "tier": "standard"
+    },
+    {
+      "description": "Ratio of conversions to total recipients.",
+      "exposure": "exposed",
+      "field_id": "conversion_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSION",
+      "source_field": "conversion_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Unique converters (one per recipient).",
+      "exposure": "exposed",
+      "field_id": "conversion_uniques",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONVERSION",
+      "source_field": "conversion_uniques",
+      "tier": "standard"
+    },
+    {
+      "description": "Total monetary value of attributed conversions (revenue). Official name of what the connector calls 'revenue' or 'attributed_revenue'.",
+      "exposure": "exposed",
+      "field_id": "conversion_value",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSION",
+      "source_field": "conversion_value",
+      "tier": "core"
+    },
+    {
+      "description": "Number of attributed conversions (placed orders or configured conversion metric) within the attribution window.",
+      "exposure": "exposed",
+      "field_id": "conversions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONVERSION",
+      "source_field": "conversions",
+      "tier": "core"
+    },
+    {
+      "description": "Reporting date (daily grain from the interval parameter of the series endpoint).",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "Number of messages successfully delivered to recipient inboxes or devices.",
+      "exposure": "exposed",
+      "field_id": "delivered",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "DELIVERY",
+      "source_field": "delivered",
+      "tier": "core"
+    },
+    {
+      "description": "Ratio of delivered messages to total recipients.",
+      "exposure": "exposed",
+      "field_id": "delivery_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "DELIVERY",
+      "source_field": "delivery_rate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Number of messages that failed to send (carrier or system error, SMS).",
+      "exposure": "exposed",
+      "field_id": "failed",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "DELIVERY",
+      "source_field": "failed",
+      "tier": "advanced"
+    },
+    {
+      "description": "Ratio of failed messages to total recipients.",
+      "exposure": "exposed",
+      "field_id": "failed_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "DELIVERY",
+      "source_field": "failed_rate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Unique identifier of the Klaviyo flow. Required grouping field on flow-values-reports.",
+      "exposure": "exposed",
+      "field_id": "flow_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FLOW",
+      "source_field": "flow_id",
+      "tier": "core"
+    },
+    {
+      "description": "Unique identifier of the flow message step. Required grouping field on flow-values-reports.",
+      "exposure": "exposed",
+      "field_id": "flow_message_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FLOW",
+      "source_field": "flow_message_id",
+      "tier": "standard"
+    },
+    {
+      "description": "Name of the flow message step.",
+      "exposure": "exposed",
+      "field_id": "flow_message_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FLOW",
+      "source_field": "flow_message_name",
+      "tier": "standard"
+    },
+    {
+      "description": "Name of the Klaviyo flow.",
+      "exposure": "exposed",
+      "field_id": "flow_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FLOW",
+      "source_field": "flow_name",
+      "tier": "core"
+    },
+    {
+      "description": "Campaign group identifier (campaign-values-reports grouping field).",
+      "exposure": "exposed",
+      "field_id": "group",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "group",
+      "tier": "advanced"
+    },
+    {
+      "description": "Campaign group name (campaign-values-reports grouping field).",
+      "exposure": "exposed",
+      "field_id": "group_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "group_name",
+      "tier": "advanced"
+    },
+    {
+      "description": "Total number of SMS message segments sent (one SMS may span multiple segments).",
+      "exposure": "exposed",
+      "field_id": "message_segment_count_sum",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "SMS",
+      "source_field": "message_segment_count_sum",
+      "tier": "standard"
+    },
+    {
+      "description": "Ratio of opens to delivered messages.",
+      "exposure": "exposed",
+      "field_id": "open_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ENGAGEMENT",
+      "source_field": "open_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Total number of email or SMS opens.",
+      "exposure": "exposed",
+      "field_id": "opens",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ENGAGEMENT",
+      "source_field": "opens",
+      "tier": "core"
+    },
+    {
+      "description": "Unique opens (one per recipient per message).",
+      "exposure": "exposed",
+      "field_id": "opens_unique",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ENGAGEMENT",
+      "source_field": "opens_unique",
+      "tier": "standard"
+    },
+    {
+      "description": "Total number of unique recipients for the campaign or flow message. Official Klaviyo statistic (OpenAPI spec). Note: the connector previously mapped this as 'sends' — that is a drift; 'sends' is not a valid Klaviyo reporting statistic.",
+      "exposure": "exposed",
+      "field_id": "recipients",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "DELIVERY",
+      "source_field": "recipients",
+      "tier": "core"
+    },
+    {
+      "description": "Attributed revenue divided by total recipients.",
+      "exposure": "exposed",
+      "field_id": "revenue_per_recipient",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSION",
+      "source_field": "revenue_per_recipient",
+      "tier": "standard"
+    },
+    {
+      "description": "Send channel for the message (email or sms).",
+      "exposure": "exposed",
+      "field_id": "send_channel",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "send_channel",
+      "tier": "standard"
+    },
+    {
+      "description": "sends exposed by Klaviyo. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+      "exposure": "exposed",
+      "field_id": "sends",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "sends",
+      "tier": "core"
+    },
+    {
+      "description": "Ratio of spam complaints to total recipients.",
+      "exposure": "exposed",
+      "field_id": "spam_complaint_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COMPLIANCE",
+      "source_field": "spam_complaint_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Number of recipients who marked the message as spam.",
+      "exposure": "exposed",
+      "field_id": "spam_complaints",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "COMPLIANCE",
+      "source_field": "spam_complaints",
+      "tier": "standard"
+    },
+    {
+      "description": "Unique identifier of the Klaviyo tag applied to the campaign or flow.",
+      "exposure": "exposed",
+      "field_id": "tag_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "tag_id",
+      "tier": "advanced"
+    },
+    {
+      "description": "Name of the Klaviyo tag applied to the campaign or flow.",
+      "exposure": "exposed",
+      "field_id": "tag_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "tag_name",
+      "tier": "advanced"
+    },
+    {
+      "description": "Total SMS credits consumed for the period.",
+      "exposure": "exposed",
+      "field_id": "text_message_credit_usage_amount",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "SMS",
+      "source_field": "text_message_credit_usage_amount",
+      "tier": "advanced"
+    },
+    {
+      "description": "Format of the SMS message (e.g. MMS, SMS).",
+      "exposure": "exposed",
+      "field_id": "text_message_format",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SMS",
+      "source_field": "text_message_format",
+      "tier": "advanced"
+    },
+    {
+      "description": "Return on investment for SMS messages (conversion_value / text_message_spend).",
+      "exposure": "exposed",
+      "field_id": "text_message_roi",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "SMS",
+      "source_field": "text_message_roi",
+      "tier": "advanced"
+    },
+    {
+      "description": "Total monetary spend on SMS messages for the period.",
+      "exposure": "exposed",
+      "field_id": "text_message_spend",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "SMS",
+      "source_field": "text_message_spend",
+      "tier": "standard"
+    },
+    {
+      "description": "Ratio of unsubscribes to total recipients.",
+      "exposure": "exposed",
+      "field_id": "unsubscribe_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COMPLIANCE",
+      "source_field": "unsubscribe_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Unique unsubscribers (one per recipient).",
+      "exposure": "exposed",
+      "field_id": "unsubscribe_uniques",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "COMPLIANCE",
+      "source_field": "unsubscribe_uniques",
+      "tier": "advanced"
+    },
+    {
+      "description": "Number of recipients who unsubscribed after receiving the message.",
+      "exposure": "exposed",
+      "field_id": "unsubscribes",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "COMPLIANCE",
+      "source_field": "unsubscribes",
+      "tier": "standard"
+    },
+    {
+      "description": "A/B test variation identifier.",
+      "exposure": "exposed",
+      "field_id": "variation",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "variation",
+      "tier": "advanced"
+    },
+    {
+      "description": "A/B test variation name.",
+      "exposure": "exposed",
+      "field_id": "variation_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "variation_name",
+      "tier": "advanced"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://raw.githubusercontent.com/klaviyo/openapi/main/openapi/stable/"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://docs.supermetrics.com/docs/klaviyo-fields.md"
+    }
+  ]
+}

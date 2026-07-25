@@ -1,0 +1,123 @@
+version: 2
+
+sources:
+  - name: raw_tiktok
+    description: "Immutable raw landing zone for TikTok Ads reports (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_tiktok_ads_daily
+        description: >
+          Raw TikTok Ads /report/integrated/get rows — one row per
+          (campaign_id, adgroup_id, ad_id) × day × pull_id. Append-only (AD-7):
+          each pull run adds a new batch identified by pull_id. Higher-grain profiles
+          land NULL adgroup_id / ad_id. AI-53: fields/endpoint verified 2026-07-19,
+          live confirmation gated Phase B.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (stat_time_day). Day grain."
+          - name: data_level
+            description: >
+              Report grain that produced this row: AUCTION_CAMPAIGN | AUCTION_ADGROUP |
+              AUCTION_AD (review-15-2 F-1). Part of the grain key; each mart series reads
+              ONLY its own data_level so coexisting grains never double-count.
+          - name: campaign_id
+            description: "TikTok campaign id. AI-53: dimension from BASIC report."
+          - name: campaign_name
+            description: "Campaign label (nullable — '(not set)'/'-' normalized to NULL)."
+          - name: adgroup_id
+            description: "TikTok ad group id. NULL on campaign-grain rows."
+          - name: adgroup_name
+            description: "Ad group label (nullable)."
+          - name: ad_id
+            description: "TikTok ad id. NULL on campaign/adgroup-grain rows."
+          - name: spend
+            description: >
+              Advertiser-currency spend (AI-53: TikTok metric 'spend'). Additive (AD-4).
+              Renamed to canonical 'cost' by connector.transform().
+          - name: impressions
+            description: "Impressions. Additive (AD-4)."
+          - name: clicks
+            description: "Clicks. Additive (AD-4)."
+          - name: conversions
+            description: >
+              CLAIMED conversions attributed by the TikTok account window (default 7D
+              click / 1D view, manifest.attribution_window). Additive (AD-4) but NEVER
+              summed with GA4/Meta conversions without the dedup rule (Rule P, 3.7).
+          - name: cost_source_currency
+            description: "Advertiser currency (e.g. 'EUR', 'USD'). Enables FX normalization."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: "Project binding. 'default' for seeded test data (AD-14)."
+
+models:
+  - name: stg_tiktok_ads_daily
+    description: >
+      Staging layer: maps raw TikTok Ads fields to canonical names. AD-4: only additive
+      metrics (cost, impressions, clicks, conversions). Supersede semantics (AD-7):
+      QUALIFY keeps the latest pull per (project_id, date, campaign_id, adgroup_id, ad_id).
+      Currency: cost is FX-normalized to the project canonical currency (EUR by default)
+      via fx_rates; source value preserved. Conversions are CLAIMED by the channel
+      (attribution window declared in the manifest) — kept distinct from GA4/Meta (3.7).
+    tests:
+      # Grain uniqueness (AI-05): one row per project × date × data_level × campaign ×
+      # adgroup × ad. review-15-2 F-1: data_level is part of the key so a campaign-grain
+      # row and an adgroup-grain row for the same campaign_id coexist without colliding.
+      # COALESCE the nullable ids so campaign-grain rows (NULL adgroup/ad) key cleanly.
+      - unique:
+          name: stg_tiktok_ads_grain_unique
+          arguments:
+            column_name: >
+              project_id || '|' || date || '|' || data_level || '|' || campaign_id || '|'
+              || COALESCE(adgroup_id, '_') || '|' || COALESCE(ad_id, '_')
+    columns:
+      - name: date
+        description: "ISO-8601 date string, stat_time_day."
+        tests:
+          - not_null
+      - name: data_level
+        description: >
+          Report grain (AUCTION_CAMPAIGN | AUCTION_ADGROUP | AUCTION_AD). review-15-2 F-1:
+          each mart breakdown series filters to its own data_level (no grain bleed).
+        tests:
+          - not_null
+      - name: campaign_id
+        description: "TikTok campaign id (part of the grain key)."
+        tests:
+          - not_null
+      - name: cost
+        description: "Spend normalized to project currency (additive, AD-4)."
+        tests:
+          - not_null
+      - name: cost_source_value
+        description: "Raw spend in the advertiser currency (AD-6: preserved for reconciliation)."
+        tests:
+          - not_null
+      - name: cost_source_currency
+        description: "The currency of the raw spend amount (e.g. 'EUR')."
+        tests:
+          - not_null
+      - name: impressions
+        description: "Impressions (additive, AD-4)."
+        tests:
+          - not_null
+      - name: clicks
+        description: "Clicks (additive, AD-4)."
+        tests:
+          - not_null
+      - name: conversions
+        description: >
+          CLAIMED conversions (attribution window in manifest). Additive (AD-4); NEVER
+          summed with GA4/Meta conversions without the dedup rule (3.7).
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: project_id
+        description: "Project binding propagated from raw_tiktok_ads_daily."
+        tests:
+          - not_null

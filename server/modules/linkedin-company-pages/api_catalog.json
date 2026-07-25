@@ -1,0 +1,206 @@
+{
+  "api_version": "linkedin-rest-202604",
+  "catalog_version": "1",
+  "connector": "linkedin-company-pages",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Organic clicks.",
+      "exposure": "exposed",
+      "field_id": "clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "clickCount",
+      "tier": "core"
+    },
+    {
+      "description": "Organic comments.",
+      "exposure": "exposed",
+      "field_id": "comments",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "commentCount",
+      "tier": "core"
+    },
+    {
+      "description": "Desktop page views.",
+      "exposure": "exposed",
+      "field_id": "desktop_page_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "totalPageStatistics.views.allDesktopPageViews.pageViews",
+      "tier": "core"
+    },
+    {
+      "description": "Provider engagement ratio at exact grain.",
+      "exposure": "exposed",
+      "field_id": "engagement",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "NON_ADDITIVE",
+      "source_field": "engagement",
+      "tier": "standard"
+    },
+    {
+      "description": "Organic post/share id.",
+      "exposure": "exposed",
+      "field_id": "entity_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "share",
+      "tier": "core"
+    },
+    {
+      "description": "Lifetime snapshot facet.",
+      "exposure": "exposed",
+      "field_id": "facet",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "facet",
+      "tier": "core"
+    },
+    {
+      "description": "Lifetime snapshot facet value.",
+      "exposure": "exposed",
+      "field_id": "facet_value",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "facetValue",
+      "tier": "core"
+    },
+    {
+      "description": "Lifetime follower snapshot.",
+      "exposure": "exposed",
+      "field_id": "follower_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "NON_ADDITIVE",
+      "source_field": "followerCounts",
+      "tier": "standard"
+    },
+    {
+      "description": "Organic impressions.",
+      "exposure": "exposed",
+      "field_id": "impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "impressionCount",
+      "tier": "core"
+    },
+    {
+      "description": "Interval end.",
+      "exposure": "exposed",
+      "field_id": "interval_end",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "DIMENSION",
+      "source_field": "timeRange.end",
+      "tier": "core"
+    },
+    {
+      "description": "Interval start.",
+      "exposure": "exposed",
+      "field_id": "interval_start",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "DIMENSION",
+      "source_field": "timeRange.start",
+      "tier": "core"
+    },
+    {
+      "description": "Organic likes; legitimate negative values are preserved.",
+      "exposure": "exposed",
+      "field_id": "likes",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "likeCount",
+      "tier": "core"
+    },
+    {
+      "description": "Mobile page views.",
+      "exposure": "exposed",
+      "field_id": "mobile_page_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "totalPageStatistics.views.allMobilePageViews.pageViews",
+      "tier": "core"
+    },
+    {
+      "description": "Organic follower gain.",
+      "exposure": "exposed",
+      "field_id": "organic_follower_gain",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "followerGains.organicFollowerGain",
+      "tier": "core"
+    },
+    {
+      "description": "Selected administered organization URN.",
+      "exposure": "exposed",
+      "field_id": "organization_urn",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "organizationalEntity",
+      "tier": "core"
+    },
+    {
+      "description": "Page views.",
+      "exposure": "exposed",
+      "field_id": "page_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "totalPageStatistics.views.allPageViews.pageViews",
+      "tier": "core"
+    },
+    {
+      "description": "Paid follower gain retained separately.",
+      "exposure": "exposed",
+      "field_id": "paid_follower_gain",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "followerGains.paidFollowerGain",
+      "tier": "core"
+    },
+    {
+      "description": "Organic reshares.",
+      "exposure": "exposed",
+      "field_id": "shares",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "shareCount",
+      "tier": "core"
+    },
+    {
+      "description": "Unique impressions at exact grain.",
+      "exposure": "exposed",
+      "field_id": "unique_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "NON_ADDITIVE",
+      "source_field": "uniqueImpressionsCount",
+      "tier": "standard"
+    }
+  ],
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-22",
+      "kind": "official",
+      "url": "https://learn.microsoft.com/en-us/linkedin/marketing/community-management/organizations/follower-statistics"
+    }
+  ]
+}

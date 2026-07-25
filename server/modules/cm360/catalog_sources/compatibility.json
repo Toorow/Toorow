@@ -1,0 +1,14 @@
+{
+  "STANDARD": {
+    "metrics": ["impressions", "clicks", "cost"],
+    "dimensions": ["date", "advertiser_id", "campaign_id", "placement_id", "creative_id"]
+  },
+  "FLOODLIGHT": {
+    "metrics": ["conversions", "conversion_value"],
+    "dimensions": ["date", "advertiser_id", "campaign_id", "floodlight_activity_id"]
+  },
+  "REACH": {
+    "metrics": ["unique_reach", "average_frequency"],
+    "dimensions": ["date", "advertiser_id", "campaign_id", "country"]
+  }
+}

@@ -1,0 +1,62 @@
+[
+  {
+    "date": "2026-07-01",
+    "charge_id": "ch_5000000001",
+    "payment_intent_id": "pi_5000000001",
+    "client_reference_id": "1000000001",
+    "revenue": 128.5,
+    "refunds": 0.0,
+    "fees": 3.98,
+    "transaction_count": 1,
+    "order_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-01",
+    "charge_id": "ch_5000000002",
+    "payment_intent_id": "pi_5000000002",
+    "client_reference_id": "1000000002",
+    "revenue": 64.0,
+    "refunds": 0.0,
+    "fees": 2.11,
+    "transaction_count": 1,
+    "order_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-02",
+    "charge_id": "ch_5000000003",
+    "payment_intent_id": "pi_5000000003",
+    "client_reference_id": "1000000003",
+    "revenue": 210.9,
+    "refunds": 42.18,
+    "fees": 6.37,
+    "transaction_count": 1,
+    "order_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-02",
+    "charge_id": "ch_5000000004",
+    "payment_intent_id": "pi_5000000004",
+    "client_reference_id": null,
+    "revenue": 39.99,
+    "refunds": 0.0,
+    "fees": 1.41,
+    "transaction_count": 1,
+    "order_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-03",
+    "charge_id": "ch_5000000005",
+    "payment_intent_id": "pi_5000000005",
+    "client_reference_id": null,
+    "revenue": 15000.0,
+    "refunds": 15000.0,
+    "fees": 450.0,
+    "transaction_count": 1,
+    "order_count": 1,
+    "revenue_source_currency": "JPY"
+  }
+]

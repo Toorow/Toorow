@@ -1,0 +1,92 @@
+{
+  "connector": "square",
+  "api_version": "2026-05-20",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "official_fields.json is curated from the Square Connect v2 API reference objects (Payment, ProcessingFee, CardPaymentDetails, Location, Order, PaymentRefund, Customer). Fields are derived from the official object schemas at developer.squareup.com/reference/square/objects. Reporting-relevant scalar fields are included; deeply-nested variant fields (device_details.*, application_details.*, bank_account_details.*, wallet_details.*) are excluded as they do not bear reporting metrics. The Square API is versioned via a request header (Square-Version), not the URL path; api_version refers to the header value pinned in connector.py.",
+    "manifest_field_coverage": "All 9 fields in manifest.json source_capabilities.fields are present in official_fields.json with matching kind and source_field. These 9 fields are marked exposure='exposed'; all fields in fetchable sections (PAYMENT, PROCESSING FEE, CARD DETAILS, PLATFORM CONTRACT) are also 'exposed' (exposure_policy=catalog_driven); excluded sections are 'excluded'.",
+    "supermetrics_enrichment": "No Supermetrics enrichment snapshot is used for Square in this iteration (official source is authority and self-contained; no network fetch required to regenerate). A future widening iteration MAY add a Supermetrics or Airbyte manifest enrichment source to validate tier assignments -- enrichment is never the authority per the playbook."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developer.squareup.com/reference/square/objects/Payment",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "list_payments_endpoint",
+          "url": "https://developer.squareup.com/reference/square/payments-api/list-payments",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "money_object",
+          "url": "https://developer.squareup.com/reference/square/objects/Money",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "card_payment_details_object",
+          "url": "https://developer.squareup.com/reference/square/objects/CardPaymentDetails",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "location_object_and_list_locations",
+          "url": "https://developer.squareup.com/reference/square/locations-api/list-locations",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "order_object",
+          "url": "https://developer.squareup.com/reference/square/objects/Order",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "payment_refund_object",
+          "url": "https://developer.squareup.com/reference/square/objects/PaymentRefund",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "error_codes_and_categories",
+          "url": "https://developer.squareup.com/docs/build-basics/general-considerations/handling-errors",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    }
+  ],
+  "section_tier_map": {
+    "PAYMENT": "core",
+    "PROCESSING FEE": "core",
+    "PLATFORM CONTRACT": "core",
+    "CARD DETAILS": "standard",
+    "LOCATION": "standard",
+    "ORDER": "standard",
+    "REFUND": "advanced",
+    "CUSTOMER": "advanced"
+  },
+  "field_tier_overrides": {
+    "payment_id": "core",
+    "date": "core",
+    "order_id": "core",
+    "location_id": "core",
+    "revenue": "core",
+    "refunds": "core",
+    "fees": "core",
+    "transaction_count": "core",
+    "order_count": "core",
+    "payment_currency": "core"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "list_objects",
+    "batch_size": 20,
+    "structural_note": "Square list endpoints (GET /v2/payments) return whole Payment objects over a begin_time/end_time window (limit=1 for a probe) paginated by an opaque cursor. Fields are ratified by presence in the returned object; a field absent from a non-empty object is recorded empty. processing_fee and card_details availability depend on settlement/source_type and are recorded per-observation."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {
+    "LOCATION": "Location objects are not returned by the daily payments pull; they come from a separate GET /v2/locations call (used by discover_accounts for topology, not for per-payment projection). The location_id scalar is already exposed on the Payment (PAYMENT section).",
+    "ORDER": "Square Order objects are not fetched by the daily pull; payment.order_id is a scalar id (already exposed in the PAYMENT section). Full Order fields require a separate Orders API (RetrieveOrder / SearchOrders) call, not performed by the daily pull.",
+    "REFUND": "Individual PaymentRefund objects are not fetched by the daily pull; payment.refunded_money.amount (already exposed as the refunds metric via PLATFORM CONTRACT) is a scalar total on the Payment, not the list of PaymentRefund objects. Requires a separate GET /v2/refunds call, not performed by the daily pull.",
+    "CUSTOMER": "Customer objects are not expanded by the payments pull; payment.customer_id contains only the customer id string (already exposed in the PAYMENT section). Full Customer fields require a separate GET /v2/customers/{id} call per payment, not performed by the daily pull."
+  },
+  "_exposure_note": "Story 25.9: exposure_policy=catalog_driven. Fetchable sections (PAYMENT, PROCESSING FEE, CARD DETAILS, PLATFORM CONTRACT) have their fields set to exposure=exposed in api_catalog.json; excluded sections (LOCATION, ORDER, REFUND, CUSTOMER) have their fields set to exposure=excluded with honest reasons. The daily pull calls GET /v2/payments, making Payment fields and their embedded ProcessingFee[] and CardPaymentDetails available; all other object types require separate endpoint calls not performed here."
+}

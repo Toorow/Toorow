@@ -1,0 +1,100 @@
+version: 2
+
+# Seed properties / tests.
+#
+# Story 39.2: money_metric_units.csv is the single machine-readable CANONICAL-UNIT map the
+# money read layer (server/core/money.py + the semantic ratio views) keys on. One row per
+# MONETARY canonical metric (39.1's monetary:true set); non-money metrics are absent.
+# canonical_native_unit records the NATIVE encoding the platform expects that metric to
+# arrive in BEFORE the per-source adapter normalizes it to canonical micros (the adapter
+# OUTPUT is always micros; this column tells the read layer whether a /1e6 is owed).
+#
+# AD-2: no provider vocabulary in the map -- canonical metric names only.
+
+seeds:
+  - name: money_metric_units
+    description: >
+      Money adapter canonical-unit map (Story 39.2 / E39-AD1). Maps each monetary canonical
+      metric to the NATIVE unit its per-source adapter must handle (micros | decimal | cents).
+      The adapter always normalizes to canonical micros; this seed records the INPUT so the
+      read layer (core.money.read_units + semantic_roas/semantic_cpa) knows whether the
+      value in the mart is canonical micros (=> /1e6 once at read) for that metric.
+      All three columns are VARCHAR -- no explicit +column_types (like dim_metric/fx_rates).
+    columns:
+      - name: canonical_metric
+        description: "Canonical metric name (money only). Grain of the map."
+        tests:
+          - not_null
+          - unique:
+              name: money_metric_units_grain_unique
+      - name: canonical_native_unit
+        description: "Native encoding the adapter must normalize to canonical micros."
+        tests:
+          - not_null
+          - accepted_values:
+              name: money_metric_units_unit_accepted
+              arguments:
+                values: ["micros", "decimal", "cents"]
+
+  - name: money_contract_micros_fixture
+    description: >
+      Story 39.2 no-drift micros fixture (namespaced __money_contract_test__). Money values are
+      canonical micros -- large integers up to 2^53 -- so `value` MUST be BIGINT; dbt-duckdb
+      would otherwise infer INT32 and fail loading a 13-digit micros amount. Exercised by the
+      singular tests test_money_contract_micros_read_once / _micros_semantic / _totals_unchanged.
+    config:
+      column_types:
+        value: bigint
+
+  - name: epic39_validation_fixture
+    description: >
+      Story 39.9 epic-39 acceptance-gate fixture (namespaced __epic39_validation__ / connectors
+      __epic39_src_a__ / __epic39_src_b__). The multi-currency (EUR reporting default + USD needs-FX
+      + GBP uncovered-honesty) x multi-timezone (Europe/Paris + America/New_York + shared-tz subset
+      + a blank/undetermined-tz honesty row) x multi-unit (micros AND decimal) matrix across >=2
+      connectors on the SAME monetary metric (revenue), plus a past date (2024-08-15) for as-of FX
+      and honesty rows (blank currency / uncovered pair / no-as-of / blank tz). The namespaced
+      connector keys keep it OUT of fact_daily_kpi / cross_source_* (which UNION module STAGING, not
+      seeds), so it can NEVER perturb a production total -- same isolation discipline as
+      money_contract_micros_fixture. `value_micros` holds canonical micros up to 2^53 so it MUST be
+      BIGINT (dbt-duckdb would infer INT32 and fail a 13-digit load). Exercised by the singular tests
+      test_epic39_micros_exactness / _reconciliation_normalized / _day_offset_signalled /
+      _no_false_positive_offset / _totals_bit_identical / _honesty_missing_currency / _honesty_fx_gaps.
+    config:
+      column_types:
+        value_micros: bigint
+    columns:
+      - name: connector
+        description: "Namespaced validation connector key (__epic39_src_a__/__epic39_src_b__)."
+        tests:
+          - not_null
+          # Namespaced-connector guard: every connector key must be a __epic39_*__ fixture key,
+          # proving the fixture can never carry a production connector name into a mart.
+          - accepted_values:
+              name: epic39_validation_fixture_connector_namespaced
+              arguments:
+                values: ["__epic39_src_a__", "__epic39_src_b__"]
+      - name: project_id
+        description: "Namespaced validation project (__epic39_validation__ only)."
+        tests:
+          - not_null
+          - accepted_values:
+              name: epic39_validation_fixture_project_namespaced
+              arguments:
+                values: ["__epic39_validation__"]
+      - name: date
+        description: "Figure date (grain)."
+        tests:
+          - not_null
+      - name: metric
+        description: "Canonical monetary metric (revenue / cost)."
+        tests:
+          - not_null
+      - name: native_unit
+        description: "Per-row native money encoding (micros | decimal)."
+        tests:
+          - not_null
+          - accepted_values:
+              name: epic39_validation_fixture_unit_accepted
+              arguments:
+                values: ["micros", "decimal"]

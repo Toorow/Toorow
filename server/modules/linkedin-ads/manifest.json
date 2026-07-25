@@ -1,0 +1,440 @@
+{
+    "schema_version": "1.2",
+    "name": "linkedin-ads",
+    "display_name": "LinkedIn Ads",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "paid_media",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "module_kind": "kpi",
+    "auth_type": "oauth2",
+    "report_profiles": [
+        {
+            "id": "campaign_daily",
+            "display_name": "Campaign Performance (daily)",
+            "metrics": [
+                "cost",
+                "impressions",
+                "clicks",
+                "conversions",
+                "leads"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 15000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null,
+            "_ai_53_notes": "AI-53 verifie le 2026-07-19 : endpoint GET https://api.linkedin.com/rest/adAnalytics?q=analytics&pivot=CAMPAIGN&timeGranularity=DAILY. Champs demandes : costInLocalCurrency (mappe vers 'cost'), impressions, clicks, externalWebsiteConversions (mappe vers 'conversions'), pivotValues, dateRange. Lead Gen Form responses (leads) : champ 'leadGenerationMailContactInfoShares' -- disponibilite a confirmer en passe live. Limite de reponse : 15 000 elements. PAS DE PAGINATION : adAnalytics ne supporte pas la pagination. Source : https://learn.microsoft.com/en-us/linkedin/marketing/integrations/ads-reporting/ads-reporting?view=li-lms-2026-06"
+        },
+        {
+            "id": "campaign_group_daily",
+            "display_name": "Campaign Group Performance (daily)",
+            "metrics": [
+                "cost",
+                "impressions",
+                "clicks",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_group_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 15000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null,
+            "_ai_53_notes": "AI-53 verifie le 2026-07-19 : endpoint GET https://api.linkedin.com/rest/adAnalytics?q=analytics&pivot=CAMPAIGN_GROUP&timeGranularity=DAILY. Meme contrainte 15 000 elements, pas de pagination. Pivot CAMPAIGN_GROUP agrege les campagnes d'un meme groupe. Source identique au profil campaign_daily."
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven (daily)",
+            "metrics": [
+                "cost",
+                "impressions",
+                "clicks",
+                "conversions",
+                "leads"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id",
+                "campaign_group_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 15000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        }
+    ],
+    "error_map": {
+        "401:401": "auth_expired",
+        "403:403": "permission_denied",
+        "400:400": "invalid_request",
+        "426:426": "invalid_request",
+        "500:500": "provider_transient",
+        "503:503": "provider_transient",
+        "504:504": "provider_transient"
+    },
+    "_error_map_note": "Story 25.7 (AC3). LinkedIn's error body is {\"message\":...,\"serviceErrorCode\":N,\"status\":N} -- it does NOT use the {\"error\":{\"code\":N}} / top-level {\"code\":N} shapes that core.pull_errors._extract_provider_code recognises, so a serviceErrorCode is NOT extractable by the generic classifier and CANNOT refine the pure-HTTP class. In practice LinkedIn's auth serviceErrorCode mirrors the HTTP status (e.g. 401 -> serviceErrorCode 401 'Empty oauth2_access_token'); there is no distinct numeric subcode published for expired-vs-revoked (both are HTTP 401 distinguished only by the human-readable message, per the error-handling reference). The error_map above is therefore keyed on <status>:<status> so the mapping is documented and self-consistent even though the pure-HTTP base class already yields the same class: 401->auth_expired, 403->permission_denied, 400/426->invalid_request, 5xx->provider_transient. 429 is handled separately (RateLimitError). A mocked 401 raises auth_expired via the pure-HTTP path; refining expired vs revoked would require a message-substring classifier, deferred to live ratification (Phase B). The map is wired via the _load_error_map pattern in connector.py.",
+    "canonical_metric_mapping": {
+        "costInLocalCurrency": "cost",
+        "impressions": "impressions",
+        "clicks": "clicks",
+        "externalWebsiteConversions": "conversions",
+        "leadGenerationMailContactInfoShares": "leads"
+    },
+    "canonical_dimension_mapping": {
+        "campaign_id": "campaign_id",
+        "campaign_group_id": "campaign_group_id"
+    },
+    "attribution_window": {
+        "click_through_days": 30,
+        "view_through_days": 7,
+        "note": "AI-53 verifie le 2026-07-19 : LinkedIn Ads utilise une fenetre d'attribution par defaut de 30 jours post-clic / 7 jours post-impression pour les conversions web (externalWebsiteConversions). Les conversions revendiquees par LinkedIn sont les conversions DECLAREES sur le pixel LinkedIn Insight Tag ou l'API Conversions. Elles sont REVENDIQUEES par le canal (AD-4) : jamais sommees avec GA4/Meta/TikTok sans la regle de deduplication declarative. Source : https://www.linkedin.com/help/lms/answer/a1421160. A CONFIRMER en passe live : la fenetre reelle configuree par le compte peut etre differente (jusqu'a 90 jours pour le clic). Les leads LinkedIn (Lead Gen Form) n'ont pas de fenetre d'attribution equivalente -- ils sont des conversions directes dans la plateforme."
+    },
+    "quota": {
+        "window_seconds": 300,
+        "budget_points": 45000000,
+        "read_cost": 1,
+        "write_cost": 1,
+        "_ai_53_notes": "AI-53 verifie le 2026-07-19 : LinkedIn adAnalytics applique une limite de DONNEES (pas de requetes) : 45 millions de valeurs metriques par fenetre de 5 minutes. Une valeur metrique = 1 champ demande x 1 element retourne. Exemple : 6 metriques x 100 campagnes x 90 jours = 54 000 valeurs (bien en dessous de la limite). Pour un pull journalier typique (6 metriques, quelques centaines de campagnes), la limite n'est jamais atteinte. La limite en nombre de requetes (daily application limit) n'est PAS publiee dans la documentation officielle -- elle est specifique a chaque application et consultable dans le Developer Portal. HTTP 429 est retourne en cas de depassement. Source : https://learn.microsoft.com/en-us/linkedin/marketing/integrations/ads-reporting/ads-reporting?view=li-lms-2026-06 (section Data Throttling). review-15-9 F-4/F-5 (HONNETETE) : ce profil engine quota (window_seconds=300, budget_points=45_000_000) est un PLACEHOLDER FORMEL, pas un vrai budget de requetes. La vraie limite LinkedIn s'exprime en VALEURS METRIQUES retournees (champs x elements), une grandeur qui depend du contenu de la reponse et n'est donc PAS exprimable proprement dans un engine core FIXED-WINDOW comptant des requetes/points. Le budget affiche est volontairement enorme pour ne jamais bloquer un pull legitime ; le BACKSTOP REEL contre le depassement est le handler HTTP 429 -> RateLimitError (comme pour Stripe). A recalibrer en passe live selon le comportement reel de l'API."
+    },
+    "widget_ref": "ui://core/daily-report",
+    "_ai_53_notes": {
+        "verified_on": "2026-07-19",
+        "endpoint": "AI-53 verifie le 2026-07-19 : LinkedIn Marketing API REST versionnee. Base URL : https://api.linkedin.com/rest/. Header obligatoire : LinkedIn-Version: YYYYMM (version retenue par defaut : 202506 en vigueur en juillet 2026). Header additionnel : X-Restli-Protocol-Version: 2.0.0. Permission requise : r_ads_reporting. Source officielle : https://learn.microsoft.com/en-us/linkedin/marketing/integrations/ads-reporting/ads-reporting?view=li-lms-2026-06",
+        "no_pagination": "AI-53 verifie le 2026-07-19 : l'endpoint adAnalytics NE SUPPORTE PAS la pagination au sens traditionnel (pas de curseur ni d'offset progressant). La reponse est limitee a 15 000 elements. Le pull borné DAILY (fenetre d'un jour ou quelques jours) par batch de campagnes reste sous cette limite. Pattern retenu : batch par campagne ou fenetre restreinte si le nombre de campagnes > 500. A CONFIRMER en passe live.",
+        "conversions_dedup": "AD-4 : les conversions LinkedIn (externalWebsiteConversions) sont REVENDIQUEES par le canal. JAMAIS sommees avec GA4/Meta/TikTok sans la regle de dedup declarative (Rule P, 3.7). Elles restent des lignes SEPAREES distinguees par connector='linkedin-ads' dans fact_daily_kpi.",
+        "leads_mapping": "Note B2B (epic-15 story 15.3) : LinkedIn expose le concept de Lead Gen Form responses. Le champ 'leadGenerationMailContactInfoShares' est l'equivalent le plus proche d'un formulaire de lead complete directement sur LinkedIn. Il NE MAPPE PAS directement sur la metrique canonique 'conversions' (car ce sont des soumissions de formulaire in-app, pas des conversions web trackees). Il est expose comme metrique DISTINCTE 'leads' dans le rapport campaign_daily. La relation leads <-> conversions depend de la configuration du compte LinkedIn et du type de campagne. A CONFIRMER en passe live (Phase B)."
+    },
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "cost",
+                "source_field": "costInLocalCurrency",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "cost exposed by LinkedIn Ads.",
+                "semantic_hints": [
+                    "spend",
+                    "currency"
+                ],
+                "canonical_target": "cost",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "impressions",
+                "source_field": "impressions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "impressions exposed by LinkedIn Ads.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "clicks",
+                "source_field": "clicks",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "clicks exposed by LinkedIn Ads.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "conversions",
+                "source_field": "externalWebsiteConversions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "conversions exposed by LinkedIn Ads.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "conversions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "leads",
+                "source_field": "leadGenerationMailContactInfoShares",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "leads exposed by LinkedIn Ads.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "leads",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "dateRange",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "date exposed by LinkedIn Ads.",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_id",
+                "source_field": "campaign_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "campaign id exposed by LinkedIn Ads.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_group_id",
+                "source_field": "campaign_group_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "campaign group id exposed by LinkedIn Ads.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_group_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "campaign_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "cost",
+                    "impressions",
+                    "clicks",
+                    "conversions",
+                    "leads"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "hard_limit",
+                    "max_pages": null,
+                    "row_limit": 15000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "returned_metric_value"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_campaign_daily"
+                }
+            },
+            {
+                "id": "campaign_group_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "cost",
+                    "impressions",
+                    "clicks",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_group_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_group_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "hard_limit",
+                    "max_pages": null,
+                    "row_limit": 15000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "returned_metric_value"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_campaign_group_daily"
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "cost",
+                    "impressions",
+                    "clicks",
+                    "conversions",
+                    "leads"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id",
+                    "campaign_group_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id",
+                        "campaign_group_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "hard_limit",
+                    "max_pages": null,
+                    "row_limit": 15000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "returned_metric_value"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                }
+            }
+        ]
+    },
+    "account_topology": {
+        "_comment": "Story 25.7 stitch: LinkedIn topology is a single flat level -- the sponsored ad accounts the token can reach via GET /rest/adAccounts?q=search. The selected reporting entity is the AD ACCOUNT (adAnalytics pulls target accounts=List(urn:li:sponsoredAccount:<id>)). Replaces the LINKEDIN_ADS_ACCOUNT_ID env-var pattern (deprecated; discover_accounts is the topology-driven source of the selectable account). Additive per AD-2: core reads levels/selection_level/discovery generically, never LinkedIn vocabulary.",
+        "levels": [
+            {
+                "id": "ad_account",
+                "label": "Ad account"
+            }
+        ],
+        "selection_level": "ad_account",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    }
+}

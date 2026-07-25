@@ -1,0 +1,44 @@
+{
+  "name": "@toorow/shell",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Shared widget shell: ThemeProvider + hostContext light/dark binding + meta envelope consumer (Story 1.2).",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource-variable/jetbrains-mono": "^5.2.5",
+    "@fontsource-variable/lexend": "^5.2.5",
+    "@fontsource-variable/plus-jakarta-sans": "^5.2.5",
+    "@fontsource/material-symbols-outlined": "^5.2.3",
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
+    "html-to-image": "^1.11.13"
+  },
+  "devDependencies": {
+    "@emotion/react": "^11.13.0",
+    "@emotion/styled": "^11.13.0",
+    "@mui/material": "^9.0.0",
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.5.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^5.7.0",
+    "vite": "^8.0.0",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "@emotion/react": "^11.13.0",
+    "@emotion/styled": "^11.13.0",
+    "@mui/material": "^9.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}

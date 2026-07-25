@@ -1,0 +1,189 @@
+/**
+ * join-org.css — page-specific styles for JoinOrg (invitation acceptance).
+ *
+ * ⚠️ SPEC-DERIVED, NO MOCKUP — pending a visual mockup.
+ * These surfaces are derived from the Epic 36 DESIGN.md tokens and component
+ * anatomy (ScopeSummary on {colors.surface-page} at {rounded.md}; a centered
+ * public/email surface — "Responsive centered column; no product nav" from the
+ * Surface State Matrix; JetBrains Mono for immutable identifiers), NOT from a
+ * validated mockup. The base shell classes the screen also uses —
+ * .primary-button, .signal-label / .signal-mark, .mono — already live in
+ * application.css and are NOT redefined here.
+ *
+ * This is a PUBLIC-ish standalone page (no six-workspace shell nav): it renders a
+ * centered card, not a <main> fragment. Everything is prefixed `joinorg-` so
+ * nothing here couples to or collides with other pages (no edits to
+ * application.css). Colors reference the application.css CSS variables only — no hex.
+ */
+
+/* ---- Centered public/email column (Surface State Matrix: no product nav) --- */
+.joinorg-stage {
+  position: relative;
+  min-height: 100vh;
+  background: var(--page);
+}
+
+.joinorg-scrim {
+  position: relative;
+  inset: 0;
+  display: grid;
+  place-items: start center;
+  padding: 48px 28px;
+}
+
+.joinorg-dialog {
+  width: min(600px, calc(100% - 56px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 28px 90px rgba(17, 17, 17, .12);
+}
+
+/* ---- Header -------------------------------------------------------------- */
+.joinorg-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.joinorg-header h1 { margin: 0; font: 600 22px "Lexend", sans-serif; letter-spacing: -.01em; }
+.joinorg-subtitle {
+  max-width: 46ch;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ---- Body --------------------------------------------------------------- */
+.joinorg-body { padding: 24px 28px; display: grid; gap: 22px; }
+.joinorg-lead { margin: 0; font-size: 14px; line-height: 1.6; }
+.joinorg-lead strong { font-weight: 700; }
+.joinorg-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+
+/* ---- Status / validating ------------------------------------------------ */
+.joinorg-status { display: grid; gap: 14px; }
+
+.joinorg-skeleton { display: grid; gap: 10px; }
+.joinorg-skeleton > span {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 0,
+    color-mix(in srgb, var(--surface-2) 60%, var(--line)) 40%,
+    var(--surface-2) 80%
+  );
+  background-size: 200% 100%;
+  animation: joinorg-shimmer 1.4s ease-in-out infinite;
+}
+.joinorg-skeleton > span:nth-child(1) { width: 100%; }
+.joinorg-skeleton > span:nth-child(2) { width: 82%; }
+.joinorg-skeleton > span:nth-child(3) { width: 64%; }
+
+@keyframes joinorg-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .joinorg-skeleton > span { animation: none; }
+}
+
+/* ---- Notices (nondisclosing terminals) ---------------------------------- */
+.joinorg-notice { padding: 14px 16px; border-radius: 12px; }
+.joinorg-notice p { margin: 8px 0 0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.joinorg-notice.error {
+  border: 1px solid color-mix(in srgb, var(--error) 40%, var(--line));
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+}
+.joinorg-notice.warning {
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--line));
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+}
+
+/* ---- ScopeSummary (DESIGN.md: surface-page, rounded.md, read-only) ------- */
+.scope-summary {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--page);
+}
+.scope-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font: 600 13px "Lexend", sans-serif;
+}
+.scope-example-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: 600 11px "Plus Jakarta Sans", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.scope-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 14px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.scope-summary-title + .scope-row { border-top: 0; }
+.scope-key { color: var(--muted); font-size: 12px; font-weight: 600; }
+.scope-val { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.scope-val.mono { font-size: 13px; }
+.scope-sub { color: var(--muted); }
+.scope-none { color: var(--muted); font-weight: 700; }
+
+/* ---- Grant bindings (grouped by canonical AD-5 path) -------------------- */
+.scope-bindings { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.scope-binding {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.scope-binding-path { color: var(--muted); font-size: 12px; font-weight: 600; }
+.scope-binding-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.scope-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 11px;
+  font-weight: 700;
+}
+.scope-id { font-size: 12px; color: var(--muted); }
+
+/* ---- Footer ------------------------------------------------------------- */
+.joinorg-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 28px;
+  border-top: 1px solid var(--line);
+}
+.joinorg-footer > span { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.joinorg-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.joinorg-actions .primary-button[disabled] {
+  opacity: .55;
+  cursor: not-allowed;
+  filter: saturate(.7);
+}
+
+/* ---- Narrow-desktop resilience (mirrors sibling breakpoint) ------------- */
+@media (max-width: 1180px) {
+  .joinorg-dialog { width: calc(100% - 36px); }
+  .joinorg-footer { flex-wrap: wrap; }
+  .scope-row { grid-template-columns: 1fr; gap: 3px; }
+}

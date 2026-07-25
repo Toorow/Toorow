@@ -1,0 +1,9 @@
+{
+  "id": "conversion_daily",
+  "display_name": "DV360 conversions",
+  "metrics": ["conversions", "conversions_value"],
+  "dimensions": ["date", "advertiser_id", "campaign_id", "conversion_type", "currency", "timezone"],
+  "layout": {"chart_type": "table", "order_by": "date"},
+  "narrative_prompt": "Summarize conversions without mixing currencies, timezones or attribution activities.",
+  "date_window": {"default_days": 30, "min_days": 1, "max_days": 90}
+}

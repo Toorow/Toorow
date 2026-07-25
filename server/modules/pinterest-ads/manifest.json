@@ -1,0 +1,695 @@
+{
+    "schema_version": "1.2",
+    "name": "pinterest-ads",
+    "display_name": "Pinterest Ads",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "paid_media",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract (25.6 live probe) -- including the Nango refresh-token rotation check (60-day continuous refresh, ROLLOUT_NOTES)."
+        }
+    },
+    "auth_type": "oauth2",
+    "module_kind": "kpi",
+    "provider_api_version": "v5",
+    "provider_api_base": "https://api.pinterest.com",
+    "_provider_api_note": "Story 26.3: the Pinterest REST API version is pinned HERE and only here (OpenAPI pinterest/api-description 5.28.0). connector.py builds every URL from provider_api_base + provider_api_version; api_catalog.json / catalog_sources.json api_version must equal this pin (module test enforces the coupling). A version bump FORCES a catalog regen (conformance).",
+    "report_profiles": [
+        {
+            "id": "campaign_daily",
+            "display_name": "Campaign performance (daily)",
+            "metrics": [
+                "SPEND_IN_MICRO_DOLLAR",
+                "TOTAL_IMPRESSION",
+                "TOTAL_CLICKTHROUGH",
+                "TOTAL_ENGAGEMENT",
+                "TOTAL_CONVERSIONS",
+                "TOTAL_CHECKOUT",
+                "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR"
+            ],
+            "dimensions": [
+                "date",
+                "CAMPAIGN_ID",
+                "CAMPAIGN_NAME",
+                "CAMPAIGN_ENTITY_STATUS",
+                "CAMPAIGN_OBJECTIVE_TYPE"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 250,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "ad_group_daily",
+            "display_name": "Ad group performance (daily)",
+            "metrics": [
+                "SPEND_IN_MICRO_DOLLAR",
+                "TOTAL_IMPRESSION",
+                "TOTAL_CLICKTHROUGH",
+                "TOTAL_ENGAGEMENT",
+                "TOTAL_CONVERSIONS",
+                "TOTAL_CHECKOUT",
+                "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR"
+            ],
+            "dimensions": [
+                "date",
+                "CAMPAIGN_ID",
+                "AD_GROUP_ID",
+                "AD_GROUP_NAME",
+                "AD_GROUP_ENTITY_STATUS"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 250,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "ad_daily",
+            "display_name": "Ad performance (daily)",
+            "metrics": [
+                "SPEND_IN_MICRO_DOLLAR",
+                "TOTAL_IMPRESSION",
+                "TOTAL_CLICKTHROUGH",
+                "TOTAL_ENGAGEMENT",
+                "TOTAL_CONVERSIONS",
+                "TOTAL_CHECKOUT",
+                "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR"
+            ],
+            "dimensions": [
+                "date",
+                "CAMPAIGN_ID",
+                "AD_GROUP_ID",
+                "AD_ID",
+                "AD_NAME",
+                "PIN_ID"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 250,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven daily (any selected column, async report)",
+            "metrics": [
+                "SPEND_IN_MICRO_DOLLAR",
+                "TOTAL_IMPRESSION",
+                "TOTAL_CLICKTHROUGH",
+                "TOTAL_CONVERSIONS"
+            ],
+            "dimensions": [
+                "date",
+                "CAMPAIGN_ID",
+                "CAMPAIGN_NAME"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        }
+    ],
+    "error_map": {
+        "401:1": "auth_expired",
+        "401:2": "auth_expired",
+        "403:3": "permission_denied",
+        "403:29": "permission_denied",
+        "400:12": "provider_transient",
+        "404:1000": "invalid_request",
+        "404:1001": "invalid_request",
+        "404:1018": "invalid_request",
+        "404:1020": "invalid_request"
+    },
+    "_error_map_note": "Story 26.3 (dossier section 7): keys are '<http_status>:<body_code>' -- Pinterest v5 error bodies are {\"code\": <int>, \"message\": <str>} and the discrimination is on the BODY code, never the HTTP status alone. THE trap: 400 code 12 ('Retry after ...') is a TRANSIENT 400 -> provider_transient (a naive 400=invalid_request would break the breaker and fire false pull_invalid_request_drift). 401 codes 1/2 = token invalid/expired -> auth_expired (reconnect). 403 code 3 = app consumer type not supported, 403 code 29 = Trial-tier feature not granted -> permission_denied. 429 code 8 is NOT in this map: it stays on the core.quota.RateLimitError breaker path honoring the x-ratelimit-reset header. 5xx fall through to the pure-HTTP provider_transient classification. A 403 'Request has expired' on the async download URL is DownloadLinkExpired (core.async_reports single-resubmission path), not an error_map entry. Any OTHER 400 on a cataloged column is the catalog drift signal (pull_invalid_request_drift).",
+    "refetch": {
+        "nightly_days": 7,
+        "weekly_days": 30,
+        "monthly_days": 60,
+        "_note": "Dossier section 4.3: Pinterest publishes NO freshness SLA; conversion metrics restate while the attribution windows run (pinned spec 30 click / 30 engagement / 1 view, TIME_OF_AD_ACTION) and delivery metrics stabilize in ~24-72h. nightly 7d catches routine restatement, weekly 30d covers the click/engagement windows, monthly 60d covers the maximum configurable window."
+    },
+    "canonical_metric_mapping": {
+        "SPEND_IN_MICRO_DOLLAR": "cost",
+        "TOTAL_IMPRESSION": "impressions",
+        "TOTAL_CLICKTHROUGH": "clicks",
+        "TOTAL_ENGAGEMENT": "engagements",
+        "TOTAL_CONVERSIONS": "conversions",
+        "TOTAL_CHECKOUT": "checkouts",
+        "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR": "checkout_value"
+    },
+    "canonical_dimension_mapping": {
+        "date": "date",
+        "AD_ACCOUNT_ID": "ad_account_id",
+        "ADVERTISER_ID": "advertiser_id",
+        "CAMPAIGN_ID": "campaign_id",
+        "CAMPAIGN_NAME": "campaign_name",
+        "CAMPAIGN_ENTITY_STATUS": "campaign_status",
+        "CAMPAIGN_OBJECTIVE_TYPE": "campaign_objective_type",
+        "AD_GROUP_ID": "ad_group_id",
+        "AD_GROUP_NAME": "ad_group_name",
+        "AD_GROUP_ENTITY_STATUS": "ad_group_status",
+        "AD_ID": "ad_id",
+        "AD_NAME": "ad_name",
+        "PIN_ID": "pin_id",
+        "PRODUCT_GROUP_ID": "product_group_id"
+    },
+    "quota": {
+        "window_seconds": 60,
+        "budget_points": 300,
+        "read_cost": 1,
+        "write_cost": 1,
+        "_note": "Standard-tier ads_analytics quota: 300 requests/min per user per app (dossier section 6). Trial tier is 1,000 requests/DAY per app -- a Trial app must be throttled via config before any backfill (open epic-26 probe question); the async report path is the quota-economical path either way (1 create + polls per 186-day window for the whole account). 429 body code 8 -> RateLimitError with retry_after from x-ratelimit-reset."
+    },
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "SPEND_IN_MICRO_DOLLAR",
+                "source_field": "SPEND_IN_MICRO_DOLLAR",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Ad spend in int64 micro-currency of the ad account; landed as cost = value/1e6 (platform micros rule).",
+                "semantic_hints": [
+                    "spend",
+                    "currency"
+                ],
+                "canonical_target": "cost",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "TOTAL_IMPRESSION",
+                "source_field": "TOTAL_IMPRESSION",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Total impressions (paid + earned).",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "TOTAL_CLICKTHROUGH",
+                "source_field": "TOTAL_CLICKTHROUGH",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Total pin clickthroughs (paid + earned).",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "TOTAL_ENGAGEMENT",
+                "source_field": "TOTAL_ENGAGEMENT",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Total engagements (closeups, saves, clicks...).",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "engagements",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "TOTAL_CONVERSIONS",
+                "source_field": "TOTAL_CONVERSIONS",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Total conversion events across families (restated while the pinned attribution windows run -- refetch block).",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "conversions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "TOTAL_CHECKOUT",
+                "source_field": "TOTAL_CHECKOUT",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Total checkout conversion events.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "checkouts",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR",
+                "source_field": "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Checkout conversion value in int64 micro-currency; landed as checkout_value = value/1e6 (platform micros rule).",
+                "semantic_hints": [
+                    "conversion",
+                    "currency"
+                ],
+                "canonical_target": "checkout_value",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "DATE",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "Reporting day (DATE key of the analytics/report row at granularity DAY, UTC).",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "CAMPAIGN_ID",
+                "source_field": "CAMPAIGN_ID",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign ID.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "CAMPAIGN_NAME",
+                "source_field": "CAMPAIGN_NAME",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign display name.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "CAMPAIGN_ENTITY_STATUS",
+                "source_field": "CAMPAIGN_ENTITY_STATUS",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign entity status (ACTIVE / PAUSED / ARCHIVED).",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "campaign_status",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "CAMPAIGN_OBJECTIVE_TYPE",
+                "source_field": "CAMPAIGN_OBJECTIVE_TYPE",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign objective (AWARENESS / CONSIDERATION / CONVERSIONS / CATALOG_SALES / WEB_SESSIONS...).",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "campaign_objective_type",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "AD_GROUP_ID",
+                "source_field": "AD_GROUP_ID",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad group ID.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "ad_group_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "AD_GROUP_NAME",
+                "source_field": "AD_GROUP_NAME",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad group display name.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "ad_group_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "AD_GROUP_ENTITY_STATUS",
+                "source_field": "AD_GROUP_ENTITY_STATUS",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad group entity status.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "ad_group_status",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "AD_ID",
+                "source_field": "AD_ID",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad ID.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "ad_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "AD_NAME",
+                "source_field": "AD_NAME",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad display name.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "ad_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "PIN_ID",
+                "source_field": "PIN_ID",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Promoted pin ID.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "pin_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "campaign_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_campaign_daily"
+                },
+                "metrics": [
+                    "SPEND_IN_MICRO_DOLLAR",
+                    "TOTAL_IMPRESSION",
+                    "TOTAL_CLICKTHROUGH",
+                    "TOTAL_ENGAGEMENT",
+                    "TOTAL_CONVERSIONS",
+                    "TOTAL_CHECKOUT",
+                    "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR"
+                ],
+                "dimensions": [
+                    "date",
+                    "CAMPAIGN_ID",
+                    "CAMPAIGN_NAME",
+                    "CAMPAIGN_ENTITY_STATUS",
+                    "CAMPAIGN_OBJECTIVE_TYPE"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "CAMPAIGN_ID"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 100,
+                    "row_limit": 250,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "ad_group_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_ad_group_daily"
+                },
+                "metrics": [
+                    "SPEND_IN_MICRO_DOLLAR",
+                    "TOTAL_IMPRESSION",
+                    "TOTAL_CLICKTHROUGH",
+                    "TOTAL_ENGAGEMENT",
+                    "TOTAL_CONVERSIONS",
+                    "TOTAL_CHECKOUT",
+                    "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR"
+                ],
+                "dimensions": [
+                    "date",
+                    "CAMPAIGN_ID",
+                    "AD_GROUP_ID",
+                    "AD_GROUP_NAME",
+                    "AD_GROUP_ENTITY_STATUS"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "CAMPAIGN_ID",
+                        "AD_GROUP_ID"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 100,
+                    "row_limit": 250,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "ad_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_ad_daily"
+                },
+                "metrics": [
+                    "SPEND_IN_MICRO_DOLLAR",
+                    "TOTAL_IMPRESSION",
+                    "TOTAL_CLICKTHROUGH",
+                    "TOTAL_ENGAGEMENT",
+                    "TOTAL_CONVERSIONS",
+                    "TOTAL_CHECKOUT",
+                    "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR"
+                ],
+                "dimensions": [
+                    "date",
+                    "CAMPAIGN_ID",
+                    "AD_GROUP_ID",
+                    "AD_ID",
+                    "AD_NAME",
+                    "PIN_ID"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "CAMPAIGN_ID",
+                        "AD_GROUP_ID",
+                        "AD_ID"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 100,
+                    "row_limit": 250,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                },
+                "metrics": [
+                    "SPEND_IN_MICRO_DOLLAR",
+                    "TOTAL_IMPRESSION",
+                    "TOTAL_CLICKTHROUGH",
+                    "TOTAL_CONVERSIONS"
+                ],
+                "dimensions": [
+                    "date",
+                    "CAMPAIGN_ID",
+                    "CAMPAIGN_NAME"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "CAMPAIGN_ID"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            }
+        ]
+    },
+    "account_topology": {
+        "_comment": "Story 26.3 (pattern 25.5 / meta-ads): Pinterest reporting topology is a single flat level -- the token's reachable ad accounts (GET /ad_accounts, bookmark-paginated, include_shared_accounts=true covers Business Access shares). The selected reporting entity is the AD ACCOUNT. Access check = 1-day tier-core sync analytics probe on the selected account (Owner or Business Access Admin/Analyst/Campaign Manager role required). PINTEREST_ADS_*_ID env vars are FORBIDDEN (doctrine); selection/access-check/trial/backfill are the core topology flows.",
+        "levels": [
+            {
+                "id": "ad_account",
+                "label": "Ad account"
+            }
+        ],
+        "selection_level": "ad_account",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    }
+}

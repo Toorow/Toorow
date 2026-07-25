@@ -1,0 +1,125 @@
+{
+  "schema_version": "1.2",
+  "name": "monday",
+  "display_name": "monday.com",
+  "public_catalog": {
+    "visibility": "public",
+    "category": "business_context",
+    "onboarding_modes": ["connector_pull", "context_source"],
+    "verification": {
+      "status": "blocked",
+      "reason_code": "live_evidence_not_ratified",
+      "follow_up": "Run the ROLLOUT_NOTES live probe against a consented monday account and ratify API version, quota, discovery, snapshot and webhook evidence."
+    }
+  },
+  "auth_type": "oauth2",
+  "module_kind": "kpi",
+  "provider_api_version": "2026-07",
+  "provider_api_host": "https://api.monday.com/v2",
+  "_provider_api_note": "OAuth 2.1 uses well-known discovery, PKCE S256, rotating refresh tokens, revocation and a six-month lineage boundary in oauth.py. API-Version is pinned and response-verified by connector.py.",
+  "report_profiles": [
+    {
+      "id": "board_snapshot",
+      "display_name": "Board item snapshot",
+      "landing": "fact_daily_kpi",
+      "metrics": [],
+      "dimensions": ["board_id", "item_id", "item_name", "group_id", "parent_item_id", "updated_at", "column_values", "column_id", "column_type", "column_raw_value"],
+      "extraction_capabilities": {"row_limit": null, "filters_supported": true, "realtime": false},
+      "verification_expected_rows_per_day": null
+    },
+    {
+      "id": "board_events",
+      "display_name": "Board updates and webhook events",
+      "landing": "context_events",
+      "metrics": [],
+      "dimensions": ["event_date", "event_label"],
+      "events": ["monday_change"],
+      "extraction_capabilities": {"row_limit": 100, "filters_supported": true, "realtime": true},
+      "verification_expected_rows_per_day": null
+    }
+  ],
+  "error_map": {
+    "COMPLEXITY_BUDGET_EXHAUSTED": "rate_limited",
+    "DAILY_LIMIT_EXCEEDED": "rate_limited",
+    "MINUTE_LIMIT_EXCEEDED": "rate_limited",
+    "CONCURRENCY_LIMIT_EXCEEDED": "rate_limited",
+    "IP_RATE_LIMIT_EXCEEDED": "rate_limited",
+    "UNAUTHENTICATED": "auth_expired",
+    "AUTHENTICATION_ERROR": "auth_expired",
+    "FORBIDDEN": "permission_denied",
+    "PERMISSION_DENIED": "permission_denied",
+    "NOT_FOUND": "resource_not_found",
+    "RESOURCE_PROTECTION": "rate_limited"
+  },
+  "canonical_metric_mapping": {},
+  "canonical_dimension_mapping": {
+    "board_id": "board_id",
+    "item_id": "item_id",
+    "item_name": "item_name",
+    "group_id": "group_id",
+    "parent_item_id": "parent_item_id",
+    "updated_at": "updated_at",
+    "column_values": "column_values",
+    "column_id": "column_id",
+    "column_type": "column_type",
+    "column_raw_value": "column_raw_value",
+    "event_date": "date",
+    "event_label": "label"
+  },
+  "canonical_event_mapping": {"monday_change": "milestone"},
+  "quota": {
+    "window_seconds": 60,
+    "budget_points": 5000000,
+    "read_cost": 1,
+    "write_cost": 1,
+    "daily_limit_by_plan": {"free": 1000, "basic": 1000, "pro": 10000, "enterprise": 25000},
+    "minute_queries_by_plan": {"free": 1000, "basic": 1000, "pro": 2500, "enterprise": 5000},
+    "concurrency_by_plan": {"free": 40, "basic": 40, "pro": 100, "enterprise": 250},
+    "ip_per_10s": 5000
+  },
+  "source_capabilities": {
+    "contract_version": "1",
+    "field_discovery": {"mode": "runtime", "allowed_targets": ["board"]},
+    "fields": [
+      {"field_id": "board_id", "source_field": "boards.id", "kind": "dimension", "physical_type": "string", "description": "Opaque monday board identifier.", "semantic_hints": ["board", "identifier"], "canonical_target": "board_id", "aggregation": "none", "non_additive": false},
+      {"field_id": "item_id", "source_field": "items_page.items.id", "kind": "dimension", "physical_type": "string", "description": "Opaque monday item identifier.", "semantic_hints": ["item", "identifier"], "canonical_target": "item_id", "aggregation": "none", "non_additive": false},
+      {"field_id": "item_name", "source_field": "items_page.items.name", "kind": "dimension", "physical_type": "string", "description": "Item display name.", "semantic_hints": ["item", "name"], "canonical_target": "item_name", "aggregation": "none", "non_additive": false},
+      {"field_id": "group_id", "source_field": "items_page.items.group.id", "kind": "dimension", "physical_type": "string", "description": "Board group identifier.", "semantic_hints": ["group", "identifier"], "canonical_target": "group_id", "aggregation": "none", "non_additive": false},
+      {"field_id": "parent_item_id", "source_field": "items_page.items.parent_item.id", "kind": "dimension", "physical_type": "string", "description": "Parent item identifier for subitems.", "semantic_hints": ["subitem", "parent"], "canonical_target": "parent_item_id", "aggregation": "none", "non_additive": false},
+      {"field_id": "updated_at", "source_field": "items_page.items.updated_at", "kind": "dimension", "physical_type": "datetime", "description": "Last item update timestamp.", "semantic_hints": ["updated_at", "datetime"], "canonical_target": "updated_at", "aggregation": "none", "non_additive": false},
+      {"field_id": "column_values", "source_field": "items_page.items.column_values", "kind": "dimension", "physical_type": "json", "description": "Typed board-specific column values with raw JSON preserved.", "semantic_hints": ["dynamic", "typed_json"], "canonical_target": "column_values", "aggregation": "none", "non_additive": false},
+      {"field_id": "column_id", "source_field": "items_page.items.column_values.id", "kind": "dimension", "physical_type": "string", "description": "Runtime board column identifier.", "semantic_hints": ["column", "identifier"], "canonical_target": "column_id", "aggregation": "none", "non_additive": false},
+      {"field_id": "column_type", "source_field": "items_page.items.column_values.type", "kind": "dimension", "physical_type": "string", "description": "Runtime monday column type.", "semantic_hints": ["column", "type"], "canonical_target": "column_type", "aggregation": "none", "non_additive": false},
+      {"field_id": "column_raw_value", "source_field": "items_page.items.column_values.value", "kind": "dimension", "physical_type": "json", "description": "Uncoerced typed column JSON at item-column grain.", "semantic_hints": ["column", "raw_json"], "canonical_target": "column_raw_value", "aggregation": "none", "non_additive": false},
+      {"field_id": "event_date", "source_field": "updates.updated_at", "kind": "dimension", "physical_type": "date", "description": "Date of a monday board change.", "semantic_hints": ["date", "event"], "canonical_target": "date", "aggregation": "none", "non_additive": false},
+      {"field_id": "event_label", "source_field": "updates.id", "kind": "dimension", "physical_type": "string", "description": "Stable label for a monday change.", "semantic_hints": ["label", "event"], "canonical_target": "label", "aggregation": "none", "non_additive": false},
+      {"field_id": "monday_change", "source_field": "updates", "kind": "event", "physical_type": "datetime", "description": "Board update or validated webhook change.", "semantic_hints": ["event", "change"], "canonical_target": "milestone", "aggregation": "none", "non_additive": false, "label_source_field": "updates.id"}
+    ],
+    "reports": [
+      {
+        "id": "board_snapshot", "landing": "fact_daily_kpi", "selection_mode": "exact_bundle", "availability": {"status": "selectable"}, "dispatch": {"callable": "pull_board_snapshot"},
+        "metrics": [], "dimensions": ["board_id", "item_id", "item_name", "group_id", "parent_item_id", "updated_at", "column_values", "column_id", "column_type", "column_raw_value"],
+        "supported_grains": [["board_id", "item_id", "column_id"]], "compatibility": [],
+        "filters": [{"field_id": "board_id", "operators": ["eq"]}],
+        "pagination": {"mode": "cursor", "completeness": "complete", "max_pages": null, "row_limit": null, "truncation_signal": "none"},
+        "quota_cost": {"read_points": 1, "unit": "GraphQL query plus computed complexity"},
+        "incremental": {"mode": "full_refresh", "cursor_field": null},
+        "cadence": {"minimum_interval_minutes": 60, "supported_modes": ["manual", "hourly", "daily"]}
+      },
+      {
+        "id": "board_events", "landing": "context_events", "selection_mode": "exact_bundle", "availability": {"status": "selectable"}, "dispatch": {"callable": "pull_board_events"},
+        "metrics": [], "dimensions": ["event_date", "event_label"], "events": ["monday_change"],
+        "supported_grains": [["event_date", "event_label"]], "compatibility": [],
+        "filters": [{"field_id": "event_date", "operators": ["gte", "lte"]}],
+        "pagination": {"mode": "cursor", "completeness": "bounded", "max_pages": 1, "row_limit": 100, "truncation_signal": "logged"},
+        "quota_cost": {"read_points": 1, "unit": "GraphQL query plus computed complexity"},
+        "incremental": {"mode": "date_window", "cursor_field": null},
+        "cadence": {"minimum_interval_minutes": 5, "supported_modes": ["manual", "hourly", "daily"]}
+      }
+    ]
+  },
+  "account_topology": {
+    "selection_level": "board",
+    "discovery": {"callable": "discover_accounts"}
+  }
+}

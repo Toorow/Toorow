@@ -1,0 +1,3 @@
+# ui/shell/ — shared widget shell (theme, hostContext binding, View Tools).
+# Populated in Story 1.2. The shell consumes the AD-1 envelope `meta` (stale
+# badges, reconnect affordance, red alert states); widgets provide only `data`.

@@ -1,0 +1,14 @@
+{
+  "repository_type": "private multi-part monorepo with a virtual public projection",
+  "parts": [
+    {"id": "server", "root": "server", "type": "backend", "publication": "public-application"},
+    {"id": "ui", "root": "ui", "type": "web", "publication": "public-application"},
+    {"id": "data", "root": "dbt", "type": "data", "publication": "public-application"},
+    {"id": "infra", "root": "infra", "type": "infra", "publication": "public-application"},
+    {"id": "website", "root": "web", "type": "web", "publication": "private"},
+    {"id": "studio", "root": "studio", "type": "web", "publication": "private"},
+    {"id": "knowledge", "root": "docs", "type": "documentation", "publication": "private"}
+  ],
+  "boundary_config": "distribution/public-app.toml",
+  "export_command": "python scripts/export_public_app.py --output ../connector-app-public"
+}

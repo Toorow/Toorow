@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toorow.dev/schemas/datastream-intent.schema.json",
+  "title": "toorow Datastream intent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "source", "destination", "historical", "schedule"],
+  "properties": {
+    "contract_version": {"const": "1"},
+    "source": {"$ref": "#/$defs/source"},
+    "destination": {"$ref": "#/$defs/destination"},
+    "historical": {"$ref": "#/$defs/historical"},
+    "schedule": {"$ref": "#/$defs/schedule"},
+    "geographic": {"$ref": "#/$defs/geographic"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"source": {"properties": {"kind": {"const": "external_bq"}}}}},
+      "then": {"properties": {"destination": {"properties": {"policy": {"const": "external_read_only"}}}}},
+      "else": {"properties": {"destination": {"properties": {"policy": {"const": "managed_raw"}}}}}
+    }
+  ],
+  "$defs": {
+    "identifier": {"type": "string", "minLength": 1, "maxLength": 255},
+    "string_list": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/identifier"},
+      "uniqueItems": true,
+      "maxItems": 500
+    },
+    "geographic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "country_codes",
+        "posture_fingerprint",
+        "compilation_status",
+        "effective_country_field",
+        "impact"
+      ],
+      "properties": {
+        "mode": {"enum": ["global", "local_markets"]},
+        "country_codes": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[A-Z]{2}$"},
+          "uniqueItems": true
+        },
+        "posture_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "compilation_status": {
+          "enum": [
+            "consolidated",
+            "country_complete",
+            "preserved_full_grain",
+            "blocked"
+          ]
+        },
+        "effective_country_field": {"type": ["string", "null"]},
+        "impact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "grain_before",
+            "grain_after",
+            "added_dimensions",
+            "tracked_country_count",
+            "quota_cost",
+            "cardinality_estimate"
+          ],
+          "properties": {
+            "grain_before": {"$ref": "#/$defs/string_list"},
+            "grain_after": {"$ref": "#/$defs/string_list"},
+            "added_dimensions": {"$ref": "#/$defs/string_list"},
+            "tracked_country_count": {"type": "integer", "minimum": 0},
+            "quota_cost": {"type": ["object", "null"]},
+            "cardinality_estimate": {
+              "enum": ["unchanged", "provider_country_cardinality"]
+            }
+          }
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selection_mode", "metrics", "dimensions", "grain", "filters"],
+      "properties": {
+        "selection_mode": {"enum": ["exact_bundle", "subset"]},
+        "metrics": {"$ref": "#/$defs/string_list"},
+        "dimensions": {"$ref": "#/$defs/string_list"},
+        "grain": {"$ref": "#/$defs/string_list"},
+        "filters": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field_id", "operator", "value"],
+            "properties": {
+              "field_id": {"$ref": "#/$defs/identifier"},
+              "operator": {"enum": ["eq", "neq", "in", "not_in", "gt", "gte", "lt", "lte", "contains"]},
+              "value": {
+                "oneOf": [
+                  {"type": ["string", "number", "boolean", "null"]},
+                  {"type": "array", "items": {"type": ["string", "number", "boolean", "null"]}, "maxItems": 500}
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "external_object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "dataset", "object", "writer_identity"],
+      "properties": {
+        "project": {"$ref": "#/$defs/identifier"},
+        "dataset": {"$ref": "#/$defs/identifier"},
+        "object": {"$ref": "#/$defs/identifier"},
+        "writer_identity": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "managed_feed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format"],
+      "properties": {
+        "format": {"enum": ["csv", "excel", "google_sheets"]},
+        "source_ref": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "writer_kind", "selection"],
+      "properties": {
+        "kind": {"enum": ["connector_pull", "external_bq", "managed_feed"]},
+        "writer_kind": {"enum": ["toorow", "external"]},
+        "connection_ref_id": {"$ref": "#/$defs/identifier"},
+        "report_id": {"$ref": "#/$defs/identifier"},
+        "external_object": {"$ref": "#/$defs/external_object"},
+        "managed_feed": {"$ref": "#/$defs/managed_feed"},
+        "selection": {"$ref": "#/$defs/selection"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "connector_pull"}}, "required": ["kind"]},
+          "then": {
+            "properties": {"writer_kind": {"const": "toorow"}},
+            "required": ["connection_ref_id", "report_id"],
+            "not": {"anyOf": [{"required": ["external_object"]}, {"required": ["managed_feed"]}]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "external_bq"}}, "required": ["kind"]},
+          "then": {
+            "properties": {"writer_kind": {"const": "external"}},
+            "required": ["external_object"],
+            "not": {"anyOf": [{"required": ["connection_ref_id"]}, {"required": ["report_id"]}, {"required": ["managed_feed"]}]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "managed_feed"}}, "required": ["kind"]},
+          "then": {
+            "properties": {"writer_kind": {"const": "toorow"}},
+            "required": ["managed_feed"],
+            "not": {"anyOf": [{"required": ["external_object"]}, {"required": ["report_id"]}]}
+          }
+        }
+      ]
+    },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy"],
+      "properties": {"policy": {"enum": ["managed_raw", "external_read_only"]}}
+    },
+    "nullable_datetime": {"type": ["string", "null"], "format": "date-time"},
+    "historical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end_exclusive"],
+      "properties": {
+        "start": {"$ref": "#/$defs/nullable_datetime"},
+        "end_exclusive": {"$ref": "#/$defs/nullable_datetime"}
+      }
+    },
+    "watermark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "delay_minutes"],
+      "properties": {
+        "kind": {"enum": ["none", "date_window", "source_timestamp"]},
+        "delay_minutes": {"type": "integer", "minimum": 0, "maximum": 525600}
+      }
+    },
+    "late_arrival": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lookback_minutes"],
+      "properties": {"lookback_minutes": {"type": "integer", "minimum": 0, "maximum": 525600}}
+    },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_attempts", "initial_backoff_seconds", "max_backoff_seconds"],
+      "properties": {
+        "max_attempts": {"type": "integer", "minimum": 1, "maximum": 20},
+        "initial_backoff_seconds": {"type": "integer", "minimum": 1, "maximum": 86400},
+        "max_backoff_seconds": {"type": "integer", "minimum": 1, "maximum": 604800}
+      }
+    },
+    "missed_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "max_catchup_windows"],
+      "properties": {
+        "mode": {"enum": ["skip", "coalesce"]},
+        "max_catchup_windows": {"type": "integer", "minimum": 1, "maximum": 365}
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "interval_minutes", "timezone", "watermark", "late_arrival", "retry", "missed_run"],
+      "properties": {
+        "mode": {"enum": ["manual", "daily", "hourly"]},
+        "interval_minutes": {"type": ["integer", "null"]},
+        "timezone": {"type": "string", "minLength": 1, "maxLength": 255},
+        "watermark": {"$ref": "#/$defs/watermark"},
+        "late_arrival": {"$ref": "#/$defs/late_arrival"},
+        "retry": {"$ref": "#/$defs/retry"},
+        "missed_run": {"$ref": "#/$defs/missed_run"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"mode": {"const": "manual"}}, "required": ["mode"]},
+          "then": {"properties": {"interval_minutes": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"mode": {"const": "daily"}}, "required": ["mode"]},
+          "then": {"properties": {"interval_minutes": {"const": 1440}}}
+        },
+        {
+          "if": {"properties": {"mode": {"const": "hourly"}}, "required": ["mode"]},
+          "then": {"properties": {"interval_minutes": {"type": "integer", "minimum": 60, "multipleOf": 60, "maximum": 1440}}}
+        }
+      ]
+    }
+  }
+}

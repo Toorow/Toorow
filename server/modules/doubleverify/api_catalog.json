@@ -1,0 +1,1203 @@
+{
+  "api_version": "data-api-v1",
+  "catalog_version": "1",
+  "connector": "doubleverify",
+  "fields": [
+    {
+      "description": "Advertiser the campaign belongs to.",
+      "exposure": "exposed",
+      "field_id": "advertiser_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "advertiser_name",
+      "tier": "core"
+    },
+    {
+      "description": "Ads allowed to serve after pre-bid/authentication.",
+      "exposure": "exposed",
+      "field_id": "allowed_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GENERAL",
+      "source_field": "allowed_ads",
+      "tier": "core"
+    },
+    {
+      "description": "Evaluations that resulted in an allowed decision.",
+      "exposure": "exposed",
+      "field_id": "allowed_evaluations",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GENERAL",
+      "source_field": "allowed_evaluations",
+      "tier": "core"
+    },
+    {
+      "description": "Allowed ads / evaluations.",
+      "exclusion_reason": "Non-additive ratio (AD-4): brand-suitability *_rate metrics are recomputed at the semantic layer from incident/suitable counts and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "allowed_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BRAND_RATE",
+      "source_field": "allowed_rate",
+      "tier": "core"
+    },
+    {
+      "description": "App age rating.",
+      "exposure": "exposed",
+      "field_id": "app_age_rating",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "APP",
+      "source_field": "app_age_rating",
+      "tier": "standard"
+    },
+    {
+      "description": "Application bundle id.",
+      "exposure": "exposed",
+      "field_id": "app_bundle",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "APP",
+      "source_field": "app_bundle",
+      "tier": "standard"
+    },
+    {
+      "description": "App developer.",
+      "exposure": "exposed",
+      "field_id": "app_developer",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "APP",
+      "source_field": "app_developer",
+      "tier": "standard"
+    },
+    {
+      "description": "Application id.",
+      "exposure": "exposed",
+      "field_id": "app_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "APP",
+      "source_field": "app_id",
+      "tier": "standard"
+    },
+    {
+      "description": "Application name.",
+      "exposure": "exposed",
+      "field_id": "app_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "APP",
+      "source_field": "app_name",
+      "tier": "standard"
+    },
+    {
+      "description": "App store.",
+      "exposure": "exposed",
+      "field_id": "app_store",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "APP",
+      "source_field": "app_store",
+      "tier": "standard"
+    },
+    {
+      "description": "App store category.",
+      "exposure": "exposed",
+      "field_id": "app_store_category",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "APP",
+      "source_field": "app_store_category",
+      "tier": "standard"
+    },
+    {
+      "description": "DV ATOM inventory identifier.",
+      "exposure": "exposed",
+      "field_id": "atom",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "INVENTORY",
+      "source_field": "atom",
+      "tier": "standard"
+    },
+    {
+      "description": "DV Authentic Ads: fraud/SIVT-free, brand-suitable, viewable, and in-geo.",
+      "exposure": "exposed",
+      "field_id": "authentic_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUTHENTIC",
+      "source_field": "authentic_ads",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic completed video impressions fully on screen.",
+      "exposure": "exposed",
+      "field_id": "authentic_completed_fully_on_screen_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUTHENTIC",
+      "source_field": "authentic_completed_fully_on_screen_impressions",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic completed fully-on-screen rate.",
+      "exclusion_reason": "Non-additive ratio (AD-4): DV authentic *_rate metrics are recomputed at the semantic layer from their authentic count and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "authentic_completed_fully_on_screen_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AUTHENTIC_RATE",
+      "source_field": "authentic_completed_fully_on_screen_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic display viewable impressions.",
+      "exposure": "exposed",
+      "field_id": "authentic_display_viewable_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUTHENTIC",
+      "source_field": "authentic_display_viewable_impressions",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic display viewable rate.",
+      "exclusion_reason": "Non-additive ratio (AD-4): DV authentic *_rate metrics are recomputed at the semantic layer from their authentic count and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "authentic_display_viewable_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AUTHENTIC_RATE",
+      "source_field": "authentic_display_viewable_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic first-quartile video impressions fully on screen.",
+      "exposure": "exposed",
+      "field_id": "authentic_q_1_fully_on_screen_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUTHENTIC",
+      "source_field": "authentic_q_1_fully_on_screen_impressions",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic first-quartile fully-on-screen rate.",
+      "exclusion_reason": "Non-additive ratio (AD-4): DV authentic *_rate metrics are recomputed at the semantic layer from their authentic count and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "authentic_q_1_fully_on_screen_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AUTHENTIC_RATE",
+      "source_field": "authentic_q_1_fully_on_screen_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic second-quartile (midpoint) video impressions fully on screen.",
+      "exposure": "exposed",
+      "field_id": "authentic_q_2_fully_on_screen_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUTHENTIC",
+      "source_field": "authentic_q_2_fully_on_screen_impressions",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic second-quartile fully-on-screen rate.",
+      "exclusion_reason": "Non-additive ratio (AD-4): DV authentic *_rate metrics are recomputed at the semantic layer from their authentic count and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "authentic_q_2_fully_on_screen_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AUTHENTIC_RATE",
+      "source_field": "authentic_q_2_fully_on_screen_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic third-quartile video impressions fully on screen.",
+      "exposure": "exposed",
+      "field_id": "authentic_q_3_fully_on_screen_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUTHENTIC",
+      "source_field": "authentic_q_3_fully_on_screen_impressions",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic third-quartile fully-on-screen rate.",
+      "exclusion_reason": "Non-additive ratio (AD-4): DV authentic *_rate metrics are recomputed at the semantic layer from their authentic count and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "authentic_q_3_fully_on_screen_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AUTHENTIC_RATE",
+      "source_field": "authentic_q_3_fully_on_screen_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic ads / monitored ads.",
+      "exclusion_reason": "Non-additive ratio (AD-4): DV authentic *_rate metrics are recomputed at the semantic layer from their authentic count and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "authentic_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AUTHENTIC_RATE",
+      "source_field": "authentic_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Authentic video viewable impressions.",
+      "exposure": "exposed",
+      "field_id": "authentic_video_viewable_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUTHENTIC",
+      "source_field": "authentic_video_viewable_impressions",
+      "tier": "standard"
+    },
+    {
+      "description": "Average viewable time in seconds per display viewable impression (mean).",
+      "exclusion_reason": "Non-additive mean (AD-4): average_time_s_display_viewable_impressions is a per-impression mean; it is recomputed at the semantic layer from total_viewable_time_s and the viewable-impression count, never stored raw.",
+      "exposure": "excluded",
+      "field_id": "average_time_s_display_viewable_impressions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AVERAGE",
+      "source_field": "average_time_s_display_viewable_impressions",
+      "tier": "standard"
+    },
+    {
+      "description": "Blocks / evaluations.",
+      "exclusion_reason": "Non-additive ratio (AD-4): fraud/SIVT *_rate metrics are recomputed at the semantic layer from fraud counts and monitored_ads / evaluations; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "block_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "FRAUD_RATE",
+      "source_field": "block_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Total block decisions.",
+      "exposure": "exposed",
+      "field_id": "blocks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GENERAL",
+      "source_field": "blocks",
+      "tier": "core"
+    },
+    {
+      "description": "Brand.",
+      "exposure": "exposed",
+      "field_id": "brand",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BRAND_GROUPING",
+      "source_field": "brand",
+      "tier": "standard"
+    },
+    {
+      "description": "Brand market.",
+      "exposure": "exposed",
+      "field_id": "brand_market",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BRAND_GROUPING",
+      "source_field": "brand_market",
+      "tier": "standard"
+    },
+    {
+      "description": "Brand region.",
+      "exposure": "exposed",
+      "field_id": "brand_region",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BRAND_GROUPING",
+      "source_field": "brand_region",
+      "tier": "standard"
+    },
+    {
+      "description": "Brand-suitability block decisions.",
+      "exposure": "exposed",
+      "field_id": "brand_suitability_blocks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND",
+      "source_field": "brand_suitability_blocks",
+      "tier": "core"
+    },
+    {
+      "description": "Brand-suitability incidents / monitored ads.",
+      "exclusion_reason": "Non-additive ratio (AD-4): brand-suitability *_rate metrics are recomputed at the semantic layer from incident/suitable counts and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "brand_suitability_incident_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BRAND_RATE",
+      "source_field": "brand_suitability_incident_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions flagged for a brand-suitability incident.",
+      "exposure": "exposed",
+      "field_id": "brand_suitability_incidents",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND",
+      "source_field": "brand_suitability_incidents",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that ran in brand-suitable environments.",
+      "exposure": "exposed",
+      "field_id": "brand_suitable_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND",
+      "source_field": "brand_suitable_ads",
+      "tier": "core"
+    },
+    {
+      "description": "Brand-suitable ads / monitored ads.",
+      "exclusion_reason": "Non-additive ratio (AD-4): brand-suitability *_rate metrics are recomputed at the semantic layer from incident/suitable counts and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "brand_suitable_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BRAND_RATE",
+      "source_field": "brand_suitable_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Campaign name.",
+      "exposure": "exposed",
+      "field_id": "campaign",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "campaign",
+      "tier": "core"
+    },
+    {
+      "description": "CTV app age rating.",
+      "exposure": "exposed",
+      "field_id": "ctv_app_age_rating",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CTV",
+      "source_field": "ctv_app_age_rating",
+      "tier": "advanced"
+    },
+    {
+      "description": "CTV application bundle id.",
+      "exposure": "exposed",
+      "field_id": "ctv_app_bundle",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CTV",
+      "source_field": "ctv_app_bundle",
+      "tier": "advanced"
+    },
+    {
+      "description": "CTV app developer.",
+      "exposure": "exposed",
+      "field_id": "ctv_app_developer",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CTV",
+      "source_field": "ctv_app_developer",
+      "tier": "advanced"
+    },
+    {
+      "description": "CTV application id.",
+      "exposure": "exposed",
+      "field_id": "ctv_app_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CTV",
+      "source_field": "ctv_app_id",
+      "tier": "advanced"
+    },
+    {
+      "description": "CTV application name.",
+      "exposure": "exposed",
+      "field_id": "ctv_app_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CTV",
+      "source_field": "ctv_app_name",
+      "tier": "advanced"
+    },
+    {
+      "description": "CTV app store.",
+      "exposure": "exposed",
+      "field_id": "ctv_app_store",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CTV",
+      "source_field": "ctv_app_store",
+      "tier": "advanced"
+    },
+    {
+      "description": "CTV app store category.",
+      "exposure": "exposed",
+      "field_id": "ctv_app_store_category",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CTV",
+      "source_field": "ctv_app_store_category",
+      "tier": "advanced"
+    },
+    {
+      "description": "CTV device name.",
+      "exposure": "exposed",
+      "field_id": "ctv_device_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CTV",
+      "source_field": "ctv_device_name",
+      "tier": "advanced"
+    },
+    {
+      "description": "Display impressions meeting a custom viewability definition.",
+      "exposure": "exposed",
+      "field_id": "custom_display_viewable_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "custom_display_viewable_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Custom display viewable rate.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "custom_display_viewable_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "custom_display_viewable_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions meeting a custom viewability definition.",
+      "exposure": "exposed",
+      "field_id": "custom_viewable_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "custom_viewable_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Calendar date of the measured activity.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "Day of the month (1-31).",
+      "exposure": "exposed",
+      "field_id": "day_of_month",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "TIME",
+      "source_field": "day_of_month",
+      "tier": "core"
+    },
+    {
+      "description": "Day-of-week name.",
+      "exposure": "exposed",
+      "field_id": "day_of_week_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "day_of_week_name",
+      "tier": "core"
+    },
+    {
+      "description": "ISO day-of-week name.",
+      "exposure": "exposed",
+      "field_id": "day_of_week_name_iso",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "day_of_week_name_iso",
+      "tier": "core"
+    },
+    {
+      "description": "Country where the ad was delivered.",
+      "exposure": "exposed",
+      "field_id": "delivery_country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO_DIM",
+      "source_field": "delivery_country",
+      "tier": "standard"
+    },
+    {
+      "description": "Delivery site/domain.",
+      "exposure": "exposed",
+      "field_id": "delivery_site",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "INVENTORY",
+      "source_field": "delivery_site",
+      "tier": "standard"
+    },
+    {
+      "description": "Device / environment on which the ad was delivered.",
+      "exposure": "exposed",
+      "field_id": "device_delivery_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "device_delivery_type",
+      "tier": "standard"
+    },
+    {
+      "description": "Display impressions eligible for viewability measurement.",
+      "exposure": "exposed",
+      "field_id": "display_eligible_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "display_eligible_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Display impressions measured for viewability.",
+      "exposure": "exposed",
+      "field_id": "display_measured_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "display_measured_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Display measured / display eligible impressions.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "display_measurement_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "display_measurement_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Display impressions that met the viewability standard.",
+      "exposure": "exposed",
+      "field_id": "display_viewable_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "display_viewable_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Display viewable / display measured impressions.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "display_viewable_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "display_viewable_rate",
+      "tier": "core"
+    },
+    {
+      "description": "DMA / MMA metro area.",
+      "exposure": "exposed",
+      "field_id": "dma_mma",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO_DIM",
+      "source_field": "dma_mma",
+      "tier": "standard"
+    },
+    {
+      "description": "Impressions eligible for measurement.",
+      "exposure": "exposed",
+      "field_id": "eligible_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GENERAL",
+      "source_field": "eligible_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Total ad evaluations performed.",
+      "exposure": "exposed",
+      "field_id": "evaluations",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GENERAL",
+      "source_field": "evaluations",
+      "tier": "core"
+    },
+    {
+      "description": "Fraud block decisions.",
+      "exposure": "exposed",
+      "field_id": "fraud_blocks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "FRAUD",
+      "source_field": "fraud_blocks",
+      "tier": "core"
+    },
+    {
+      "description": "Fraud / SIVT block decisions.",
+      "exposure": "exposed",
+      "field_id": "fraud_sivt_blocks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "FRAUD",
+      "source_field": "fraud_sivt_blocks",
+      "tier": "core"
+    },
+    {
+      "description": "Ads free of fraud / sophisticated invalid traffic (SIVT).",
+      "exposure": "exposed",
+      "field_id": "fraud_sivt_free_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "FRAUD",
+      "source_field": "fraud_sivt_free_ads",
+      "tier": "core"
+    },
+    {
+      "description": "Fraud/SIVT-free ads / monitored ads.",
+      "exclusion_reason": "Non-additive ratio (AD-4): fraud/SIVT *_rate metrics are recomputed at the semantic layer from fraud counts and monitored_ads / evaluations; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "fraud_sivt_free_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "FRAUD_RATE",
+      "source_field": "fraud_sivt_free_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions flagged as fraud / SIVT.",
+      "exposure": "exposed",
+      "field_id": "fraud_sivt_incidents",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "FRAUD",
+      "source_field": "fraud_sivt_incidents",
+      "tier": "core"
+    },
+    {
+      "description": "Fraud/SIVT incidents / monitored ads.",
+      "exclusion_reason": "Non-additive ratio (AD-4): fraud/SIVT *_rate metrics are recomputed at the semantic layer from fraud counts and monitored_ads / evaluations; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "fraud_sivt_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "FRAUD_RATE",
+      "source_field": "fraud_sivt_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions measured as fully on screen.",
+      "exposure": "exposed",
+      "field_id": "fully_on_screen_measured_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "fully_on_screen_measured_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Fully-on-screen measurement rate.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "fully_on_screen_measurement_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "fully_on_screen_measurement_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions viewed more than 15 seconds.",
+      "exposure": "exposed",
+      "field_id": "greater_than_15_seconds_view_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "greater_than_15_seconds_view_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Rate of impressions viewed more than 15 seconds.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "greater_than_15_seconds_view_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "greater_than_15_seconds_view_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions 100% display viewable.",
+      "exposure": "exposed",
+      "field_id": "impressions_100_percent_display_viewable",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "impressions_100_percent_display_viewable",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions viewed 1 to 5 seconds.",
+      "exposure": "exposed",
+      "field_id": "impressions_1_to_5_seconds_view",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "impressions_1_to_5_seconds_view",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions viewed 5 to 15 seconds.",
+      "exposure": "exposed",
+      "field_id": "impressions_5_to_15_seconds_view",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "impressions_5_to_15_seconds_view",
+      "tier": "core"
+    },
+    {
+      "description": "Ads served in the targeted geography.",
+      "exposure": "exposed",
+      "field_id": "in_geo_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GEO",
+      "source_field": "in_geo_ads",
+      "tier": "standard"
+    },
+    {
+      "description": "In-geo ads / monitored ads.",
+      "exclusion_reason": "Non-additive ratio (AD-4): in/out-of-geo *_rate metrics are recomputed at the semantic layer from geo counts and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "in_geo_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "GEO_RATE",
+      "source_field": "in_geo_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Incidents / monitored ads.",
+      "exclusion_reason": "Non-additive ratio (AD-4): brand-suitability *_rate metrics are recomputed at the semantic layer from incident/suitable counts and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "incident_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BRAND_RATE",
+      "source_field": "incident_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions successfully measured for viewability.",
+      "exposure": "exposed",
+      "field_id": "measured_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GENERAL",
+      "source_field": "measured_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Measured impressions / eligible impressions.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "measurement_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "measurement_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Media property (site/app) where the ad was served.",
+      "exposure": "exposed",
+      "field_id": "media_property",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "INVENTORY",
+      "source_field": "media_property",
+      "tier": "core"
+    },
+    {
+      "description": "Media type (display, video, ...).",
+      "exposure": "exposed",
+      "field_id": "media_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "INVENTORY",
+      "source_field": "media_type",
+      "tier": "standard"
+    },
+    {
+      "description": "Total ads monitored by DoubleVerify.",
+      "exposure": "exposed",
+      "field_id": "monitored_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GENERAL",
+      "source_field": "monitored_ads",
+      "tier": "core"
+    },
+    {
+      "description": "Month.",
+      "exposure": "exposed",
+      "field_id": "month",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "month",
+      "tier": "core"
+    },
+    {
+      "description": "Out-of-geo block decisions.",
+      "exposure": "exposed",
+      "field_id": "out_of_geo_blocks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GEO",
+      "source_field": "out_of_geo_blocks",
+      "tier": "standard"
+    },
+    {
+      "description": "Out-of-geo incidents.",
+      "exposure": "exposed",
+      "field_id": "out_of_geo_incidents",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GEO",
+      "source_field": "out_of_geo_incidents",
+      "tier": "standard"
+    },
+    {
+      "description": "Out-of-geo incidents / monitored ads.",
+      "exclusion_reason": "Non-additive ratio (AD-4): in/out-of-geo *_rate metrics are recomputed at the semantic layer from geo counts and monitored_ads; never stored raw.",
+      "exposure": "excluded",
+      "field_id": "out_of_geo_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "GEO_RATE",
+      "source_field": "out_of_geo_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Placement code.",
+      "exposure": "exposed",
+      "field_id": "placement_code",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "placement_code",
+      "tier": "core"
+    },
+    {
+      "description": "Placement name.",
+      "exposure": "exposed",
+      "field_id": "placement_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "placement_name",
+      "tier": "core"
+    },
+    {
+      "description": "Placement/creative size.",
+      "exposure": "exposed",
+      "field_id": "placement_size",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "placement_size",
+      "tier": "core"
+    },
+    {
+      "description": "Rate of 100% display viewable impressions.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "rate_100_percent_display_viewable",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "rate_100_percent_display_viewable",
+      "tier": "core"
+    },
+    {
+      "description": "Rate of impressions viewed 1 to 5 seconds.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "rate_1_to_5_seconds_view",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "rate_1_to_5_seconds_view",
+      "tier": "core"
+    },
+    {
+      "description": "Rate of impressions viewed 5 to 15 seconds.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "rate_5_to_15_seconds_view",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "rate_5_to_15_seconds_view",
+      "tier": "core"
+    },
+    {
+      "description": "Total ad requests.",
+      "exposure": "exposed",
+      "field_id": "requests",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GENERAL",
+      "source_field": "requests",
+      "tier": "core"
+    },
+    {
+      "description": "Incidents against site/app inclusion or exclusion lists.",
+      "exposure": "exposed",
+      "field_id": "site_and_app_list_incidents",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND",
+      "source_field": "site_and_app_list_incidents",
+      "tier": "core"
+    },
+    {
+      "description": "State / region where the ad was delivered.",
+      "exposure": "exposed",
+      "field_id": "state_region",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO_DIM",
+      "source_field": "state_region",
+      "tier": "standard"
+    },
+    {
+      "description": "Total display viewable time in hours (additive).",
+      "exposure": "exposed",
+      "field_id": "total_time_hr_display_viewable_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWTIME",
+      "source_field": "total_time_hr_display_viewable_impressions",
+      "tier": "standard"
+    },
+    {
+      "description": "Total viewable time in seconds (additive).",
+      "exposure": "exposed",
+      "field_id": "total_viewable_time_s",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWTIME",
+      "source_field": "total_viewable_time_s",
+      "tier": "standard"
+    },
+    {
+      "description": "Unclassified app incidents.",
+      "exposure": "exposed",
+      "field_id": "uc_app_incidents",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND",
+      "source_field": "uc_app_incidents",
+      "tier": "core"
+    },
+    {
+      "description": "Distinct incidents recorded.",
+      "exposure": "exposed",
+      "field_id": "unique_incidents",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "GENERAL",
+      "source_field": "unique_incidents",
+      "tier": "core"
+    },
+    {
+      "description": "Video impressions eligible for measurement.",
+      "exposure": "exposed",
+      "field_id": "video_eligible_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_VIDEO",
+      "source_field": "video_eligible_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Video impressions measured for viewability.",
+      "exposure": "exposed",
+      "field_id": "video_measured_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_VIDEO",
+      "source_field": "video_measured_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Video measured / video eligible impressions.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "video_measurement_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "video_measurement_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Video impressions that met the viewability standard.",
+      "exposure": "exposed",
+      "field_id": "video_viewable_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_VIDEO",
+      "source_field": "video_viewable_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Video viewable / video measured impressions.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "video_viewable_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "video_viewable_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions that met the MRC viewability standard.",
+      "exposure": "exposed",
+      "field_id": "viewable_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY_DISPLAY",
+      "source_field": "viewable_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Viewable impressions / measured impressions.",
+      "exclusion_reason": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+      "exposure": "excluded",
+      "field_id": "viewable_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY_RATE",
+      "source_field": "viewable_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Week number.",
+      "exposure": "exposed",
+      "field_id": "week",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "TIME",
+      "source_field": "week",
+      "tier": "core"
+    },
+    {
+      "description": "ISO-8601 week number.",
+      "exposure": "exposed",
+      "field_id": "week_iso",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "TIME",
+      "source_field": "week_iso",
+      "tier": "core"
+    },
+    {
+      "description": "Year.",
+      "exposure": "exposed",
+      "field_id": "year",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "TIME",
+      "source_field": "year",
+      "tier": "core"
+    },
+    {
+      "description": "Year-month (YYYY-MM).",
+      "exposure": "exposed",
+      "field_id": "year_month",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "year_month",
+      "tier": "core"
+    },
+    {
+      "description": "Year of the week.",
+      "exposure": "exposed",
+      "field_id": "year_of_week",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "TIME",
+      "source_field": "year_of_week",
+      "tier": "core"
+    },
+    {
+      "description": "ISO-8601 year of the week.",
+      "exposure": "exposed",
+      "field_id": "year_of_week_iso",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "TIME",
+      "source_field": "year_of_week_iso",
+      "tier": "core"
+    },
+    {
+      "description": "Year-week.",
+      "exposure": "exposed",
+      "field_id": "year_week",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "year_week",
+      "tier": "core"
+    },
+    {
+      "description": "ISO-8601 year-week.",
+      "exposure": "exposed",
+      "field_id": "year_week_iso",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "year_week_iso",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://developer.doubleverify.com/docs/client-integrations/extensions/report-data-api"
+    }
+  ]
+}

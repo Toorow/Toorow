@@ -1,0 +1,34 @@
+[
+  {
+    "pull_id": "pull_test_001",
+    "connector": "amazon-ads",
+    "date": "2026-07-01",
+    "campaignId": 111222333,
+    "campaignName": "SP - Brand - FR",
+    "campaignStatus": "ENABLED",
+    "campaignBudgetCurrencyCode": "EUR",
+    "impressions": 12040,
+    "clicks": 640,
+    "cost": 118.4,
+    "purchases14d": 42,
+    "purchases30d": 45,
+    "sales14d": 3120.75,
+    "sales30d": 3300.5
+  },
+  {
+    "pull_id": "pull_test_001",
+    "connector": "amazon-ads",
+    "date": "2026-07-01",
+    "campaignId": 444555666,
+    "campaignName": "SB - Store Spotlight - DE",
+    "campaignStatus": "ENABLED",
+    "campaignBudgetCurrencyCode": "EUR",
+    "impressions": 8000,
+    "clicks": 210,
+    "cost": 74.2,
+    "purchases": 12,
+    "sales": 512.4,
+    "unitsSold": 15,
+    "viewableImpressions": 6100
+  }
+]

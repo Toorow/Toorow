@@ -1,0 +1,58 @@
+[
+  {
+    "field_id": "date",
+    "source_field": "runtime_date_column",
+    "kind": "dimension",
+    "data_type": "date",
+    "description": "Reporting date. Auto-detected from the input column (heuristic: name matches 'date', 'jour', 'day', 'datum', 'fecha', case-insensitive) or overridden via connection_config['date_column']. Normalized to canonical UTC ISO-8601 (YYYY-MM-DD) using connection_config['date_format'] and connection_config['source_timezone'].",
+    "section": "GENERIC"
+  },
+  {
+    "field_id": "cost",
+    "source_field": "cost",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Declared canonical metric target for spend / cost. A source column mapped to this target via connection_config['mappings'] is written to raw_generic_daily with metric='cost'. Accepted as an allowed_target in the toorow-generic-contract v1.",
+    "section": "GENERIC"
+  },
+  {
+    "field_id": "revenue",
+    "source_field": "revenue",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Declared canonical metric target for revenue. Accepted as an allowed_target in the toorow-generic-contract v1.",
+    "section": "GENERIC"
+  },
+  {
+    "field_id": "conversions",
+    "source_field": "conversions",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Declared canonical metric target for conversion count. Accepted as an allowed_target in the toorow-generic-contract v1.",
+    "section": "GENERIC"
+  },
+  {
+    "field_id": "clicks",
+    "source_field": "clicks",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Declared canonical metric target for click count. Accepted as an allowed_target in the toorow-generic-contract v1.",
+    "section": "GENERIC"
+  },
+  {
+    "field_id": "impressions",
+    "source_field": "impressions",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Declared canonical metric target for impression count. Accepted as an allowed_target in the toorow-generic-contract v1.",
+    "section": "GENERIC"
+  },
+  {
+    "field_id": "sessions",
+    "source_field": "sessions",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Declared canonical metric target for session count. Accepted as an allowed_target in the toorow-generic-contract v1.",
+    "section": "GENERIC"
+  }
+]

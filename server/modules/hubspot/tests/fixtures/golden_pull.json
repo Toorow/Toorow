@@ -1,0 +1,512 @@
+[
+  {
+    "date": "2026-06-11",
+    "new_contacts": 17,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-12",
+    "new_contacts": 21,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-13",
+    "new_contacts": 4,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-14",
+    "new_contacts": 3,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-15",
+    "new_contacts": 15,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-16",
+    "new_contacts": 25,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-17",
+    "new_contacts": 18,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-18",
+    "new_contacts": 25,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-19",
+    "new_contacts": 10,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-20",
+    "new_contacts": 4,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-21",
+    "new_contacts": 3,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-22",
+    "new_contacts": 17,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-23",
+    "new_contacts": 18,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-24",
+    "new_contacts": 21,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-25",
+    "new_contacts": 15,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-26",
+    "new_contacts": 17,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-27",
+    "new_contacts": 8,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-28",
+    "new_contacts": 6,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-29",
+    "new_contacts": 19,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-30",
+    "new_contacts": 18,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-01",
+    "new_contacts": 18,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-02",
+    "new_contacts": 11,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-03",
+    "new_contacts": 22,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-04",
+    "new_contacts": 9,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-05",
+    "new_contacts": 5,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-06",
+    "new_contacts": 13,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-07",
+    "new_contacts": 22,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-08",
+    "new_contacts": 14,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-09",
+    "new_contacts": 14,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-10",
+    "new_contacts": 19,
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-11",
+    "deals_created": 11,
+    "deals_closed": 2,
+    "deal_amount": 26622.36,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-12",
+    "deals_created": 6,
+    "deals_closed": 1,
+    "deal_amount": 22815.97,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-13",
+    "deals_created": 4,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-14",
+    "deals_created": 2,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-15",
+    "deals_created": 11,
+    "deals_closed": 1,
+    "deal_amount": 11590.78,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-16",
+    "deals_created": 8,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-17",
+    "deals_created": 5,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-18",
+    "deals_created": 8,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-19",
+    "deals_created": 7,
+    "deals_closed": 1,
+    "deal_amount": 15871.51,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-20",
+    "deals_created": 3,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-21",
+    "deals_created": 2,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-22",
+    "deals_created": 5,
+    "deals_closed": 1,
+    "deal_amount": 8156.45,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-23",
+    "deals_created": 6,
+    "deals_closed": 1,
+    "deal_amount": 40495.65,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-24",
+    "deals_created": 9,
+    "deals_closed": 1,
+    "deal_amount": 40300.7,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-25",
+    "deals_created": 9,
+    "deals_closed": 1,
+    "deal_amount": 8128.17,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-26",
+    "deals_created": 10,
+    "deals_closed": 2,
+    "deal_amount": 19947.09,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-27",
+    "deals_created": 1,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-28",
+    "deals_created": 1,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-29",
+    "deals_created": 12,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-06-30",
+    "deals_created": 4,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-01",
+    "deals_created": 5,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-02",
+    "deals_created": 10,
+    "deals_closed": 2,
+    "deal_amount": 33178.1,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-03",
+    "deals_created": 5,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-04",
+    "deals_created": 2,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-05",
+    "deals_created": 2,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-06",
+    "deals_created": 9,
+    "deals_closed": 1,
+    "deal_amount": 20727.89,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-07",
+    "deals_created": 11,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-08",
+    "deals_created": 9,
+    "deals_closed": 1,
+    "deal_amount": 34421.85,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-09",
+    "deals_created": 7,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  },
+  {
+    "date": "2026-07-10",
+    "deals_created": 5,
+    "deals_closed": 0,
+    "deal_amount": null,
+    "currency": "EUR",
+    "pull_id": "pull_15_5_fixture_2026_07_10",
+    "loaded_at": "2026-07-10T00:00:00Z",
+    "project_id": "default"
+  }
+]

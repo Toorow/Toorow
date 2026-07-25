@@ -1,0 +1,625 @@
+{
+    "schema_version":  "1.2",
+    "name":  "brevo",
+    "display_name":  "Brevo",
+    "public_catalog":  {
+                           "visibility":  "public",
+                           "category":  "email_sms",
+                           "onboarding_modes":  [
+                                                    "connector_pull"
+                                                ],
+                           "verification":  {
+                                                "status":  "blocked",
+                                                "reason_code":  "live_evidence_not_ratified",
+                                                "follow_up":  "Probe live OAuth consent/refresh, least-privilege scopes, four profiles, quota headers, PII policy, pagination and reconciliation."
+                                            }
+                       },
+    "auth_type":  "oauth2",
+    "module_kind":  "kpi",
+    "provider_api_version":  "v3",
+    "provider_api_base":  "https://api.brevo.com/v3",
+    "_provider_api_note":  "OAuth2 authorization code is the distributed default. API key is private single-account only. Enterprise subaccounts remain probe-gated.",
+    "auth":  {
+                 "type":  "oauth2",
+                 "auth_path":  "nango",
+                 "default_flow":  "authorization_code",
+                 "private_variant":  "api_key",
+                 "access_token_seconds":  3600,
+                 "refresh_token_days":  30
+             },
+    "account_topology":  {
+                             "levels":  [
+                                            "oauth_account"
+                                        ],
+                             "selection_level":  "oauth_account",
+                             "discovery":  {
+                                               "callable":  "discover_accounts"
+                                           },
+                             "selection":  {
+                                               "required":  true,
+                                               "opaque":  true
+                                           }
+                         },
+    "report_profiles":  [
+                            {
+                                "id":  "email_campaign_daily",
+                                "display_name":  "Email campaigns daily",
+                                "metrics":  [
+                                                "sent",
+                                                "delivered",
+                                                "opens",
+                                                "clicks",
+                                                "hard_bounces",
+                                                "unsubscribed"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "account_id",
+                                                   "source_id",
+                                                   "channel"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            },
+                            {
+                                "id":  "sms_campaign_daily",
+                                "display_name":  "SMS campaigns daily",
+                                "metrics":  [
+                                                "sent",
+                                                "delivered",
+                                                "clicks",
+                                                "hard_bounces",
+                                                "unsubscribed"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "account_id",
+                                                   "source_id",
+                                                   "channel"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            },
+                            {
+                                "id":  "transactional_events",
+                                "display_name":  "Transactional events",
+                                "metrics":  [
+                                                "event_count"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "account_id",
+                                                   "source_id",
+                                                   "channel",
+                                                   "event_type",
+                                                   "protected_identifier"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  5000,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            },
+                            {
+                                "id":  "contact_list_growth",
+                                "display_name":  "Contact list snapshots",
+                                "metrics":  [
+                                                "contact_count"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "account_id",
+                                                   "source_id",
+                                                   "channel"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  false,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            }
+                        ],
+    "canonical_metric_mapping":  {
+                                     "sent":  "messages_sent",
+                                     "delivered":  "messages_delivered",
+                                     "opens":  "opens",
+                                     "clicks":  "clicks",
+                                     "hard_bounces":  "bounces",
+                                     "unsubscribed":  "unsubscribes",
+                                     "event_count":  "events",
+                                     "contact_count":  {
+                                                           "canonical":  "contacts",
+                                                           "aggregation_rule":  "max",
+                                                           "non_additive":  true
+                                                       }
+                                 },
+    "canonical_event_mapping":  {
+                                    "transactional_email":  "transactional_email",
+                                    "transactional_sms":  "transactional_sms"
+                                },
+    "canonical_dimension_mapping":  {
+                                        "date":  "date",
+                                        "account_id":  "account_id",
+                                        "source_id":  "source_id",
+                                        "channel":  "channel",
+                                        "event_type":  "event_type",
+                                        "protected_identifier":  "protected_identifier"
+                                    },
+    "error_map":  {
+                      "400:invalid_parameter":  "invalid_request",
+                      "400:invalid_scope":  "permission_denied",
+                      "401:unauthorized":  "auth_expired",
+                      "403:permission_denied":  "permission_denied",
+                      "404:not_found":  "invalid_request",
+                      "500:internal_error":  "provider_transient",
+                      "502:bad_gateway":  "provider_transient",
+                      "503:unavailable":  "provider_transient"
+                  },
+    "quota":  {
+                  "window_seconds":  60,
+                  "budget_points":  100,
+                  "read_cost":  1,
+                  "write_cost":  1
+              },
+    "source_capabilities":  {
+                                "contract_version":  "1",
+                                "field_discovery":  {
+                                                        "mode":  "static",
+                                                        "allowed_targets":  [
+
+                                                                            ]
+                                                    },
+                                "fields":  [
+                                               {
+                                                   "field_id":  "date",
+                                                   "source_field":  "date",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "date",
+                                                   "description":  "Campaign/event/list day.",
+                                                   "semantic_hints":  [
+                                                                          "date"
+                                                                      ],
+                                                   "canonical_target":  "date",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "account_id",
+                                                   "source_field":  "account.id",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Opaque OAuth account id.",
+                                                   "semantic_hints":  [
+                                                                          "account",
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "account_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "source_id",
+                                                   "source_field":  "id",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Campaign, event or list source id.",
+                                                   "semantic_hints":  [
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "source_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "channel",
+                                                   "source_field":  "channel",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Email, SMS, transactional or contacts snapshot channel.",
+                                                   "semantic_hints":  [
+                                                                          "channel"
+                                                                      ],
+                                                   "canonical_target":  "channel",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "event_type",
+                                                   "source_field":  "event",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Immutable transactional event type.",
+                                                   "semantic_hints":  [
+                                                                          "event"
+                                                                      ],
+                                                   "canonical_target":  "event_type",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "protected_identifier",
+                                                   "source_field":  "email",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Project-salted hash; raw personal identifier is excluded.",
+                                                   "semantic_hints":  [
+                                                                          "protected",
+                                                                          "pii"
+                                                                      ],
+                                                   "canonical_target":  "protected_identifier",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "sent",
+                                                   "source_field":  "statistics.globalStats.sent",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "Messages sent.",
+                                                   "semantic_hints":  [
+                                                                          "delivery"
+                                                                      ],
+                                                   "canonical_target":  "messages_sent",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "delivered",
+                                                   "source_field":  "statistics.globalStats.delivered",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "Messages delivered.",
+                                                   "semantic_hints":  [
+                                                                          "delivery"
+                                                                      ],
+                                                   "canonical_target":  "messages_delivered",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "opens",
+                                                   "source_field":  "statistics.globalStats.uniqueViews",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "Open counter; unique semantics stay full-grain.",
+                                                   "semantic_hints":  [
+                                                                          "engagement"
+                                                                      ],
+                                                   "canonical_target":  "opens",
+                                                   "aggregation":  "max",
+                                                   "non_additive":  true
+                                               },
+                                               {
+                                                   "field_id":  "clicks",
+                                                   "source_field":  "statistics.globalStats.clickers",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "Click counter.",
+                                                   "semantic_hints":  [
+                                                                          "engagement"
+                                                                      ],
+                                                   "canonical_target":  "clicks",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "hard_bounces",
+                                                   "source_field":  "statistics.globalStats.hardBounces",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "Hard bounces.",
+                                                   "semantic_hints":  [
+                                                                          "delivery"
+                                                                      ],
+                                                   "canonical_target":  "bounces",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "unsubscribed",
+                                                   "source_field":  "statistics.globalStats.unsubscriptions",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "Unsubscriptions.",
+                                                   "semantic_hints":  [
+                                                                          "engagement"
+                                                                      ],
+                                                   "canonical_target":  "unsubscribes",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "event_count",
+                                                   "source_field":  "event",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "One immutable transactional event.",
+                                                   "semantic_hints":  [
+                                                                          "event"
+                                                                      ],
+                                                   "canonical_target":  "events",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "contact_count",
+                                                   "source_field":  "totalSubscribers",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "Point-in-time list size snapshot.",
+                                                   "semantic_hints":  [
+                                                                          "snapshot",
+                                                                          "non_additive"
+                                                                      ],
+                                                   "canonical_target":  "contacts",
+                                                   "aggregation":  "max",
+                                                   "non_additive":  true
+                                               }
+                                           ],
+                                "reports":  [
+                                                {
+                                                    "id":  "email_campaign_daily",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "sent",
+                                                                    "delivered",
+                                                                    "opens",
+                                                                    "clicks",
+                                                                    "hard_bounces",
+                                                                    "unsubscribed"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "account_id",
+                                                                       "source_id",
+                                                                       "channel"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "account_id",
+                                                                                 "source_id",
+                                                                                 "channel"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "offset",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_email_campaign_daily"
+                                                                 }
+                                                },
+                                                {
+                                                    "id":  "sms_campaign_daily",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "sent",
+                                                                    "delivered",
+                                                                    "clicks",
+                                                                    "hard_bounces",
+                                                                    "unsubscribed"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "account_id",
+                                                                       "source_id",
+                                                                       "channel"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "account_id",
+                                                                                 "source_id",
+                                                                                 "channel"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "offset",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_sms_campaign_daily"
+                                                                 }
+                                                },
+                                                {
+                                                    "id":  "transactional_events",
+                                                    "landing":  "context_events",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "event_count"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "account_id",
+                                                                       "source_id",
+                                                                       "channel",
+                                                                       "event_type",
+                                                                       "protected_identifier"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "account_id",
+                                                                                 "source_id",
+                                                                                 "channel",
+                                                                                 "event_type",
+                                                                                 "protected_identifier"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "offset",
+                                                                       "completeness":  "bounded",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  5000,
+                                                                       "truncation_signal":  "logged"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  30,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "hourly",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_transactional_events"
+                                                                 }
+                                                },
+                                                {
+                                                    "id":  "contact_list_growth",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "contact_count"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "account_id",
+                                                                       "source_id",
+                                                                       "channel"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "account_id",
+                                                                                 "source_id",
+                                                                                 "channel"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "offset",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "full_refresh",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_contact_list_growth"
+                                                                 }
+                                                }
+                                            ]
+                            }
+}

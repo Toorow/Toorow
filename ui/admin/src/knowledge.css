@@ -1,0 +1,97 @@
+/**
+ * knowledge.css — page-specific styles for KnowledgeBasePage.
+ *
+ * Shell/layout classes (main, panel, page-header, header-actions, primary-button,
+ * secondary-button, signal-label) already live in application.css and are global.
+ * This file only adds the Knowledge-specific pieces: the card grid, the entry
+ * cards, the topic pill, and the card meta lines.
+ *
+ * Tokenized: every color references an application.css CSS variable, so the page
+ * is dark-theme safe. The topic pill reuses the "info" violet tints (translucent
+ * var(--info)) via color-mix, mirroring the Sources inline-note treatment.
+ * Numbers/dates use the Geist tabular treatment through the meta rule.
+ */
+
+.knowledge-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+@media (max-width: 1080px) {
+  .knowledge-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .knowledge-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.knowledge-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 22px;
+  min-height: 200px;
+}
+
+.knowledge-topic {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--info) 28%, var(--surface));
+  background: color-mix(in srgb, var(--info) 8%, var(--surface));
+  color: var(--info);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.knowledge-card h2 {
+  margin: 0;
+  font: 600 17px/1.35 "Lexend", sans-serif;
+  color: var(--ink);
+}
+
+.knowledge-meta {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.knowledge-meta b {
+  font-weight: 600;
+  color: var(--muted);
+}
+.knowledge-meta time {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.knowledge-card .secondary-button {
+  margin-top: 14px;
+}
+
+/* Honest empty state — shown only after a real fetch returns zero entries. */
+.knowledge-empty {
+  padding: 28px 24px;
+}
+.knowledge-empty h2 {
+  margin: 0 0 6px;
+  font: 600 17px/1.35 "Lexend", sans-serif;
+  color: var(--ink);
+}
+.knowledge-empty p {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}

@@ -1,0 +1,176 @@
+{
+  "api_version": "ads-api-v12",
+  "catalog_version": "1",
+  "connector": "x-ads",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Selected ads account.",
+      "exposure": "exposed",
+      "field_id": "account_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "account_id",
+      "tier": "core"
+    },
+    {
+      "description": "Revisable billed charge in local micros.",
+      "exposure": "exposed",
+      "field_id": "billed_charge_local_micro",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "BILLED_CHARGE_LOCAL_MICRO",
+      "tier": "core"
+    },
+    {
+      "description": "Campaign entity id.",
+      "exposure": "exposed",
+      "field_id": "campaign_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "CAMPAIGN",
+      "tier": "core"
+    },
+    {
+      "description": "Clicks.",
+      "exposure": "exposed",
+      "field_id": "clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "CLICKS",
+      "tier": "core"
+    },
+    {
+      "description": "Conversions.",
+      "exposure": "exposed",
+      "field_id": "conversions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "CONVERSIONS",
+      "tier": "core"
+    },
+    {
+      "description": "UTC interval day.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "DIMENSION",
+      "source_field": "start_time",
+      "tier": "core"
+    },
+    {
+      "description": "Engagement rate.",
+      "exposure": "exposed",
+      "field_id": "engagement_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "ENGAGEMENT_RATE",
+      "tier": "core"
+    },
+    {
+      "description": "Engagements.",
+      "exposure": "exposed",
+      "field_id": "engagements",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "ENGAGEMENT",
+      "tier": "core"
+    },
+    {
+      "description": "Average frequency.",
+      "exposure": "exposed",
+      "field_id": "frequency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "FREQUENCY",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions.",
+      "exposure": "exposed",
+      "field_id": "impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "IMPRESSIONS",
+      "tier": "core"
+    },
+    {
+      "description": "Line item entity id.",
+      "exposure": "exposed",
+      "field_id": "line_item_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "LINE_ITEM",
+      "tier": "core"
+    },
+    {
+      "description": "Ads placement.",
+      "exposure": "exposed",
+      "field_id": "placement",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "placement",
+      "tier": "core"
+    },
+    {
+      "description": "Promoted post entity id.",
+      "exposure": "exposed",
+      "field_id": "promoted_tweet_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "PROMOTED_TWEET",
+      "tier": "core"
+    },
+    {
+      "description": "Reach at exact segment grain.",
+      "exposure": "exposed",
+      "field_id": "reach",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "REACH",
+      "tier": "core"
+    },
+    {
+      "description": "Selected segmentation.",
+      "exposure": "exposed",
+      "field_id": "segment_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "segmentation_type",
+      "tier": "core"
+    },
+    {
+      "description": "Provider segment value.",
+      "exposure": "exposed",
+      "field_id": "segment_value",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "segment_value",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-22",
+      "kind": "official",
+      "url": "https://docs.x.com/x-ads-api/analytics"
+    }
+  ]
+}

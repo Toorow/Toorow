@@ -1,0 +1,165 @@
+version: 2
+
+sources:
+  - name: raw_hubspot
+    description: >
+      Zone de landing raw immutable pour les donnees HubSpot CRM (AD-7: append-only).
+      DEUX tables : raw_hubspot_contacts_daily (contacts crees par jour) et
+      raw_hubspot_deals_daily (deals crees et fermes par jour). Le pull HubSpot
+      n'expose pas d'agregat daily natif (AI-53 verifie 2026-07-19) -- les agregate
+      journaliers sont calcules par pagination du Search API (filtre BETWEEN sur
+      createdate/closedate). Metriques CRM PURES (AD-4, Story 15.5) : jamais
+      sommees avec les conversions regies ni le revenue Shopify/Stripe.
+    schema: main  # DuckDB default schema ; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_hubspot_contacts_daily
+        description: >
+          Raw HubSpot contacts -- une ligne par (project_id, date, pull_id).
+          Append-only (AD-7): chaque pull ajoute un batch identifie par pull_id.
+          new_contacts = nombre de contacts crees dans la journee (Search API,
+          filtre createdate BETWEEN -- AI-53 verifie 2026-07-19).
+        columns:
+          - name: date
+            description: "Date ISO-8601 (YYYY-MM-DD). Grain journalier."
+          - name: new_contacts
+            description: >
+              Nombre de contacts crees dans la journee (additif, AD-4).
+              CRM PUR : ne represente pas les conversions des regies.
+              Peut etre NULL si le pull a echoue (AD-9).
+          - name: truncated
+            description: >
+              F-4 (AD-9) : TRUE si le pull a atteint le cap 10 000 resultats/query HubSpot
+              (50 pages x 200 objets). Dans ce cas new_contacts est un PLANCHER, pas une valeur
+              exacte. FALSE par defaut (seed synthetique ou pull sous le cap). L'envelope MCP
+              ajoute une alerte AD-9 quand truncated=TRUE est detecte dans la periode.
+          - name: pull_id
+            description: "ULID prefixe (pull_<ULID>) identifiant le batch de chargement. AD-7."
+          - name: loaded_at
+            description: "Timestamp UTC ISO-8601 du chargement du batch."
+          - name: project_id
+            description: "Binding projet. 'default' pour les donnees seedees (AD-14)."
+
+      - name: raw_hubspot_deals_daily
+        description: >
+          Raw HubSpot deals -- une ligne par (project_id, date, pull_id).
+          Append-only (AD-7). deals_created = deals crees le jour J.
+          deals_closed = deals gagnes (won) le jour J.
+          deal_amount = somme de amount_in_home_currency; currency identifie la devise societe.
+          Les deals gagnes utilisent hs_is_closed_won=true pour couvrir les pipelines personnalises.
+        columns:
+          - name: date
+            description: "Date ISO-8601 (YYYY-MM-DD). Grain journalier."
+          - name: deals_created
+            description: >
+              Nombre de deals crees dans la journee (additif, AD-4).
+              CRM PUR : ne represente pas les conversions des regies.
+          - name: deals_closed
+            description: >
+              Nombre de deals fermes/gagnes (won) dans la journee (additif, AD-4).
+              CRM PUR : fermes avec le stage 'closedwon' (defaut HubSpot).
+          - name: deal_amount
+            description: >
+              Somme des montants en devise societe (property 'amount_in_home_currency').
+              NULL si deals_closed = 0 ou si aucun deal n'avait de montant renseigne.
+              CRM PUR : montant de pipeline estime, pas un paiement encaisse.
+              JAMAIS additionne au revenue Shopify/Stripe (AD-4).
+          - name: currency
+            description: "Code de la devise societe resolu via Account Info 2026-03."
+            tests:
+              - not_null
+          - name: truncated
+            description: >
+              F-4 (AD-9) : TRUE si le pull a atteint le cap 10 000 resultats/query HubSpot
+              (50 pages x 200 objets) sur deals_created OU deals_closed. Dans ce cas les
+              comptages sont des PLANCHERS. FALSE par defaut. L'envelope MCP ajoute une alerte
+              AD-9 quand truncated=TRUE est detecte dans la periode.
+          - name: pull_id
+            description: "ULID prefixe (pull_<ULID>) identifiant le batch. AD-7."
+          - name: loaded_at
+            description: "Timestamp UTC ISO-8601 du chargement."
+          - name: project_id
+            description: "Binding projet. 'default' pour les donnees seedees (AD-14)."
+
+models:
+  - name: stg_hubspot_contacts_daily
+    description: >
+      Staging HubSpot contacts : mappe les champs raw sur les noms canoniques.
+      AD-4: metrique additive new_contacts uniquement. Supersede (AD-7): QUALIFY
+      garde le pull le plus recent par (project_id, date). NULL honnete (AD-9).
+      REGLE CRM (AD-4, Story 15.5) : new_contacts est une metrique CRM PURE --
+      JAMAIS sommee avec les conversions des regies (Meta, TikTok, Google Ads/GA4)
+      ni le revenue Shopify/Stripe dans un total croise marketing.
+    tests:
+      # Unicite grain (AI-05) : une ligne par projet x date.
+      - unique:
+          name: stg_hubspot_contacts_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date"
+    columns:
+      - name: date
+        description: "Date ISO-8601, grain journalier."
+        tests:
+          - not_null
+      - name: new_contacts
+        description: >
+          Contacts crees dans la journee (CRM PUR, additif, AD-4).
+          NULL = donnee de pull absente (pas un zero impute, AD-9).
+          Zero = aucun contact cree ce jour-la (valeur reelle).
+      - name: truncated
+        description: >
+          F-4 (AD-9) : TRUE si le pull a atteint le cap API (10 000 contacts/jour).
+          new_contacts est alors un PLANCHER. FALSE dans les donnees normales et de seed.
+      - name: pull_id
+        description: "Provenance ID du batch (AD-7)."
+        tests:
+          - not_null
+      - name: project_id
+        description: "Binding projet propage depuis raw_hubspot_contacts_daily."
+        tests:
+          - not_null
+
+  - name: stg_hubspot_deals_daily
+    description: >
+      Staging HubSpot deals : mappe les champs raw sur les noms canoniques.
+      AD-4: metriques additives (deals_created, deals_closed, deal_amount).
+      Supersede (AD-7): QUALIFY garde le pull le plus recent par (project_id, date).
+      NULL honnete (AD-9): deal_amount NULL si aucun deal ferme ou sans montant.
+      REGLE CRM (AD-4, Story 15.5) : metriques CRM PURES -- JAMAIS sommees avec
+      les conversions des regies ni le revenue Shopify/Stripe.
+    tests:
+      # Unicite grain (AI-05) : une ligne par projet x date.
+      - unique:
+          name: stg_hubspot_deals_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date"
+    columns:
+      - name: date
+        description: "Date ISO-8601, grain journalier."
+        tests:
+          - not_null
+      - name: deals_created
+        description: "Deals crees dans la journee (CRM PUR, additif, AD-4)."
+      - name: deals_closed
+        description: "Deals fermes/gagnes dans la journee (CRM PUR, additif, AD-4)."
+      - name: deal_amount
+        description: >
+          Somme des montants des deals fermes (CRM PUR, additif, AD-4).
+          NULL si deals_closed=0 ou sans montant renseigne (AD-9).
+          Montant de pipeline estime -- JAMAIS additionne a revenue Shopify/Stripe.
+      - name: currency
+        description: "Code devise societe accompagne obligatoirement deal_amount."
+        tests:
+          - not_null
+      - name: truncated
+        description: >
+          F-4 (AD-9) : TRUE si le pull a atteint le cap API (10 000 deals/jour) sur
+          deals_created OU deals_closed. Les comptages sont alors des PLANCHERS.
+          FALSE dans les donnees normales et de seed.
+      - name: pull_id
+        description: "Provenance ID du batch (AD-7)."
+        tests:
+          - not_null
+      - name: project_id
+        description: "Binding projet propage depuis raw_hubspot_deals_daily."
+        tests:
+          - not_null

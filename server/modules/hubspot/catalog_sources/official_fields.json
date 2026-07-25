@@ -1,0 +1,702 @@
+[
+  {
+    "data_type": "decimal",
+    "description": "Total closed-won deal amount in the period.",
+    "field_id": "closed_won_amount",
+    "kind": "metric",
+    "section": "ANALYTICS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Annual revenue of the company.",
+    "field_id": "company_annualrevenue",
+    "kind": "metric",
+    "section": "COMPANY",
+    "source_field": "annualrevenue"
+  },
+  {
+    "data_type": "string",
+    "description": "City where the company is located.",
+    "field_id": "company_city",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "city"
+  },
+  {
+    "data_type": "string",
+    "description": "Country where the company is located.",
+    "field_id": "company_country",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "country"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Timestamp the company was created.",
+    "field_id": "company_createdate",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "createdate"
+  },
+  {
+    "data_type": "string",
+    "description": "Description of the company.",
+    "field_id": "company_description",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "description"
+  },
+  {
+    "data_type": "string",
+    "description": "Primary domain name of the company.",
+    "field_id": "company_domain",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "domain"
+  },
+  {
+    "data_type": "string",
+    "description": "Original traffic source of the company.",
+    "field_id": "company_hs_analytics_source",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "hs_analytics_source"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Timestamp of the most recent property update.",
+    "field_id": "company_hs_lastmodifieddate",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "hs_lastmodifieddate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Number of open deals associated with the company.",
+    "field_id": "company_hs_num_open_deals",
+    "kind": "metric",
+    "section": "COMPANY",
+    "source_field": "hs_num_open_deals"
+  },
+  {
+    "data_type": "id",
+    "description": "Unique HubSpot ID of the company record.",
+    "field_id": "company_hs_object_id",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "hs_object_id"
+  },
+  {
+    "data_type": "string",
+    "description": "ID of the HubSpot owner of the company.",
+    "field_id": "company_hubspot_owner_id",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "hubspot_owner_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Industry the company operates in.",
+    "field_id": "company_industry",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "industry"
+  },
+  {
+    "data_type": "string",
+    "description": "Company's position in the marketing/sales lifecycle.",
+    "field_id": "company_lifecyclestage",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "lifecyclestage"
+  },
+  {
+    "data_type": "string",
+    "description": "Name of the company.",
+    "field_id": "company_name",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "name"
+  },
+  {
+    "data_type": "integer",
+    "description": "Number of contacts associated with the company.",
+    "field_id": "company_num_associated_contacts",
+    "kind": "metric",
+    "section": "COMPANY",
+    "source_field": "num_associated_contacts"
+  },
+  {
+    "data_type": "integer",
+    "description": "Number of employees at the company.",
+    "field_id": "company_numberofemployees",
+    "kind": "metric",
+    "section": "COMPANY",
+    "source_field": "numberofemployees"
+  },
+  {
+    "data_type": "string",
+    "description": "Primary phone number of the company.",
+    "field_id": "company_phone",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "phone"
+  },
+  {
+    "data_type": "string",
+    "description": "State/region where the company is located.",
+    "field_id": "company_state",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "state"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Total revenue from closed-won deals for the company.",
+    "field_id": "company_total_revenue",
+    "kind": "metric",
+    "section": "COMPANY",
+    "source_field": "total_revenue"
+  },
+  {
+    "data_type": "string",
+    "description": "Type/classification of the company.",
+    "field_id": "company_type",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "type"
+  },
+  {
+    "data_type": "string",
+    "description": "Website URL of the company.",
+    "field_id": "company_website",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "website"
+  },
+  {
+    "data_type": "string",
+    "description": "Postal code of the company.",
+    "field_id": "company_zip",
+    "kind": "dimension",
+    "section": "COMPANY",
+    "source_field": "zip"
+  },
+  {
+    "data_type": "string",
+    "description": "Street address of the contact.",
+    "field_id": "contact_address",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "address"
+  },
+  {
+    "data_type": "string",
+    "description": "City of residence of the contact.",
+    "field_id": "contact_city",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "city"
+  },
+  {
+    "data_type": "string",
+    "description": "Company name associated with the contact.",
+    "field_id": "contact_company",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "company"
+  },
+  {
+    "data_type": "string",
+    "description": "Country of residence of the contact.",
+    "field_id": "contact_country",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "country"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Timestamp the contact was created.",
+    "field_id": "contact_createdate",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "createdate"
+  },
+  {
+    "data_type": "string",
+    "description": "Primary email address of the contact.",
+    "field_id": "contact_email",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "email"
+  },
+  {
+    "data_type": "string",
+    "description": "First name of the contact.",
+    "field_id": "contact_firstname",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "firstname"
+  },
+  {
+    "data_type": "string",
+    "description": "Most recent campaign that converted the contact.",
+    "field_id": "contact_hs_analytics_last_touch_converting_campaign",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "hs_analytics_last_touch_converting_campaign"
+  },
+  {
+    "data_type": "string",
+    "description": "Original traffic source of the contact.",
+    "field_id": "contact_hs_analytics_source",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "hs_analytics_source"
+  },
+  {
+    "data_type": "string",
+    "description": "Contact's status within the buying cycle.",
+    "field_id": "contact_hs_lead_status",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "hs_lead_status"
+  },
+  {
+    "data_type": "id",
+    "description": "Unique HubSpot ID of the contact record.",
+    "field_id": "contact_hs_object_id",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "hs_object_id"
+  },
+  {
+    "data_type": "string",
+    "description": "ID of the HubSpot owner of the contact.",
+    "field_id": "contact_hubspot_owner_id",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "hubspot_owner_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Job title of the contact.",
+    "field_id": "contact_jobtitle",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "jobtitle"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Timestamp of the most recent property update.",
+    "field_id": "contact_lastmodifieddate",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "lastmodifieddate"
+  },
+  {
+    "data_type": "string",
+    "description": "Last name of the contact.",
+    "field_id": "contact_lastname",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "lastname"
+  },
+  {
+    "data_type": "string",
+    "description": "Contact's position in the marketing/sales lifecycle.",
+    "field_id": "contact_lifecyclestage",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "lifecyclestage"
+  },
+  {
+    "data_type": "string",
+    "description": "Mobile phone number of the contact.",
+    "field_id": "contact_mobilephone",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "mobilephone"
+  },
+  {
+    "data_type": "integer",
+    "description": "Number of deals associated with the contact.",
+    "field_id": "contact_num_associated_deals",
+    "kind": "metric",
+    "section": "CONTACT",
+    "source_field": "num_associated_deals"
+  },
+  {
+    "data_type": "integer",
+    "description": "Total number of form submissions by the contact.",
+    "field_id": "contact_num_conversion_events",
+    "kind": "metric",
+    "section": "CONTACT",
+    "source_field": "num_conversion_events"
+  },
+  {
+    "data_type": "string",
+    "description": "Primary phone number of the contact.",
+    "field_id": "contact_phone",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "phone"
+  },
+  {
+    "data_type": "string",
+    "description": "Title used to address the contact.",
+    "field_id": "contact_salutation",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "salutation"
+  },
+  {
+    "data_type": "string",
+    "description": "State/region of residence of the contact.",
+    "field_id": "contact_state",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "state"
+  },
+  {
+    "data_type": "string",
+    "description": "Company website of the contact.",
+    "field_id": "contact_website",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "website"
+  },
+  {
+    "data_type": "string",
+    "description": "Postal code of the contact.",
+    "field_id": "contact_zip",
+    "kind": "dimension",
+    "section": "CONTACT",
+    "source_field": "zip"
+  },
+  {
+    "data_type": "integer",
+    "description": "Total contacts created in the period.",
+    "field_id": "contacts_created",
+    "kind": "metric",
+    "section": "ANALYTICS"
+  },
+  {
+    "data_type": "date",
+    "description": "Reporting day (derived from the CRM createdate/closedate timestamp properties, bucketed in the account time zone).",
+    "field_id": "date",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "createdate/closedate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Sum of the `amount` property over the day's closed-won deals.",
+    "field_id": "deal_amount",
+    "kind": "metric",
+    "section": "DEAL",
+    "source_field": "deal_amount"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Deal amount converted to the account home currency.",
+    "field_id": "deal_amount_in_home_currency",
+    "kind": "metric",
+    "section": "DEAL",
+    "source_field": "amount_in_home_currency"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Date the deal is expected to close (or closed).",
+    "field_id": "deal_closedate",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "closedate"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Timestamp the deal was created.",
+    "field_id": "deal_createdate",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "createdate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Number of days between deal creation and closing.",
+    "field_id": "deal_days_to_close",
+    "kind": "metric",
+    "section": "DEAL",
+    "source_field": "days_to_close"
+  },
+  {
+    "data_type": "string",
+    "description": "Name of the deal.",
+    "field_id": "deal_dealname",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "dealname"
+  },
+  {
+    "data_type": "string",
+    "description": "Current pipeline stage of the deal.",
+    "field_id": "deal_dealstage",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "dealstage"
+  },
+  {
+    "data_type": "string",
+    "description": "Type/classification of the deal.",
+    "field_id": "deal_dealtype",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "dealtype"
+  },
+  {
+    "data_type": "string",
+    "description": "Description of the deal.",
+    "field_id": "deal_description",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "description"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Probability of the deal reaching closed-won.",
+    "field_id": "deal_hs_deal_stage_probability",
+    "kind": "metric",
+    "section": "DEAL",
+    "source_field": "hs_deal_stage_probability"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Forecast (projected) revenue for the deal.",
+    "field_id": "deal_hs_forecast_amount",
+    "kind": "metric",
+    "section": "DEAL",
+    "source_field": "hs_forecast_amount"
+  },
+  {
+    "data_type": "boolean",
+    "description": "Whether the deal is in a closed stage.",
+    "field_id": "deal_hs_is_closed",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "hs_is_closed"
+  },
+  {
+    "data_type": "boolean",
+    "description": "Whether the deal is in a closed-won stage.",
+    "field_id": "deal_hs_is_closed_won",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "hs_is_closed_won"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Timestamp of the most recent property update.",
+    "field_id": "deal_hs_lastmodifieddate",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "hs_lastmodifieddate"
+  },
+  {
+    "data_type": "id",
+    "description": "Unique HubSpot ID of the deal record.",
+    "field_id": "deal_hs_object_id",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "hs_object_id"
+  },
+  {
+    "data_type": "string",
+    "description": "ID of the HubSpot owner of the deal.",
+    "field_id": "deal_hubspot_owner_id",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "hubspot_owner_id"
+  },
+  {
+    "data_type": "integer",
+    "description": "Number of contacts associated with the deal.",
+    "field_id": "deal_num_associated_contacts",
+    "kind": "metric",
+    "section": "DEAL",
+    "source_field": "num_associated_contacts"
+  },
+  {
+    "data_type": "string",
+    "description": "Pipeline the deal belongs to.",
+    "field_id": "deal_pipeline",
+    "kind": "dimension",
+    "section": "DEAL",
+    "source_field": "pipeline"
+  },
+  {
+    "data_type": "integer",
+    "description": "Count of deals closed-won within the day (deals Search filtered on closedate BETWEEN and dealstage = closed-won).",
+    "field_id": "deals_closed",
+    "kind": "metric",
+    "section": "DEAL",
+    "source_field": "deals_closed"
+  },
+  {
+    "data_type": "integer",
+    "description": "Total deals closed-won in the period.",
+    "field_id": "deals_closed_won",
+    "kind": "metric",
+    "section": "ANALYTICS"
+  },
+  {
+    "data_type": "integer",
+    "description": "Count of deals created within the day (client-side aggregate of the deals Search API filtered on createdate BETWEEN).",
+    "field_id": "deals_created",
+    "kind": "metric",
+    "section": "DEAL",
+    "source_field": "deals_created"
+  },
+  {
+    "data_type": "integer",
+    "description": "Total deals created in the period.",
+    "field_id": "deals_created_total",
+    "kind": "metric",
+    "section": "ANALYTICS"
+  },
+  {
+    "data_type": "integer",
+    "description": "Count of contacts created within the day (client-side aggregate of the contacts Search API filtered on createdate BETWEEN).",
+    "field_id": "new_contacts",
+    "kind": "metric",
+    "section": "CONTACT",
+    "source_field": "new_contacts"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Date the ticket was closed.",
+    "field_id": "ticket_closed_date",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "closed_date"
+  },
+  {
+    "data_type": "string",
+    "description": "Full description of the ticket issue.",
+    "field_id": "ticket_content",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "content"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Timestamp the ticket was created.",
+    "field_id": "ticket_createdate",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "createdate"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Timestamp of the most recent property update.",
+    "field_id": "ticket_hs_lastmodifieddate",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "hs_lastmodifieddate"
+  },
+  {
+    "data_type": "id",
+    "description": "Unique HubSpot ID of the ticket record.",
+    "field_id": "ticket_hs_object_id",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "hs_object_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Pipeline the ticket belongs to.",
+    "field_id": "ticket_hs_pipeline",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "hs_pipeline"
+  },
+  {
+    "data_type": "string",
+    "description": "Pipeline status/stage of the ticket.",
+    "field_id": "ticket_hs_pipeline_stage",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "hs_pipeline_stage"
+  },
+  {
+    "data_type": "string",
+    "description": "Action taken to resolve the ticket.",
+    "field_id": "ticket_hs_resolution",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "hs_resolution"
+  },
+  {
+    "data_type": "string",
+    "description": "Main reason the customer reached out.",
+    "field_id": "ticket_hs_ticket_category",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "hs_ticket_category"
+  },
+  {
+    "data_type": "string",
+    "description": "Priority level of the ticket.",
+    "field_id": "ticket_hs_ticket_priority",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "hs_ticket_priority"
+  },
+  {
+    "data_type": "string",
+    "description": "ID of the HubSpot owner of the ticket.",
+    "field_id": "ticket_hubspot_owner_id",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "hubspot_owner_id"
+  },
+  {
+    "data_type": "integer",
+    "description": "Number of notes/activities logged on the ticket.",
+    "field_id": "ticket_num_notes",
+    "kind": "metric",
+    "section": "TICKET",
+    "source_field": "num_notes"
+  },
+  {
+    "data_type": "string",
+    "description": "Channel where the ticket was submitted.",
+    "field_id": "ticket_source_type",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "source_type"
+  },
+  {
+    "data_type": "string",
+    "description": "Short summary/name of the ticket.",
+    "field_id": "ticket_subject",
+    "kind": "dimension",
+    "section": "TICKET",
+    "source_field": "subject"
+  },
+  {
+    "data_type": "integer",
+    "description": "Elapsed time (ms) from ticket creation to closure.",
+    "field_id": "ticket_time_to_close",
+    "kind": "metric",
+    "section": "TICKET",
+    "source_field": "time_to_close"
+  },
+  {
+    "data_type": "integer",
+    "description": "Elapsed time (ms) from ticket creation to the first agent reply.",
+    "field_id": "ticket_time_to_first_agent_reply",
+    "kind": "metric",
+    "section": "TICKET",
+    "source_field": "time_to_first_agent_reply"
+  }
+]

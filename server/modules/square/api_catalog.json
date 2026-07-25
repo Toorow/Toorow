@@ -1,0 +1,541 @@
+{
+  "api_version": "2026-05-20",
+  "catalog_version": "1",
+  "connector": "square",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Amount the developer takes as a fee for facilitating the payment (app_fee_money.amount).",
+      "exposure": "exposed",
+      "field_id": "app_fee_amount",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PAYMENT",
+      "source_field": "app_fee_money.amount",
+      "tier": "core"
+    },
+    {
+      "description": "Amount of money approved for the payment (approved_money.amount), smallest currency unit.",
+      "exposure": "exposed",
+      "field_id": "approved_amount",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PAYMENT",
+      "source_field": "approved_money.amount",
+      "tier": "core"
+    },
+    {
+      "description": "Status of the AVS verification: AVS_ACCEPTED, AVS_REJECTED, or AVS_NOT_CHECKED.",
+      "exposure": "exposed",
+      "field_id": "avs_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CARD DETAILS",
+      "source_field": "card_details.avs_status",
+      "tier": "standard"
+    },
+    {
+      "description": "Card brand: VISA, MASTERCARD, AMERICAN_EXPRESS, DISCOVER, JCB, etc.",
+      "exposure": "exposed",
+      "field_id": "card_brand",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CARD DETAILS",
+      "source_field": "card_details.card.card_brand",
+      "tier": "standard"
+    },
+    {
+      "description": "Status of the CVV verification: CVV_ACCEPTED, CVV_REJECTED, or CVV_NOT_CHECKED.",
+      "exposure": "exposed",
+      "field_id": "card_cvv_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CARD DETAILS",
+      "source_field": "card_details.cvv_status",
+      "tier": "standard"
+    },
+    {
+      "description": "How the card was presented: KEYED, SWIPED, EMV, ON_FILE, or CONTACTLESS.",
+      "exposure": "exposed",
+      "field_id": "card_entry_method",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CARD DETAILS",
+      "source_field": "card_details.entry_method",
+      "tier": "standard"
+    },
+    {
+      "description": "Expiration month of the card used.",
+      "exposure": "exposed",
+      "field_id": "card_exp_month",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "CARD DETAILS",
+      "source_field": "card_details.card.exp_month",
+      "tier": "standard"
+    },
+    {
+      "description": "Expiration year of the card used.",
+      "exposure": "exposed",
+      "field_id": "card_exp_year",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "CARD DETAILS",
+      "source_field": "card_details.card.exp_year",
+      "tier": "standard"
+    },
+    {
+      "description": "Last four digits of the card used.",
+      "exposure": "exposed",
+      "field_id": "card_last4",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CARD DETAILS",
+      "source_field": "card_details.card.last_4",
+      "tier": "standard"
+    },
+    {
+      "description": "Card payment status: AUTHORIZED, CAPTURED, VOIDED, or FAILED.",
+      "exposure": "exposed",
+      "field_id": "card_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CARD DETAILS",
+      "source_field": "card_details.status",
+      "tier": "standard"
+    },
+    {
+      "description": "Customer's email address (Customer.email_address).",
+      "exclusion_reason": "Customer objects are not expanded by the payments pull; payment.customer_id contains only the customer id string (already exposed in the PAYMENT section). Full Customer fields require a separate GET /v2/customers/{id} call per payment, not performed by the daily pull.",
+      "exposure": "excluded",
+      "field_id": "customer_email",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER",
+      "source_field": "email_address",
+      "tier": "advanced"
+    },
+    {
+      "description": "Customer's family (last) name.",
+      "exclusion_reason": "Customer objects are not expanded by the payments pull; payment.customer_id contains only the customer id string (already exposed in the PAYMENT section). Full Customer fields require a separate GET /v2/customers/{id} call per payment, not performed by the daily pull.",
+      "exposure": "excluded",
+      "field_id": "customer_family_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER",
+      "source_field": "family_name",
+      "tier": "advanced"
+    },
+    {
+      "description": "Customer's given (first) name.",
+      "exclusion_reason": "Customer objects are not expanded by the payments pull; payment.customer_id contains only the customer id string (already exposed in the PAYMENT section). Full Customer fields require a separate GET /v2/customers/{id} call per payment, not performed by the daily pull.",
+      "exposure": "excluded",
+      "field_id": "customer_given_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER",
+      "source_field": "given_name",
+      "tier": "advanced"
+    },
+    {
+      "description": "ID of the customer associated with the payment (id only on the payment object).",
+      "exposure": "exposed",
+      "field_id": "customer_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "customer_id",
+      "tier": "core"
+    },
+    {
+      "description": "Date the payment was created (day grain, UTC, derived from the RFC 3339 created_at timestamp).",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "PAYMENT",
+      "source_field": "created_at",
+      "tier": "core"
+    },
+    {
+      "description": "Action applied to the payment when delay_duration elapses: CANCEL or COMPLETE.",
+      "exposure": "exposed",
+      "field_id": "delay_action",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "delay_action",
+      "tier": "core"
+    },
+    {
+      "description": "fees exposed by Square. Platform contract field carried from the module manifest; official-name divergence (SUM of payment.processing_fee[].amount_money.amount) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+      "exposure": "exposed",
+      "field_id": "fees",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "fee_amount",
+      "tier": "core"
+    },
+    {
+      "description": "Country of the location in ISO 3166-1 alpha-2 format.",
+      "exclusion_reason": "Location objects are not returned by the daily payments pull; they come from a separate GET /v2/locations call (used by discover_accounts for topology, not for per-payment projection). The location_id scalar is already exposed on the Payment (PAYMENT section).",
+      "exposure": "excluded",
+      "field_id": "location_country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "country",
+      "tier": "standard"
+    },
+    {
+      "description": "Currency used for all transactions at this location (ISO 4217).",
+      "exclusion_reason": "Location objects are not returned by the daily payments pull; they come from a separate GET /v2/locations call (used by discover_accounts for topology, not for per-payment projection). The location_id scalar is already exposed on the Payment (PAYMENT section).",
+      "exposure": "excluded",
+      "field_id": "location_currency",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "currency",
+      "tier": "standard"
+    },
+    {
+      "description": "ID of the location associated with the payment (payment.location_id). Topology key.",
+      "exposure": "exposed",
+      "field_id": "location_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "location_id",
+      "tier": "core"
+    },
+    {
+      "description": "Human-readable name of the location (Location.name).",
+      "exclusion_reason": "Location objects are not returned by the daily payments pull; they come from a separate GET /v2/locations call (used by discover_accounts for topology, not for per-payment projection). The location_id scalar is already exposed on the Payment (PAYMENT section).",
+      "exposure": "excluded",
+      "field_id": "location_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "name",
+      "tier": "standard"
+    },
+    {
+      "description": "Location status: ACTIVE or INACTIVE.",
+      "exclusion_reason": "Location objects are not returned by the daily payments pull; they come from a separate GET /v2/locations call (used by discover_accounts for topology, not for per-payment projection). The location_id scalar is already exposed on the Payment (PAYMENT section).",
+      "exposure": "excluded",
+      "field_id": "location_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "status",
+      "tier": "standard"
+    },
+    {
+      "description": "Location type: PHYSICAL or MOBILE.",
+      "exclusion_reason": "Location objects are not returned by the daily payments pull; they come from a separate GET /v2/locations call (used by discover_accounts for topology, not for per-payment projection). The location_id scalar is already exposed on the Payment (PAYMENT section).",
+      "exposure": "excluded",
+      "field_id": "location_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "type",
+      "tier": "standard"
+    },
+    {
+      "description": "Optional note attached to the payment.",
+      "exposure": "exposed",
+      "field_id": "note",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "note",
+      "tier": "core"
+    },
+    {
+      "description": "Number of orders represented by payments (1 per payment, aggregated at day grain).",
+      "exposure": "exposed",
+      "field_id": "order_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PAYMENT",
+      "source_field": "order_count",
+      "tier": "core"
+    },
+    {
+      "description": "ID of the associated Square Order (payment.order_id). Nullable; Orders-API join key.",
+      "exposure": "exposed",
+      "field_id": "order_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "order_id",
+      "tier": "core"
+    },
+    {
+      "description": "Name of the source (application) that created the order.",
+      "exclusion_reason": "Square Order objects are not fetched by the daily pull; payment.order_id is a scalar id (already exposed in the PAYMENT section). Full Order fields require a separate Orders API (RetrieveOrder / SearchOrders) call, not performed by the daily pull.",
+      "exposure": "excluded",
+      "field_id": "order_source_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "source.name",
+      "tier": "standard"
+    },
+    {
+      "description": "State of the Square Order: OPEN, COMPLETED, or CANCELED.",
+      "exclusion_reason": "Square Order objects are not fetched by the daily pull; payment.order_id is a scalar id (already exposed in the PAYMENT section). Full Order fields require a separate Orders API (RetrieveOrder / SearchOrders) call, not performed by the daily pull.",
+      "exposure": "excluded",
+      "field_id": "order_state",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "state",
+      "tier": "standard"
+    },
+    {
+      "description": "Total amount of money for the Square Order (Order.total_money.amount), smallest currency unit.",
+      "exclusion_reason": "Square Order objects are not fetched by the daily pull; payment.order_id is a scalar id (already exposed in the PAYMENT section). Full Order fields require a separate Orders API (RetrieveOrder / SearchOrders) call, not performed by the daily pull.",
+      "exposure": "excluded",
+      "field_id": "order_total_amount",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ORDER",
+      "source_field": "total_money.amount",
+      "tier": "standard"
+    },
+    {
+      "description": "Three-letter ISO currency code of the payment amount (amount_money.currency).",
+      "exposure": "exposed",
+      "field_id": "payment_currency",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "amount_money.currency",
+      "tier": "core"
+    },
+    {
+      "description": "Unique identifier for the Payment object (payment.id).",
+      "exposure": "exposed",
+      "field_id": "payment_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "payment_id",
+      "tier": "core"
+    },
+    {
+      "description": "Payment status: APPROVED, PENDING, COMPLETED, CANCELED, or FAILED.",
+      "exposure": "exposed",
+      "field_id": "payment_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "status",
+      "tier": "core"
+    },
+    {
+      "description": "Amount of a single processing-fee line (processing_fee[].amount_money.amount), smallest currency unit.",
+      "exposure": "exposed",
+      "field_id": "processing_fee_amount",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PROCESSING FEE",
+      "source_field": "processing_fee.amount_money.amount",
+      "tier": "core"
+    },
+    {
+      "description": "Timestamp the processing-fee line took effect (RFC 3339).",
+      "exposure": "exposed",
+      "field_id": "processing_fee_effective_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "PROCESSING FEE",
+      "source_field": "processing_fee.effective_at",
+      "tier": "core"
+    },
+    {
+      "description": "Type of a processing-fee line: INITIAL or ADJUSTMENT.",
+      "exposure": "exposed",
+      "field_id": "processing_fee_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PROCESSING FEE",
+      "source_field": "processing_fee.type",
+      "tier": "core"
+    },
+    {
+      "description": "Payment receipt number (up to 4 chars).",
+      "exposure": "exposed",
+      "field_id": "receipt_number",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "receipt_number",
+      "tier": "core"
+    },
+    {
+      "description": "URL for the payment's receipt page.",
+      "exposure": "exposed",
+      "field_id": "receipt_url",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "receipt_url",
+      "tier": "core"
+    },
+    {
+      "description": "Merchant-supplied reference id associated with the payment.",
+      "exposure": "exposed",
+      "field_id": "reference_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "reference_id",
+      "tier": "core"
+    },
+    {
+      "description": "Amount of a PaymentRefund (refund.amount_money.amount), smallest currency unit.",
+      "exclusion_reason": "Individual PaymentRefund objects are not fetched by the daily pull; payment.refunded_money.amount (already exposed as the refunds metric via PLATFORM CONTRACT) is a scalar total on the Payment, not the list of PaymentRefund objects. Requires a separate GET /v2/refunds call, not performed by the daily pull.",
+      "exposure": "excluded",
+      "field_id": "refund_amount",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "REFUND",
+      "source_field": "amount_money.amount",
+      "tier": "advanced"
+    },
+    {
+      "description": "Unique identifier for the PaymentRefund object.",
+      "exclusion_reason": "Individual PaymentRefund objects are not fetched by the daily pull; payment.refunded_money.amount (already exposed as the refunds metric via PLATFORM CONTRACT) is a scalar total on the Payment, not the list of PaymentRefund objects. Requires a separate GET /v2/refunds call, not performed by the daily pull.",
+      "exposure": "excluded",
+      "field_id": "refund_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REFUND",
+      "source_field": "id",
+      "tier": "advanced"
+    },
+    {
+      "description": "Reason attached to the refund.",
+      "exclusion_reason": "Individual PaymentRefund objects are not fetched by the daily pull; payment.refunded_money.amount (already exposed as the refunds metric via PLATFORM CONTRACT) is a scalar total on the Payment, not the list of PaymentRefund objects. Requires a separate GET /v2/refunds call, not performed by the daily pull.",
+      "exposure": "excluded",
+      "field_id": "refund_reason",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REFUND",
+      "source_field": "reason",
+      "tier": "advanced"
+    },
+    {
+      "description": "Refund status: PENDING, COMPLETED, REJECTED, or FAILED.",
+      "exclusion_reason": "Individual PaymentRefund objects are not fetched by the daily pull; payment.refunded_money.amount (already exposed as the refunds metric via PLATFORM CONTRACT) is a scalar total on the Payment, not the list of PaymentRefund objects. Requires a separate GET /v2/refunds call, not performed by the daily pull.",
+      "exposure": "excluded",
+      "field_id": "refund_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REFUND",
+      "source_field": "status",
+      "tier": "advanced"
+    },
+    {
+      "description": "refunds exposed by Square. Platform contract field carried from the module manifest; official-name divergence (payment.refunded_money.amount) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+      "exposure": "exposed",
+      "field_id": "refunds",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "refunded",
+      "tier": "core"
+    },
+    {
+      "description": "revenue exposed by Square. Platform contract field carried from the module manifest; official-name divergence (payment.amount_money.amount) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+      "exposure": "exposed",
+      "field_id": "revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "amount",
+      "tier": "core"
+    },
+    {
+      "description": "Square risk evaluation level for the payment: PENDING, NORMAL, MODERATE, or HIGH.",
+      "exposure": "exposed",
+      "field_id": "risk_evaluation_level",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "risk_evaluation.risk_level",
+      "tier": "core"
+    },
+    {
+      "description": "Payment source: CARD, BANK_ACCOUNT, WALLET, BUY_NOW_PAY_LATER, SQUARE_ACCOUNT, CASH, EXTERNAL.",
+      "exposure": "exposed",
+      "field_id": "source_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "source_type",
+      "tier": "core"
+    },
+    {
+      "description": "ID of the team member (staff) that took the payment.",
+      "exposure": "exposed",
+      "field_id": "team_member_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PAYMENT",
+      "source_field": "team_member_id",
+      "tier": "core"
+    },
+    {
+      "description": "Amount designated as a tip (tip_money.amount), smallest currency unit.",
+      "exposure": "exposed",
+      "field_id": "tip_amount",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PAYMENT",
+      "source_field": "tip_money.amount",
+      "tier": "core"
+    },
+    {
+      "description": "Total amount for the payment including tip (total_money.amount), smallest currency unit.",
+      "exposure": "exposed",
+      "field_id": "total_amount",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PAYMENT",
+      "source_field": "total_money.amount",
+      "tier": "core"
+    },
+    {
+      "description": "Number of payment transactions (1 per payment, aggregated at day grain).",
+      "exposure": "exposed",
+      "field_id": "transaction_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PAYMENT",
+      "source_field": "transaction_count",
+      "tier": "core"
+    },
+    {
+      "description": "Timestamp of the most recent update to the payment (RFC 3339).",
+      "exposure": "exposed",
+      "field_id": "updated_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "PAYMENT",
+      "source_field": "updated_at",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://developer.squareup.com/reference/square/objects/Payment"
+    }
+  ]
+}

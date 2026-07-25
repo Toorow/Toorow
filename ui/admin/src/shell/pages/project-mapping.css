@@ -1,0 +1,219 @@
+/**
+ * project-mapping.css — page-specific styles for ProjectMapping.
+ *
+ * Faithful port of the mapping surface styles from the validated mockup's
+ * companion stylesheet:
+ *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
+ *     mockups/project-mapping.html  (+ workflow-surfaces.css)
+ *
+ * Shell/layout classes (frame, sidebar, topbar, page-header, panel, provider-logo,
+ * signal-label, signal-mark, secondary-button, primary-button, number, event) live
+ * in application.css and are global. This file only adds the mapping-surface classes
+ * that are NOT already in application.css:
+ *   workflow-main, field-control, segmented, segment, kind-label, mapping-summary,
+ *   mapping-panel, mapping-toolbar, mapping-filters, mapping-search, table-scroll,
+ *   concept-table, concept-name, concept-icon, consumer-cell, logo-stack,
+ *   mapping-footer.
+ *
+ * Tokenized: colors reference the application.css CSS variables only for every
+ * brand/semantic value (--rose, --info, --success, --warning, --error, --ink,
+ * --muted, --line, --focus). The former neutral literals (#fff, #fbfbfd, #f0f0f4,
+ * #f1f1f5, #f1f0f6, #4f4d56, #5f5772, #d9d8df) are now routed through the neutral
+ * tokens (--surface / --surface-2 / --muted / --line) so they flip in dark. This
+ * mirrors overview.css, whose neutral track (#eeeef3) uses var(--track).
+ *
+ * Deliberate tokenization fix vs. mockup: the mockup's workflow-surfaces.css
+ * hardcodes `.signal-label.warning{color:#a96712}` as a legibility override. To
+ * keep semantic colors tokenized, ProjectMapping uses application.css's
+ * `.signal-label.warning{color:var(--warning)}` instead. Documented as a gap.
+ */
+
+/* --- Page shell padding (mockup uses <main class="workflow-main">; here we
+   render inside the shell's <main class="main">, so replicate its 32px padding
+   contract only if the host <main> differs. Kept minimal — the shell already
+   pads the main region.) --- */
+.workflow-main .page-header { margin-bottom: 22px; }
+
+/* --- Toolbar controls --- */
+.field-control {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.field-control span { color: var(--muted); }
+
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.segment {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.segment.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(17, 17, 17, 0.08);
+}
+
+.kind-label {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* --- Summary strip --- */
+.mapping-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.mapping-summary > div {
+  min-height: 94px;
+  padding: 17px 18px;
+  border-right: 1px solid var(--line);
+}
+.mapping-summary > div:last-child { border-right: 0; }
+.mapping-summary span { color: var(--muted); font-size: 12px; }
+.mapping-summary strong {
+  display: block;
+  margin-top: 8px;
+  font: 600 25px "Geist", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.mapping-summary small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+
+/* --- Panel + toolbar --- */
+.mapping-panel {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.mapping-toolbar {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.mapping-filters { display: flex; align-items: center; gap: 8px; }
+.mapping-search { width: 190px; justify-content: flex-start; color: var(--muted); }
+
+/* --- Scroll wrapper for the concept table --- */
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--line) transparent;
+  scrollbar-gutter: stable;
+}
+.table-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.table-scroll .concept-table { min-width: 980px; }
+.table-scroll::-webkit-scrollbar { height: 8px; }
+.table-scroll::-webkit-scrollbar-track { background: transparent; }
+.table-scroll::-webkit-scrollbar-thumb { background: var(--line); border: 2px solid var(--surface); border-radius: 999px; }
+
+/* --- Concept table --- */
+.concept-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.concept-table th {
+  height: 42px;
+  padding: 0 14px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+.concept-table td {
+  height: 64px;
+  padding: 0 14px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.concept-name { display: flex; align-items: center; gap: 11px; }
+.concept-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.concept-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.concept-name strong { display: block; font-size: 13px; }
+.concept-name small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+
+/* --- Consuming-datastream cell: overlapping provider logo stack --- */
+.logo-stack { display: flex; align-items: center; padding-left: 5px; }
+.logo-stack .provider-logo {
+  width: 27px;
+  height: 27px;
+  margin-left: -5px;
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.consumer-cell { display: flex; align-items: center; gap: 10px; }
+.consumer-cell strong { display: block; font-size: 13px; }
+.consumer-cell small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+
+/* --- Footer --- */
+.mapping-footer {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- Narrow-desktop resilience (from mockup workflow-surfaces.css) --- */
+@media (max-width: 1320px) {
+  .mapping-toolbar {
+    min-height: auto;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+  }
+  .mapping-filters { width: 100%; flex-wrap: wrap; }
+  .mapping-search { flex: 1; min-width: 180px; width: auto; }
+  .mapping-footer { gap: 12px; flex-wrap: wrap; padding-block: 10px; }
+}

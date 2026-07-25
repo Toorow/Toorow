@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: raw_dv360
+    description: "Append-only full-grain Display & Video 360 landing."
+    schema: main
+    tables:
+      - name: raw_dv360_daily
+
+models:
+  - name: stg_dv360_daily
+    description: "DV360 full-grain staging; latest pull wins only at complete provider grain."
+    columns:
+      - name: report_profile
+        tests: [not_null]
+      - name: partner_id
+        tests: [not_null]
+      - name: advertiser_id
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]
+      - name: provider_value
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+      - name: project_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_dv360_full_grain_unique
+          arguments:
+            column_name: "project_id || '|' || report_profile || '|' || partner_id || '|' || advertiser_id || '|' || COALESCE(date, '') || '|' || dimensions_json || '|' || metric"

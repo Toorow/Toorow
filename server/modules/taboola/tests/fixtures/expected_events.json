@@ -1,0 +1,18 @@
+[
+  {
+    "event_type": "CAMPAIGN_STATUS_CHANGED",
+    "event_date": "2026-07-01",
+    "event_id": "hist_001",
+    "label": "CAMPAIGN_STATUS_CHANGED on campaign_42",
+    "platform": "taboola",
+    "source": "taboola"
+  },
+  {
+    "event_type": "CAMPAIGN_BUDGET_CHANGED",
+    "event_date": "2026-07-10",
+    "event_id": "hist_002",
+    "label": "CAMPAIGN_BUDGET_CHANGED on campaign_17",
+    "platform": "taboola",
+    "source": "taboola"
+  }
+]

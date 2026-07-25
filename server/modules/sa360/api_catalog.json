@@ -1,0 +1,166 @@
+{
+  "api_version": "search-ads-360-reporting-v0",
+  "catalog_version": "1",
+  "connector": "sa360",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Ad group resource identifier.",
+      "exposure": "exposed",
+      "field_id": "adGroup.id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "adGroup",
+      "source_field": "adGroup.id",
+      "tier": "standard"
+    },
+    {
+      "description": "Keyword criterion identifier.",
+      "exposure": "exposed",
+      "field_id": "adGroupCriterion.criterionId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "adGroupCriterion",
+      "source_field": "adGroupCriterion.criterionId",
+      "tier": "standard"
+    },
+    {
+      "description": "Campaign resource identifier.",
+      "exposure": "exposed",
+      "field_id": "campaign.id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "campaign",
+      "source_field": "campaign.id",
+      "tier": "core"
+    },
+    {
+      "description": "Customer currency code.",
+      "exposure": "exposed",
+      "field_id": "customer.currencyCode",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "customer",
+      "source_field": "customer.currencyCode",
+      "tier": "core"
+    },
+    {
+      "description": "Client customer identifier.",
+      "exposure": "exposed",
+      "field_id": "customer.id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "customer",
+      "source_field": "customer.id",
+      "tier": "core"
+    },
+    {
+      "description": "Average CPC in micros.",
+      "exposure": "exposed",
+      "field_id": "metrics.average_cpc_micros",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "metrics",
+      "source_field": "metrics.averageCpcMicros",
+      "tier": "core"
+    },
+    {
+      "description": "Click-through rate.",
+      "exposure": "exposed",
+      "field_id": "metrics.click_through_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "metrics",
+      "source_field": "metrics.clickThroughRate",
+      "tier": "core"
+    },
+    {
+      "description": "Recorded clicks.",
+      "exposure": "exposed",
+      "field_id": "metrics.clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "metrics",
+      "source_field": "metrics.clicks",
+      "tier": "core"
+    },
+    {
+      "description": "Attributed conversions.",
+      "exposure": "exposed",
+      "field_id": "metrics.conversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "metrics",
+      "source_field": "metrics.conversions",
+      "tier": "core"
+    },
+    {
+      "description": "Attributed conversion value.",
+      "exposure": "exposed",
+      "field_id": "metrics.conversions_value",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "metrics",
+      "source_field": "metrics.conversionsValue",
+      "tier": "core"
+    },
+    {
+      "description": "Cost in customer-currency micros.",
+      "exposure": "exposed",
+      "field_id": "metrics.cost_micros",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "metrics",
+      "source_field": "metrics.costMicros",
+      "tier": "core"
+    },
+    {
+      "description": "Recorded impressions.",
+      "exposure": "exposed",
+      "field_id": "metrics.impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "metrics",
+      "source_field": "metrics.impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Search impression share.",
+      "exposure": "exposed",
+      "field_id": "metrics.search_impression_share",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "metrics",
+      "source_field": "metrics.searchImpressionShare",
+      "tier": "core"
+    },
+    {
+      "description": "Reporting date segment.",
+      "exposure": "exposed",
+      "field_id": "segments.date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "segments",
+      "source_field": "segments.date",
+      "tier": "core"
+    },
+    {
+      "description": "Device segment.",
+      "exposure": "exposed",
+      "field_id": "segments.device",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "segments",
+      "source_field": "segments.device",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-22",
+      "kind": "official",
+      "url": "https://developers.google.com/search-ads/reporting/api/reference/fields/v0/overview"
+    }
+  ]
+}

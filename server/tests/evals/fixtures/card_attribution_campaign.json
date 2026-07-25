@@ -1,0 +1,38 @@
+[
+  {
+    "campaign": "brand-search",
+    "conversions": 2116.0
+  },
+  {
+    "campaign": "spring-sale",
+    "conversions": 998.0
+  },
+  {
+    "campaign": "retargeting",
+    "conversions": 623.0
+  },
+  {
+    "campaign": "lookalike-eu",
+    "conversions": 411.0
+  },
+  {
+    "campaign": "newsletter-oct",
+    "conversions": 308.0
+  },
+  {
+    "campaign": "webinar-attribution",
+    "conversions": 235.0
+  },
+  {
+    "campaign": "black-friday",
+    "conversions": 207.0
+  },
+  {
+    "campaign": "always-on",
+    "conversions": 183.0
+  },
+  {
+    "campaign": "unknown",
+    "conversions": 169.0
+  }
+]

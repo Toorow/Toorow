@@ -1,0 +1,3 @@
+from_currency,to_currency,rate,rate_date,rate_policy,valid_from,valid_to
+USD,EUR,0.92,2026-07-01,static_dev_rate,2020-01-01,2099-12-31
+EUR,EUR,1.00,2026-07-01,identity,2020-01-01,2099-12-31

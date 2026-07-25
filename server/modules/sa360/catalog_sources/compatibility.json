@@ -1,0 +1,9 @@
+{
+  "api_version": "search-ads-360-reporting-v0",
+  "profiles": {
+    "campaign_daily": {"resource": "campaign", "fields": ["segments.date", "customer.id", "campaign.id", "segments.device", "metrics.impressions", "metrics.clicks", "metrics.cost_micros", "metrics.conversions"], "filterable": ["segments.date", "campaign.id"]},
+    "ad_group_daily": {"resource": "ad_group", "fields": ["segments.date", "customer.id", "campaign.id", "adGroup.id", "segments.device", "metrics.impressions", "metrics.clicks", "metrics.cost_micros", "metrics.conversions"], "filterable": ["segments.date", "campaign.id", "adGroup.id"]},
+    "keyword_daily": {"resource": "ad_group_criterion", "fields": ["segments.date", "customer.id", "campaign.id", "adGroup.id", "adGroupCriterion.criterionId", "segments.device", "metrics.impressions", "metrics.clicks", "metrics.cost_micros", "metrics.conversions", "metrics.search_impression_share"], "filterable": ["segments.date", "campaign.id", "adGroup.id", "adGroupCriterion.criterionId"]},
+    "catalog_daily": {"resource": "campaign", "fields": ["segments.date", "customer.id", "campaign.id", "metrics.impressions", "metrics.clicks"], "filterable": ["segments.date", "campaign.id"]}
+  }
+}

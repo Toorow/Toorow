@@ -1,0 +1,2783 @@
+{
+  "api_version": "v3",
+  "catalog_version": "1",
+  "connector": "thetradedesk",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "The Trade Desk MyReports column '1stPartyDataID' (string, Supermetrics catalog 2026-04-23). Section: DATA ELEMENT.",
+      "exposure": "exposed",
+      "field_id": "1stPartyDataID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DATA ELEMENT",
+      "source_field": "1stPartyDataID",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column '3rdPartyDataBrand' (string, Supermetrics catalog 2026-04-23). Section: DATA ELEMENT.",
+      "exposure": "exposed",
+      "field_id": "3rdPartyDataBrand",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DATA ELEMENT",
+      "source_field": "3rdPartyDataBrand",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column '3rdPartyDataBrandID' (string, Supermetrics catalog 2026-04-23). Section: DATA ELEMENT.",
+      "exposure": "exposed",
+      "field_id": "3rdPartyDataBrandID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DATA ELEMENT",
+      "source_field": "3rdPartyDataBrandID",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column '3rdPartyDataID' (string, Supermetrics catalog 2026-04-23). Section: DATA ELEMENT.",
+      "exposure": "exposed",
+      "field_id": "3rdPartyDataID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DATA ELEMENT",
+      "source_field": "3rdPartyDataID",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdFormat' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "AdFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdFormat",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupAreFutureKoaFeaturesEnabled' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupAreFutureKoaFeaturesEnabled",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupAreFutureKoaFeaturesEnabled",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupAvailability' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupAvailability",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupAvailability",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupBaseBidCpmAdvCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupBaseBidCpmAdvCurrency",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "AD GROUP",
+      "source_field": "AdGroupBaseBidCpmAdvCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupBudgetAdvCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupBudgetAdvCurrency",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "AD GROUP",
+      "source_field": "AdGroupBudgetAdvCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupBudgetInImpressions' (decimal, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupBudgetInImpressions",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "AD GROUP",
+      "source_field": "AdGroupBudgetInImpressions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupCreated' (date, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupCreated",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "AD GROUP",
+      "source_field": "AdGroupCreated",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupCustomLabels' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupCustomLabels",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupCustomLabels",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupDailyCapAdvCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupDailyCapAdvCurrency",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "AD GROUP",
+      "source_field": "AdGroupDailyCapAdvCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupDailyCapInImpressions' (decimal, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupDailyCapInImpressions",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "AD GROUP",
+      "source_field": "AdGroupDailyCapInImpressions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupDailyTargetAdvCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupDailyTargetAdvCurrency",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "AD GROUP",
+      "source_field": "AdGroupDailyTargetAdvCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupDailyTargetInImpressions' (decimal, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupDailyTargetInImpressions",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "AD GROUP",
+      "source_field": "AdGroupDailyTargetInImpressions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupDescription' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupDescription",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupDescription",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupId' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupId",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupIntegerID' (string, Supermetrics catalog 2026-04-23). Section: DEPRECATED. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "AdGroupIntegerID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPRECATED",
+      "source_field": "AdGroupIntegerID",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupIsClassic' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupIsClassic",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupIsClassic",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupIsEnabled' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupIsEnabled",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupIsEnabled",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupIsHighFillRate' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupIsHighFillRate",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupIsHighFillRate",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupName' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupName",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupPredictiveClearingEnabled' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupPredictiveClearingEnabled",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupPredictiveClearingEnabled",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupUpdated' (date, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupUpdated",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "AD GROUP",
+      "source_field": "AdGroupUpdated",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdGroupUseIdentityAlliance' (string, Supermetrics catalog 2026-04-23). Section: AD GROUP.",
+      "exposure": "exposed",
+      "field_id": "AdGroupUseIdentityAlliance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupUseIdentityAlliance",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdServerCreativePlacementID' (decimal, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "AdServerCreativePlacementID",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "AD",
+      "source_field": "AdServerCreativePlacementID",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdServerName' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "AdServerName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdServerName",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserAvailability' (string, Supermetrics catalog 2026-04-23). Section: ADVERTISER.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserAvailability",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADVERTISER",
+      "source_field": "AdvertiserAvailability",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserCostAdvCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: COST.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserCostAdvCurrency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COST",
+      "source_field": "AdvertiserCostAdvCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserCostPartnerCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: COST.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserCostPartnerCurrency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COST",
+      "source_field": "AdvertiserCostPartnerCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserCostUSD' (decimal, Supermetrics catalog 2026-04-23). Section: COST.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserCostUSD",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COST",
+      "source_field": "AdvertiserCostUSD",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserCurrencyCode' (decimal, Supermetrics catalog 2026-04-23). Section: ADVERTISER.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserCurrencyCode",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "ADVERTISER",
+      "source_field": "AdvertiserCurrencyCode",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserDescription' (string, Supermetrics catalog 2026-04-23). Section: ADVERTISER.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserDescription",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADVERTISER",
+      "source_field": "AdvertiserDescription",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserDomainAddress' (string, Supermetrics catalog 2026-04-23). Section: ADVERTISER.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserDomainAddress",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADVERTISER",
+      "source_field": "AdvertiserDomainAddress",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserId' (string, Supermetrics catalog 2026-04-23). Section: ADVERTISER.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADVERTISER",
+      "source_field": "AdvertiserId",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserIgnoreReferralUrlInConversion' (string, Supermetrics catalog 2026-04-23). Section: ADVERTISER.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserIgnoreReferralUrlInConversion",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADVERTISER",
+      "source_field": "AdvertiserIgnoreReferralUrlInConversion",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserIntegerID' (string, Supermetrics catalog 2026-04-23). Section: DEPRECATED. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "AdvertiserIntegerID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPRECATED",
+      "source_field": "AdvertiserIntegerID",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserIsDimensionalBiddingModeSupported' (string, Supermetrics catalog 2026-04-23). Section: ADVERTISER.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserIsDimensionalBiddingModeSupported",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADVERTISER",
+      "source_field": "AdvertiserIsDimensionalBiddingModeSupported",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserKeywords' (string, Supermetrics catalog 2026-04-23). Section: ADVERTISER.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserKeywords",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADVERTISER",
+      "source_field": "AdvertiserKeywords",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserLogoUrl' (string, Supermetrics catalog 2026-04-23). Section: ADVERTISER.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserLogoUrl",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADVERTISER",
+      "source_field": "AdvertiserLogoUrl",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AdvertiserName' (string, Supermetrics catalog 2026-04-23). Section: ADVERTISER.",
+      "exposure": "exposed",
+      "field_id": "AdvertiserName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADVERTISER",
+      "source_field": "AdvertiserName",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'App' (string, Supermetrics catalog 2026-04-23). Section: DEPRECATED. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "App",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPRECATED",
+      "source_field": "App",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AudienceDescription' (string, Supermetrics catalog 2026-04-23). Section: AUDIENCE.",
+      "exposure": "exposed",
+      "field_id": "AudienceDescription",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "AudienceDescription",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AudienceGeoForCounts' (string, Supermetrics catalog 2026-04-23). Section: AUDIENCE.",
+      "exposure": "exposed",
+      "field_id": "AudienceGeoForCounts",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "AudienceGeoForCounts",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AudienceHouseholdCount' (string, Supermetrics catalog 2026-04-23). Section: AUDIENCE.",
+      "exposure": "exposed",
+      "field_id": "AudienceHouseholdCount",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "AudienceHouseholdCount",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AudienceID' (string, Supermetrics catalog 2026-04-23). Section: AUDIENCE.",
+      "exposure": "exposed",
+      "field_id": "AudienceID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "AudienceID",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AudienceIsAutoGenerated' (string, Supermetrics catalog 2026-04-23). Section: AUDIENCE.",
+      "exposure": "exposed",
+      "field_id": "AudienceIsAutoGenerated",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "AudienceIsAutoGenerated",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AudienceName' (string, Supermetrics catalog 2026-04-23). Section: AUDIENCE.",
+      "exposure": "exposed",
+      "field_id": "AudienceName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "AudienceName",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AudiencePersonsCount' (string, Supermetrics catalog 2026-04-23). Section: AUDIENCE.",
+      "exposure": "exposed",
+      "field_id": "AudiencePersonsCount",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "AudiencePersonsCount",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'AudienceUniqueUserCount' (string, Supermetrics catalog 2026-04-23). Section: AUDIENCE.",
+      "exposure": "exposed",
+      "field_id": "AudienceUniqueUserCount",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "AudienceUniqueUserCount",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Bids' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "Bids",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "Bids",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Browser' (string, Supermetrics catalog 2026-04-23). Section: PLATFORM.",
+      "exposure": "exposed",
+      "field_id": "Browser",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PLATFORM",
+      "source_field": "Browser",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignAutoAllocatorEnabled' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignAutoAllocatorEnabled",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignAutoAllocatorEnabled",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignAutoPrioritizationEnabled' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignAutoPrioritizationEnabled",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignAutoPrioritizationEnabled",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignAvailability' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignAvailability",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignAvailability",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignBudgetAmount' (decimal, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignBudgetAmount",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignBudgetAmount",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignBudgetCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignBudgetCurrency",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignBudgetCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignBudgetInImpressions' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignBudgetInImpressions",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignBudgetInImpressions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignCreated' (date, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignCreated",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignCreated",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignCtvTargetingAndAttribution' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignCtvTargetingAndAttribution",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignCtvTargetingAndAttribution",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignCustomCPAClickWeight' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignCustomCPAClickWeight",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignCustomCPAClickWeight",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignCustomCPAViewthroughWeight' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignCustomCPAViewthroughWeight",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignCustomCPAViewthroughWeight",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignCustomLabels' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignCustomLabels",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignCustomLabels",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignDailyBudgetAmount' (decimal, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignDailyBudgetAmount",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignDailyBudgetAmount",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignDailyBudgetCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignDailyBudgetCurrency",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignDailyBudgetCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignDailyBudgetInImpressions' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignDailyBudgetInImpressions",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignDailyBudgetInImpressions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignDescription' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignDescription",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignDescription",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignEnd' (date, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignEnd",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignEnd",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignEndDatetime' (date, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignEndDatetime",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignEndDatetime",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignId' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignId",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignIntegerID' (string, Supermetrics catalog 2026-04-23). Section: DEPRECATED. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "CampaignIntegerID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPRECATED",
+      "source_field": "CampaignIntegerID",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignMinimumAdGroupSpendInAdvertiserCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignMinimumAdGroupSpendInAdvertiserCurrency",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignMinimumAdGroupSpendInAdvertiserCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignName' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignName",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignPacingMode' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignPacingMode",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignPacingMode",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignStart' (date, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignStart",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignStart",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignStartDatetime' (date, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignStartDatetime",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignStartDatetime",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignType' (string, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignType",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CampaignUpdated' (date, Supermetrics catalog 2026-04-23). Section: CAMPAIGN.",
+      "exposure": "exposed",
+      "field_id": "CampaignUpdated",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignUpdated",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CategoryName' (string, Supermetrics catalog 2026-04-23). Section: CATEGORY.",
+      "exposure": "exposed",
+      "field_id": "CategoryName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CATEGORY",
+      "source_field": "CategoryName",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'City' (string, Supermetrics catalog 2026-04-23). Section: GEO.",
+      "exposure": "exposed",
+      "field_id": "City",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "City",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion01' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion01",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion01",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion01Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion01Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion01Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion02' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion02",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion02",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion02Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion02Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion02Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion03' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion03",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion03",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion03Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion03Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion03Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion04' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion04",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion04",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion04Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion04Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion04Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion05' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion05",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion05",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion05Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion05Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion05Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion06' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion06",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion06",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversion06Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversion06Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversion06Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversionCurrency01' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversionCurrency01",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversionCurrency01",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversionCurrency02' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversionCurrency02",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversionCurrency02",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversionCurrency03' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversionCurrency03",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversionCurrency03",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversionCurrency04' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversionCurrency04",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversionCurrency04",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversionCurrency05' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversionCurrency05",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversionCurrency05",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ClickConversionCurrency06' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ClickConversionCurrency06",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ClickConversionCurrency06",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Clicks' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "Clicks",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "Clicks",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch01' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch01",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch01",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch01Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch01Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch01Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch02' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch02",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch02",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch02Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch02Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch02Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch03' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch03",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch03",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch03Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch03Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch03Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch04' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch04",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch04",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch04Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch04Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch04Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch05' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch05",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch05",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch05Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch05Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch05Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch06' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch06",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch06",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ConversionTouch06Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ConversionTouch06Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionTouch06Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Country' (string, Supermetrics catalog 2026-04-23). Section: GEO.",
+      "exposure": "exposed",
+      "field_id": "Country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "Country",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CountryCode' (string, Supermetrics catalog 2026-04-23). Section: GEO.",
+      "exposure": "exposed",
+      "field_id": "CountryCode",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "CountryCode",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CpaClick' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE. Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; recompute at the semantic layer from stored numerator (cost) and denominator (impressions/clicks/conversions).",
+      "exposure": "exposed",
+      "field_id": "CpaClick",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "CpaClick",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CpaTimeWeightedDecay' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE. Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; recompute at the semantic layer from stored numerator (cost) and denominator (impressions/clicks/conversions).",
+      "exposure": "exposed",
+      "field_id": "CpaTimeWeightedDecay",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "CpaTimeWeightedDecay",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CpaTouch' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE. Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; recompute at the semantic layer from stored numerator (cost) and denominator (impressions/clicks/conversions).",
+      "exposure": "exposed",
+      "field_id": "CpaTouch",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "CpaTouch",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CpaView' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE. Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; recompute at the semantic layer from stored numerator (cost) and denominator (impressions/clicks/conversions).",
+      "exposure": "exposed",
+      "field_id": "CpaView",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "CpaView",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Cpc' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE. Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; recompute at the semantic layer from stored numerator (cost) and denominator (impressions/clicks/conversions).",
+      "exposure": "exposed",
+      "field_id": "Cpc",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "Cpc",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Cpm' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE. Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; recompute at the semantic layer from stored numerator (cost) and denominator (impressions/clicks/conversions).",
+      "exposure": "exposed",
+      "field_id": "Cpm",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "Cpm",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeAvailability' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeAvailability",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "CreativeAvailability",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeCreated' (date, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeCreated",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "AD",
+      "source_field": "CreativeCreated",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeDescription' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeDescription",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "CreativeDescription",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeFlightEnd' (date, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeFlightEnd",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "AD",
+      "source_field": "CreativeFlightEnd",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeFlightEndDatetime' (date, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeFlightEndDatetime",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "AD",
+      "source_field": "CreativeFlightEndDatetime",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeFlightStart' (date, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeFlightStart",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "AD",
+      "source_field": "CreativeFlightStart",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeFlightStartDatetime' (date, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeFlightStartDatetime",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "AD",
+      "source_field": "CreativeFlightStartDatetime",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeId' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "CreativeId",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeImage' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeImage",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "CreativeImage",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeImageLandingPageUrl' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeImageLandingPageUrl",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "CreativeImageLandingPageUrl",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeImageUrl' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeImageUrl",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "CreativeImageUrl",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeIntegerID' (string, Supermetrics catalog 2026-04-23). Section: DEPRECATED. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "CreativeIntegerID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPRECATED",
+      "source_field": "CreativeIntegerID",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeName' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "CreativeName",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeServedInChina' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeServedInChina",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "CreativeServedInChina",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeShareLink' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeShareLink",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "CreativeShareLink",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeType' (string, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "CreativeType",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'CreativeUpdated' (date, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "CreativeUpdated",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "AD",
+      "source_field": "CreativeUpdated",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Ctr' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE. Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; recompute at the semantic layer from stored numerator (cost) and denominator (impressions/clicks/conversions).",
+      "exposure": "exposed",
+      "field_id": "Ctr",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "Ctr",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'DataElement' (string, Supermetrics catalog 2026-04-23). Section: DATA ELEMENT.",
+      "exposure": "exposed",
+      "field_id": "DataElement",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DATA ELEMENT",
+      "source_field": "DataElement",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'DealId' (string, Supermetrics catalog 2026-04-23). Section: DEAL.",
+      "exposure": "exposed",
+      "field_id": "DealId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEAL",
+      "source_field": "DealId",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'DeviceType' (string, Supermetrics catalog 2026-04-23). Section: PLATFORM.",
+      "exposure": "exposed",
+      "field_id": "DeviceType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PLATFORM",
+      "source_field": "DeviceType",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Fold' (string, Supermetrics catalog 2026-04-23). Section: LEGACY. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "Fold",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LEGACY",
+      "source_field": "Fold",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'FoldBidFactor' (string, Supermetrics catalog 2026-04-23). Section: LEGACY. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "FoldBidFactor",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LEGACY",
+      "source_field": "FoldBidFactor",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Frequency' (decimal, Supermetrics catalog 2026-04-23). Section: AD.",
+      "exposure": "exposed",
+      "field_id": "Frequency",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "AD",
+      "source_field": "Frequency",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Impressions' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "Impressions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "Impressions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'IndustryCategoryId' (string, Supermetrics catalog 2026-04-23). Section: CATEGORY.",
+      "exposure": "exposed",
+      "field_id": "IndustryCategoryId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CATEGORY",
+      "source_field": "IndustryCategoryId",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'IndustryCategoryName' (string, Supermetrics catalog 2026-04-23). Section: CATEGORY.",
+      "exposure": "exposed",
+      "field_id": "IndustryCategoryName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CATEGORY",
+      "source_field": "IndustryCategoryName",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'IndustryCategoryParentId' (string, Supermetrics catalog 2026-04-23). Section: CATEGORY.",
+      "exposure": "exposed",
+      "field_id": "IndustryCategoryParentId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CATEGORY",
+      "source_field": "IndustryCategoryParentId",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'IndustryCategoryPath' (string, Supermetrics catalog 2026-04-23). Section: CATEGORY.",
+      "exposure": "exposed",
+      "field_id": "IndustryCategoryPath",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CATEGORY",
+      "source_field": "IndustryCategoryPath",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Language' (string, Supermetrics catalog 2026-04-23). Section: INVENTORY.",
+      "exposure": "exposed",
+      "field_id": "Language",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "INVENTORY",
+      "source_field": "Language",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Metro' (string, Supermetrics catalog 2026-04-23). Section: GEO.",
+      "exposure": "exposed",
+      "field_id": "Metro",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "Metro",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'OperatingSystem' (string, Supermetrics catalog 2026-04-23). Section: PLATFORM.",
+      "exposure": "exposed",
+      "field_id": "OperatingSystem",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PLATFORM",
+      "source_field": "OperatingSystem",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'OperatingSystemVersion' (string, Supermetrics catalog 2026-04-23). Section: PLATFORM.",
+      "exposure": "exposed",
+      "field_id": "OperatingSystemVersion",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PLATFORM",
+      "source_field": "OperatingSystemVersion",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PartnerCostAdvCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: COST.",
+      "exposure": "exposed",
+      "field_id": "PartnerCostAdvCurrency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COST",
+      "source_field": "PartnerCostAdvCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PartnerCostPartnerCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: COST.",
+      "exposure": "exposed",
+      "field_id": "PartnerCostPartnerCurrency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COST",
+      "source_field": "PartnerCostPartnerCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PartnerCostUsd' (decimal, Supermetrics catalog 2026-04-23). Section: COST.",
+      "exposure": "exposed",
+      "field_id": "PartnerCostUsd",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COST",
+      "source_field": "PartnerCostUsd",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PartnerCurrencyCode' (decimal, Supermetrics catalog 2026-04-23). Section: PARTNER.",
+      "exposure": "exposed",
+      "field_id": "PartnerCurrencyCode",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "PARTNER",
+      "source_field": "PartnerCurrencyCode",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PartnerId' (string, Supermetrics catalog 2026-04-23). Section: PARTNER.",
+      "exposure": "exposed",
+      "field_id": "PartnerId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PARTNER",
+      "source_field": "PartnerId",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PartnerIntegerID' (string, Supermetrics catalog 2026-04-23). Section: DEPRECATED. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "PartnerIntegerID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPRECATED",
+      "source_field": "PartnerIntegerID",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Player25Complete' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "Player25Complete",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "Player25Complete",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Player50Complete' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "Player50Complete",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "Player50Complete",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Player75Complete' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "Player75Complete",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "Player75Complete",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerClose' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerClose",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerClose",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerCollapse' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerCollapse",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerCollapse",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerCompletedViews' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerCompletedViews",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerCompletedViews",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerEngagedViews' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerEngagedViews",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerEngagedViews",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerErrors' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerErrors",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerErrors",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerExpansion' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerExpansion",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerExpansion",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerFullscreen' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerFullscreen",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerFullscreen",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerInvitationAccept' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerInvitationAccept",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerInvitationAccept",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerMute' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerMute",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerMute",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerPause' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerPause",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerPause",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerResume' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerResume",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerResume",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerRewind' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerRewind",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerRewind",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerSkip' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerSkip",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerSkip",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerStarts' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerStarts",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerStarts",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerUnmute' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerUnmute",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerUnmute",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'PlayerViews' (decimal, Supermetrics catalog 2026-04-23). Section: PLAYER.",
+      "exposure": "exposed",
+      "field_id": "PlayerViews",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLAYER",
+      "source_field": "PlayerViews",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'RecencyGroup' (string, Supermetrics catalog 2026-04-23). Section: RECENCY.",
+      "exposure": "exposed",
+      "field_id": "RecencyGroup",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "RECENCY",
+      "source_field": "RecencyGroup",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'RecencyGroupEnd' (decimal, Supermetrics catalog 2026-04-23). Section: RECENCY.",
+      "exposure": "exposed",
+      "field_id": "RecencyGroupEnd",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "RECENCY",
+      "source_field": "RecencyGroupEnd",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'RecencyGroupStart' (decimal, Supermetrics catalog 2026-04-23). Section: RECENCY.",
+      "exposure": "exposed",
+      "field_id": "RecencyGroupStart",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "RECENCY",
+      "source_field": "RecencyGroupStart",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Region' (string, Supermetrics catalog 2026-04-23). Section: GEO.",
+      "exposure": "exposed",
+      "field_id": "Region",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "Region",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'SampledTrackedImpressions' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "SampledTrackedImpressions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "SampledTrackedImpressions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'SampledViewedImpressions' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "SampledViewedImpressions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "SampledViewedImpressions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'Site' (string, Supermetrics catalog 2026-04-23). Section: INVENTORY.",
+      "exposure": "exposed",
+      "field_id": "Site",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "INVENTORY",
+      "source_field": "Site",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'SiteCategoryBidFactor' (string, Supermetrics catalog 2026-04-23). Section: INVENTORY.",
+      "exposure": "exposed",
+      "field_id": "SiteCategoryBidFactor",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "INVENTORY",
+      "source_field": "SiteCategoryBidFactor",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'SiteListDescription' (string, Supermetrics catalog 2026-04-23). Section: DEPRECATED. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "SiteListDescription",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPRECATED",
+      "source_field": "SiteListDescription",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'SiteListID' (string, Supermetrics catalog 2026-04-23). Section: DEPRECATED. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "SiteListID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPRECATED",
+      "source_field": "SiteListID",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'SiteListName' (string, Supermetrics catalog 2026-04-23). Section: DEPRECATED. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "SiteListName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPRECATED",
+      "source_field": "SiteListName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'SiteListPermissions' (string, Supermetrics catalog 2026-04-23). Section: DEPRECATED. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "SiteListPermissions",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEPRECATED",
+      "source_field": "SiteListPermissions",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'SupplyVendor' (string, Supermetrics catalog 2026-04-23). Section: LEGACY. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "SupplyVendor",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LEGACY",
+      "source_field": "SupplyVendor",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'SupplyVendorIntegerID' (string, Supermetrics catalog 2026-04-23). Section: LEGACY. DEPRECATED/LEGACY TTD column: still queryable for historical windows (data before the deprecation date). For newer data prefer the superseding column (e.g. 'Selling party name/ID' replaces SupplyVendor -- probe-to-confirm facet).",
+      "exposure": "exposed",
+      "field_id": "SupplyVendorIntegerID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LEGACY",
+      "source_field": "SupplyVendorIntegerID",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion01' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion01",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion01",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion01Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion01Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion01Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion02' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion02",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion02",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion02Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion02Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion02Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion03' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion03",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion03",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion03Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion03Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion03Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion04' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion04",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion04",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion04Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion04Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion04Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion05' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion05",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion05",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion05Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion05Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion05Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion06' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion06",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion06",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TimeWeightedDecayConversion06Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "TimeWeightedDecayConversion06Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "TimeWeightedDecayConversion06Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalBidAmountAdvCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalBidAmountAdvCurrency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalBidAmountAdvCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalBidAmountPartnerCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalBidAmountPartnerCurrency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalBidAmountPartnerCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalBidAmountUsd' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalBidAmountUsd",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalBidAmountUsd",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalClickConversionRevenue' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalClickConversionRevenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalClickConversionRevenue",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalClickConversions' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalClickConversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalClickConversions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversion01' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversion01",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversion01",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversion02' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversion02",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversion02",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversion03' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversion03",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversion03",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversion04' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversion04",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversion04",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversion05' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversion05",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversion05",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversion06' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversion06",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversion06",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversionRevenue01' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversionRevenue01",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversionRevenue01",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversionRevenue02' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversionRevenue02",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversionRevenue02",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversionRevenue03' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversionRevenue03",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversionRevenue03",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversionRevenue04' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversionRevenue04",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversionRevenue04",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversionRevenue05' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversionRevenue05",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversionRevenue05",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversionRevenue06' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversionRevenue06",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversionRevenue06",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversionTouch' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversionTouch",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversionTouch",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalConversionTouchRevenue' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalConversionTouchRevenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalConversionTouchRevenue",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalTimeWeightedDecayConversionRevenue' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalTimeWeightedDecayConversionRevenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalTimeWeightedDecayConversionRevenue",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalTimeWeightedDecayConversions' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalTimeWeightedDecayConversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalTimeWeightedDecayConversions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalViewThroughConversionRevenue' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalViewThroughConversionRevenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalViewThroughConversionRevenue",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TotalViewThroughConversions' (decimal, Supermetrics catalog 2026-04-23). Section: PERFORMANCE.",
+      "exposure": "exposed",
+      "field_id": "TotalViewThroughConversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PERFORMANCE",
+      "source_field": "TotalViewThroughConversions",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TtdCostAdvCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: COST.",
+      "exposure": "exposed",
+      "field_id": "TtdCostAdvCurrency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COST",
+      "source_field": "TtdCostAdvCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TtdCostPartnerCurrency' (decimal, Supermetrics catalog 2026-04-23). Section: COST.",
+      "exposure": "exposed",
+      "field_id": "TtdCostPartnerCurrency",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COST",
+      "source_field": "TtdCostPartnerCurrency",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'TtdCostUsd' (decimal, Supermetrics catalog 2026-04-23). Section: COST.",
+      "exposure": "exposed",
+      "field_id": "TtdCostUsd",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COST",
+      "source_field": "TtdCostUsd",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion01' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion01",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion01",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion01Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion01Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion01Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion02' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion02",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion02",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion02Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion02Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion02Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion03' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion03",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion03",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion03Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion03Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion03Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion04' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion04",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion04",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion04Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion04Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion04Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion05' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion05",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion05",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion05Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion05Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion05Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion06' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion06",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion06",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversion06Revenue' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversion06Revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversion06Revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversionCurrency01' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversionCurrency01",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversionCurrency01",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversionCurrency02' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversionCurrency02",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversionCurrency02",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversionCurrency03' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversionCurrency03",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversionCurrency03",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversionCurrency04' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversionCurrency04",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversionCurrency04",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversionCurrency05' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversionCurrency05",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversionCurrency05",
+      "tier": "standard"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'ViewThroughConversionCurrency06' (decimal, Supermetrics catalog 2026-04-23). Section: CONVERSIONS.",
+      "exposure": "exposed",
+      "field_id": "ViewThroughConversionCurrency06",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversionCurrency06",
+      "tier": "standard"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'dataSourceName' (string) -- run metadata (DATASOURCE section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "dataSourceName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DATASOURCE",
+      "source_field": "dataSourceName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'date' (date, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'dayOfMonth' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "dayOfMonth",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "dayOfMonth",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'dayOfWeekName' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "dayOfWeekName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "dayOfWeekName",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'dayOfWeekNameIso' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "dayOfWeekNameIso",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "dayOfWeekNameIso",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'month' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "month",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "month",
+      "tier": "core"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.data_source_login_owners' (string) -- run metadata (DATASOURCE section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.data_source_login_owners",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DATASOURCE",
+      "source_field": "system_metadata.data_source_login_owners",
+      "tier": "advanced"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.data_source_logins' (string) -- run metadata (DATASOURCE section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.data_source_logins",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DATASOURCE",
+      "source_field": "system_metadata.data_source_logins",
+      "tier": "advanced"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.query_accounts' (string) -- run metadata (QUERY section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.query_accounts",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "QUERY",
+      "source_field": "system_metadata.query_accounts",
+      "tier": "advanced"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.query_date_end' (date) -- run metadata (QUERY section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.query_date_end",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "QUERY",
+      "source_field": "system_metadata.query_date_end",
+      "tier": "advanced"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.query_date_range_end' (date) -- run metadata (QUERY section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.query_date_range_end",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "QUERY",
+      "source_field": "system_metadata.query_date_range_end",
+      "tier": "advanced"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.query_date_range_start' (date) -- run metadata (QUERY section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.query_date_range_start",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "QUERY",
+      "source_field": "system_metadata.query_date_range_start",
+      "tier": "advanced"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.query_date_start' (date) -- run metadata (QUERY section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.query_date_start",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "QUERY",
+      "source_field": "system_metadata.query_date_start",
+      "tier": "advanced"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.query_duration' (integer) -- run metadata (QUERY section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.query_duration",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "QUERY",
+      "source_field": "system_metadata.query_duration",
+      "tier": "advanced"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.query_excluded_accounts' (string) -- run metadata (QUERY section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.query_excluded_accounts",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "QUERY",
+      "source_field": "system_metadata.query_excluded_accounts",
+      "tier": "advanced"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.query_filters' (string) -- run metadata (QUERY section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.query_filters",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "QUERY",
+      "source_field": "system_metadata.query_filters",
+      "tier": "advanced"
+    },
+    {
+      "description": "Supermetrics connector plumbing 'system_metadata.query_timezone' (string) -- run metadata (QUERY section), NOT a TTD MyReports column. Excluded: enrichment-only.",
+      "exclusion_reason": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+      "exposure": "excluded",
+      "field_id": "system_metadata.query_timezone",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "QUERY",
+      "source_field": "system_metadata.query_timezone",
+      "tier": "advanced"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'timeZone' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "timeZone",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "timeZone",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'today' (date, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "today",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "today",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'week' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "week",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "week",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'weekIso' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "weekIso",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "weekIso",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'year' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "year",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "year",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'yearMonth' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "yearMonth",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "yearMonth",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'yearOfWeek' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "yearOfWeek",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "yearOfWeek",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'yearOfWeekIso' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "yearOfWeekIso",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "yearOfWeekIso",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'yearWeek' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "yearWeek",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "yearWeek",
+      "tier": "core"
+    },
+    {
+      "description": "The Trade Desk MyReports column 'yearWeekIso' (string, Supermetrics catalog 2026-04-23). Section: TIME.",
+      "exposure": "exposed",
+      "field_id": "yearWeekIso",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "yearWeekIso",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://partner.thetradedesk.com/v3/portal/api/ref/get-myreports-reportschedule-facets"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://docs.supermetrics.com/docs/the-trade-desk-fields.md"
+    }
+  ]
+}

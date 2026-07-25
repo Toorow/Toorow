@@ -1,0 +1,89 @@
+version: 2
+
+sources:
+  - name: raw_linkedin
+    description: "LinkedIn Ads raw data landed by connector.pull() (Story 15.3)"
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_linkedin_ads_daily
+        description: >
+          Lignes brutes issues de l'API LinkedIn adAnalytics (endpoint REST versionnee
+          2026-06, verifie AI-53 2026-07-19). Deux grains coexistant distingues par
+          data_level : CAMPAIGN et CAMPAIGN_GROUP.
+
+models:
+  - name: stg_linkedin_ads_campaign_daily
+    description: >
+      Staging LinkedIn Ads grain CAMPAIGN daily. Une ligne par (project_id, date,
+      campaign_id). data_level='CAMPAIGN'. Metriques canoniques : cost, impressions,
+      clicks, conversions (externalWebsiteConversions), leads
+      (leadGenerationMailContactInfoShares). Supersede dedup par QUALIFY.
+    columns:
+      - name: date
+        description: "Date de rapport ISO-8601 (YYYY-MM-DD)"
+      - name: data_level
+        description: "Pivot LinkedIn : toujours 'CAMPAIGN' dans ce modele"
+        tests:
+          - accepted_values:
+              values: ["CAMPAIGN"]
+      - name: campaign_id
+        description: "Identifiant numerique de la campagne LinkedIn (issu de l'URN)"
+        tests:
+          - not_null
+      - name: cost
+        description: "Depense normalisee en devise canonique du projet (AD-6)"
+      - name: conversions
+        description: >
+          Conversions web REVENDIQUEES par LinkedIn (externalWebsiteConversions,
+          fenetre 30j clic / 7j vue par defaut). AD-4 : jamais sommees sans dedup.
+      - name: leads
+        description: >
+          Soumissions Lead Gen Form in-app LinkedIn
+          (leadGenerationMailContactInfoShares). Metrique DISTINCTE de conversions.
+      - name: pull_id
+        description: "ULID du pull -- provenance (AD-7)"
+        tests:
+          - not_null
+    tests:
+      # Grain uniqueness (AI-05) -- pattern tiktok-ads (dbt_utils n'est pas installe).
+      - unique:
+          name: stg_linkedin_ads_campaign_grain_unique
+          arguments:
+            column_name: >
+              project_id || '|' || date || '|' || campaign_id
+
+  - name: stg_linkedin_ads_campaign_group_daily
+    description: >
+      Staging LinkedIn Ads grain CAMPAIGN_GROUP daily. Une ligne par
+      (project_id, date, campaign_group_id). data_level='CAMPAIGN_GROUP'.
+      Roll-up des campagnes du groupe. Ne pas sommer avec stg_linkedin_ads_campaign_daily
+      sur la meme date (double-compte).
+    columns:
+      - name: date
+        description: "Date de rapport ISO-8601 (YYYY-MM-DD)"
+      - name: data_level
+        description: "Pivot LinkedIn : toujours 'CAMPAIGN_GROUP' dans ce modele"
+        tests:
+          - accepted_values:
+              values: ["CAMPAIGN_GROUP"]
+      - name: campaign_group_id
+        description: "Identifiant numerique du campaign group LinkedIn"
+        tests:
+          - not_null
+      - name: cost
+        description: "Depense normalisee en devise canonique du projet (AD-6)"
+      - name: conversions
+        description: >
+          Conversions web REVENDIQUEES par LinkedIn (externalWebsiteConversions)
+          au niveau du campaign group. AD-4 : jamais sommees sans dedup.
+      - name: pull_id
+        description: "ULID du pull -- provenance (AD-7)"
+        tests:
+          - not_null
+    tests:
+      # Grain uniqueness (AI-05) -- pattern tiktok-ads (dbt_utils n'est pas installe).
+      - unique:
+          name: stg_linkedin_ads_campaign_group_grain_unique
+          arguments:
+            column_name: >
+              project_id || '|' || date || '|' || campaign_group_id

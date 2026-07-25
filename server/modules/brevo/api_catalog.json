@@ -1,0 +1,157 @@
+{
+  "api_version": "v3",
+  "catalog_version": "1",
+  "connector": "brevo",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Opaque OAuth account id.",
+      "exposure": "exposed",
+      "field_id": "account_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "account.id",
+      "tier": "core"
+    },
+    {
+      "description": "Email, SMS, transactional or contacts snapshot channel.",
+      "exposure": "exposed",
+      "field_id": "channel",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "channel",
+      "tier": "core"
+    },
+    {
+      "description": "Click counter.",
+      "exposure": "exposed",
+      "field_id": "clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "statistics.globalStats.clickers",
+      "tier": "core"
+    },
+    {
+      "description": "Point-in-time list size snapshot.",
+      "exposure": "exposed",
+      "field_id": "contact_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "totalSubscribers",
+      "tier": "core"
+    },
+    {
+      "description": "Campaign/event/list day.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "DIMENSION",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "Messages delivered.",
+      "exposure": "exposed",
+      "field_id": "delivered",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "statistics.globalStats.delivered",
+      "tier": "core"
+    },
+    {
+      "description": "One immutable transactional event.",
+      "exposure": "exposed",
+      "field_id": "event_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "event",
+      "tier": "core"
+    },
+    {
+      "description": "Immutable transactional event type.",
+      "exposure": "exposed",
+      "field_id": "event_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "event",
+      "tier": "core"
+    },
+    {
+      "description": "Hard bounces.",
+      "exposure": "exposed",
+      "field_id": "hard_bounces",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "statistics.globalStats.hardBounces",
+      "tier": "core"
+    },
+    {
+      "description": "Open counter; unique semantics stay full-grain.",
+      "exposure": "exposed",
+      "field_id": "opens",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "statistics.globalStats.uniqueViews",
+      "tier": "core"
+    },
+    {
+      "description": "Project-salted hash; raw personal identifier is excluded.",
+      "exclusion_reason": "protected-or-excluded: raw personal identifier is replaced by a project-scoped hash",
+      "exposure": "excluded",
+      "field_id": "protected_identifier",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PERSONAL_DATA",
+      "source_field": "email",
+      "tier": "advanced"
+    },
+    {
+      "description": "Messages sent.",
+      "exposure": "exposed",
+      "field_id": "sent",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "statistics.globalStats.sent",
+      "tier": "core"
+    },
+    {
+      "description": "Campaign, event or list source id.",
+      "exposure": "exposed",
+      "field_id": "source_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "id",
+      "tier": "core"
+    },
+    {
+      "description": "Unsubscriptions.",
+      "exposure": "exposed",
+      "field_id": "unsubscribed",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "statistics.globalStats.unsubscriptions",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-22",
+      "kind": "official",
+      "url": "https://developers.brevo.com/reference/get-email-event-report"
+    }
+  ]
+}

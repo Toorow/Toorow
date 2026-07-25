@@ -1,0 +1,412 @@
+[
+  {
+    "field_id": "recipients",
+    "source_field": "recipients",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total number of unique recipients for the campaign or flow message. Official Klaviyo statistic (OpenAPI spec). Note: the connector previously mapped this as 'sends' — that is a drift; 'sends' is not a valid Klaviyo reporting statistic.",
+    "section": "DELIVERY",
+    "_note": "DRIFT: manifest field_id='sends' / source_field='sends' does NOT match the official API. Official statistic is 'recipients'. This is the field that was historically referred to as sends."
+  },
+  {
+    "field_id": "opens",
+    "source_field": "opens",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total number of email or SMS opens.",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "field_id": "opens_unique",
+    "source_field": "opens_unique",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Unique opens (one per recipient per message).",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "field_id": "open_rate",
+    "source_field": "open_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Ratio of opens to delivered messages.",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "field_id": "clicks",
+    "source_field": "clicks",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total number of clicks on links in the message.",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "field_id": "clicks_unique",
+    "source_field": "clicks_unique",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Unique clicks (one per recipient per message).",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "field_id": "click_rate",
+    "source_field": "click_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Ratio of clicks to delivered messages.",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "field_id": "click_to_open_rate",
+    "source_field": "click_to_open_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Ratio of clicks to opens.",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "field_id": "delivered",
+    "source_field": "delivered",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of messages successfully delivered to recipient inboxes or devices.",
+    "section": "DELIVERY"
+  },
+  {
+    "field_id": "delivery_rate",
+    "source_field": "delivery_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Ratio of delivered messages to total recipients.",
+    "section": "DELIVERY"
+  },
+  {
+    "field_id": "bounced",
+    "source_field": "bounced",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of hard and soft bounced messages.",
+    "section": "DELIVERY"
+  },
+  {
+    "field_id": "bounced_or_failed",
+    "source_field": "bounced_or_failed",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of messages that bounced or failed delivery.",
+    "section": "DELIVERY"
+  },
+  {
+    "field_id": "bounced_or_failed_rate",
+    "source_field": "bounced_or_failed_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Ratio of bounced or failed messages to total recipients.",
+    "section": "DELIVERY"
+  },
+  {
+    "field_id": "bounce_rate",
+    "source_field": "bounce_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Ratio of bounced messages to total recipients.",
+    "section": "DELIVERY"
+  },
+  {
+    "field_id": "failed",
+    "source_field": "failed",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of messages that failed to send (carrier or system error, SMS).",
+    "section": "DELIVERY"
+  },
+  {
+    "field_id": "failed_rate",
+    "source_field": "failed_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Ratio of failed messages to total recipients.",
+    "section": "DELIVERY"
+  },
+  {
+    "field_id": "conversions",
+    "source_field": "conversions",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of attributed conversions (placed orders or configured conversion metric) within the attribution window.",
+    "section": "CONVERSION"
+  },
+  {
+    "field_id": "conversion_uniques",
+    "source_field": "conversion_uniques",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Unique converters (one per recipient).",
+    "section": "CONVERSION"
+  },
+  {
+    "field_id": "conversion_rate",
+    "source_field": "conversion_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Ratio of conversions to total recipients.",
+    "section": "CONVERSION"
+  },
+  {
+    "field_id": "conversion_value",
+    "source_field": "conversion_value",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Total monetary value of attributed conversions (revenue). Official name of what the connector calls 'revenue' or 'attributed_revenue'.",
+    "section": "CONVERSION",
+    "_note": "DRIFT: manifest field_id='attributed_revenue' / source_field='revenue' does NOT match official name. Official statistic is 'conversion_value'."
+  },
+  {
+    "field_id": "average_order_value",
+    "source_field": "average_order_value",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Average order value of attributed conversions.",
+    "section": "CONVERSION"
+  },
+  {
+    "field_id": "revenue_per_recipient",
+    "source_field": "revenue_per_recipient",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Attributed revenue divided by total recipients.",
+    "section": "CONVERSION"
+  },
+  {
+    "field_id": "spam_complaints",
+    "source_field": "spam_complaints",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of recipients who marked the message as spam.",
+    "section": "COMPLIANCE"
+  },
+  {
+    "field_id": "spam_complaint_rate",
+    "source_field": "spam_complaint_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Ratio of spam complaints to total recipients.",
+    "section": "COMPLIANCE"
+  },
+  {
+    "field_id": "unsubscribes",
+    "source_field": "unsubscribes",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of recipients who unsubscribed after receiving the message.",
+    "section": "COMPLIANCE"
+  },
+  {
+    "field_id": "unsubscribe_uniques",
+    "source_field": "unsubscribe_uniques",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Unique unsubscribers (one per recipient).",
+    "section": "COMPLIANCE"
+  },
+  {
+    "field_id": "unsubscribe_rate",
+    "source_field": "unsubscribe_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Ratio of unsubscribes to total recipients.",
+    "section": "COMPLIANCE"
+  },
+  {
+    "field_id": "message_segment_count_sum",
+    "source_field": "message_segment_count_sum",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total number of SMS message segments sent (one SMS may span multiple segments).",
+    "section": "SMS"
+  },
+  {
+    "field_id": "text_message_credit_usage_amount",
+    "source_field": "text_message_credit_usage_amount",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Total SMS credits consumed for the period.",
+    "section": "SMS"
+  },
+  {
+    "field_id": "text_message_roi",
+    "source_field": "text_message_roi",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Return on investment for SMS messages (conversion_value / text_message_spend).",
+    "section": "SMS"
+  },
+  {
+    "field_id": "text_message_spend",
+    "source_field": "text_message_spend",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Total monetary spend on SMS messages for the period.",
+    "section": "SMS"
+  },
+  {
+    "field_id": "date",
+    "source_field": "date",
+    "kind": "dimension",
+    "data_type": "date",
+    "description": "Reporting date (daily grain from the interval parameter of the series endpoint).",
+    "section": "TIME"
+  },
+  {
+    "field_id": "campaign_id",
+    "source_field": "campaign_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier of the Klaviyo campaign. Required grouping field on campaign-values-reports.",
+    "section": "CAMPAIGN"
+  },
+  {
+    "field_id": "campaign_message_id",
+    "source_field": "campaign_message_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier of the campaign message (variant). Required grouping field on campaign-values-reports.",
+    "section": "CAMPAIGN"
+  },
+  {
+    "field_id": "campaign_message_name",
+    "source_field": "campaign_message_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Name of the campaign message variant.",
+    "section": "CAMPAIGN"
+  },
+  {
+    "field_id": "send_channel",
+    "source_field": "send_channel",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Send channel for the message (email or sms).",
+    "section": "CAMPAIGN"
+  },
+  {
+    "field_id": "tag_id",
+    "source_field": "tag_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier of the Klaviyo tag applied to the campaign or flow.",
+    "section": "CAMPAIGN"
+  },
+  {
+    "field_id": "tag_name",
+    "source_field": "tag_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Name of the Klaviyo tag applied to the campaign or flow.",
+    "section": "CAMPAIGN"
+  },
+  {
+    "field_id": "text_message_format",
+    "source_field": "text_message_format",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Format of the SMS message (e.g. MMS, SMS).",
+    "section": "SMS"
+  },
+  {
+    "field_id": "variation",
+    "source_field": "variation",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "A/B test variation identifier.",
+    "section": "CAMPAIGN"
+  },
+  {
+    "field_id": "variation_name",
+    "source_field": "variation_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "A/B test variation name.",
+    "section": "CAMPAIGN"
+  },
+  {
+    "field_id": "flow_id",
+    "source_field": "flow_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier of the Klaviyo flow. Required grouping field on flow-values-reports.",
+    "section": "FLOW"
+  },
+  {
+    "field_id": "flow_message_id",
+    "source_field": "flow_message_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier of the flow message step. Required grouping field on flow-values-reports.",
+    "section": "FLOW"
+  },
+  {
+    "field_id": "flow_message_name",
+    "source_field": "flow_message_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Name of the flow message step.",
+    "section": "FLOW"
+  },
+  {
+    "field_id": "flow_name",
+    "source_field": "flow_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Name of the Klaviyo flow.",
+    "section": "FLOW"
+  },
+  {
+    "field_id": "group",
+    "source_field": "group",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Campaign group identifier (campaign-values-reports grouping field).",
+    "section": "CAMPAIGN"
+  },
+  {
+    "field_id": "group_name",
+    "source_field": "group_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Campaign group name (campaign-values-reports grouping field).",
+    "section": "CAMPAIGN"
+  },
+  {
+    "field_id": "attributed_conversions",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "attributed conversions exposed by Klaviyo. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "conversions"
+  },
+  {
+    "field_id": "attributed_revenue",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "attributed revenue exposed by Klaviyo. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "revenue"
+  },
+  {
+    "field_id": "campaign_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "campaign name exposed by Klaviyo. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "campaign_name"
+  },
+  {
+    "field_id": "sends",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "sends exposed by Klaviyo. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "sends"
+  }
+]

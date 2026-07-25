@@ -1,0 +1,206 @@
+/**
+ * notebooks.css — page-specific styles for NotebooksPanel (v3 restyle).
+ *
+ * Follows the sources.css / data-workspace.css conventions: shell/layout classes
+ * (panel, page-header, header-actions, selector, buttons, signal-label,
+ * signal-mark, table-scroll, sr-only) already live in application.css and are
+ * global. This file only adds the Notebooks-specific pieces: the accounts-style
+ * table, the per-cell layouts (title + schedule badge, report ref, schedule
+ * toggle, run action), and the run-result inline note.
+ *
+ * Tokenized: every color references an application.css CSS variable so the page
+ * is dark-safe. Numbers (last-run timestamps, window rules) use the Geist
+ * tabular treatment via .number / the table cell rules below.
+ */
+
+.notebooks-panel {
+  overflow: hidden;
+}
+.notebooks-panel-header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.notebooks-panel-header h2 {
+  margin: 0;
+  font: 600 19px "Lexend", sans-serif;
+}
+.notebooks-panel-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notebooks-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.notebooks-table th {
+  height: 42px;
+  padding: 0 16px;
+  background: var(--page);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+.notebooks-table td {
+  height: 72px;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.notebooks-table th:nth-child(1) { width: 26%; }
+.notebooks-table th:nth-child(2) { width: 20%; }
+.notebooks-table th:nth-child(3) { width: 12%; }
+.notebooks-table th:nth-child(4) { width: 15%; }
+.notebooks-table th:nth-child(5) { width: 13%; }
+.notebooks-table th:nth-child(6) { width: 14%; }
+.notebooks-table td.actions-cell { text-align: right; }
+
+/* Numeric / machine cells: last-run timestamp + window rule use Geist tabular. */
+.notebooks-table .number {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.notebook-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.notebook-title strong {
+  font-weight: 700;
+}
+
+/* "Scheduled" pill — an info-tinted chip, tokenized so it reads in dark. */
+.schedule-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--info) 40%, var(--surface));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--info) 10%, var(--surface));
+  color: var(--info);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.report-ref {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Window-rule pill: neutral chip. */
+.window-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.schedule-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.schedule-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--info);
+  cursor: pointer;
+}
+.schedule-toggle input:disabled,
+.schedule-toggle input:disabled + span {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.notebooks-run-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.notebooks-run-actions .run-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+  fill: currentColor;
+}
+
+/* Inline run-result note (success or error), mirroring sources.css inline-note. */
+.notebooks-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 15px 17px;
+  border: 1px solid color-mix(in srgb, var(--info) 28%, var(--surface));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--info) 8%, var(--surface));
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.notebooks-note.error {
+  border-color: color-mix(in srgb, var(--error) 32%, var(--surface));
+  background: color-mix(in srgb, var(--error) 9%, var(--surface));
+}
+
+/* Loading / empty / error page states. */
+.notebooks-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.notebooks-empty {
+  padding: 40px 20px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.notebooks-empty code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* Small inline spinner reusing the application.css spin keyframes. */
+.notebooks-spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 2px solid var(--track);
+  border-top-color: var(--info);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notebooks-spinner { animation: none; border-color: var(--info); }
+}

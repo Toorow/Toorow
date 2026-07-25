@@ -1,0 +1,925 @@
+{
+    "schema_version": "1.2",
+    "name": "google-analytics",
+    "display_name": "Google Analytics 4",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "analytics_product",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "auth_type": "google_direct",
+    "report_profiles": [
+        {
+            "id": "standard_daily",
+            "display_name": "Standard Daily Report",
+            "metrics": [
+                "sessions",
+                "active_users",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "device_category",
+                "country"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": 150
+        },
+        {
+            "id": "user_type_daily",
+            "display_name": "User Type Daily Report",
+            "metrics": [
+                "sessions",
+                "active_users",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "newVsReturning"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": 9
+        },
+        {
+            "id": "pages_daily_landing",
+            "display_name": "Entry Pages Daily Report (limited ranking)",
+            "_comment": "Epic 10 story 10.3: entry pages = sessions by GA4 landingPage. Story 10.3 Task 1 design decision: landingPage and pagePath are DISTINCT GA4 dimensions; a single runReport with BOTH produces a landingPage x pagePath cross-join (cardinality explosion). Entry pages and top pages are two independent marginal top-N lists with NO join needed (unlike GSC query>page in 10.5). So TWO report profiles, each a single-dimension top-N runReport. This profile: sessions by landingPage, orderBys sessions DESC + limit=page_top_n. row_limit is the page_top_n bound (default 50, bounded 10..200). verification_expected_rows_per_day <= 1 metric-carrier x N (upper bound, NOT exact: the long tail beyond N is dropped by design).",
+            "metrics": [
+                "sessions"
+            ],
+            "dimensions": [
+                "date",
+                "landing_page"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 50,
+                "row_limit_min": 10,
+                "row_limit_max": 200,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": 50
+        },
+        {
+            "id": "pages_daily_paths",
+            "display_name": "Top Pages Daily Report (limited ranking)",
+            "_comment": "Epic 10 story 10.3: most-viewed pages = screen_page_views by GA4 pagePath. Second of the two page profiles (see pages_daily_landing _comment for the cross-join rationale). AI-53 honesty: the screenPageViews metric name is DECLARED per the api-schema but NOT verified live (no GA4 property connected). AC 11 / AI-13 confirms the exact metric name at the first live pass (Phase B gate); fallback if absent is sessions by pagePath (confirmed). row_limit is the page_top_n bound (default 50, bounded 10..200). verification_expected_rows_per_day <= 1 metric-carrier x N (upper bound; long tail beyond N dropped by design).",
+            "metrics": [
+                "screen_page_views"
+            ],
+            "dimensions": [
+                "date",
+                "page"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 50,
+                "row_limit_min": 10,
+                "row_limit_max": 200,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": 50
+        },
+        {
+            "id": "acquisition_daily_session",
+            "display_name": "Acquisition Daily Report - Last Click (limited ranking)",
+            "_comment": "Epic 16 story 16.1: last-click attribution = conversions + sessions by GA4 sessionSourceMedium x sessionCampaignName. AI-53 honesty: the sessionSourceMedium / sessionCampaignName dimension names are DECLARED per the GA4 Data API doc but NOT verified live (no GA4 property connected). AC11 / AI-13 confirms the exact dimension names via the properties/{p}/metadata endpoint at the first live pass (Phase B gate). This profile carries BOTH acquisition dimensions on the same runReport row (GA4 returns them jointly for the last-click axis); the mart derives TWO MARGINAL partitions (session_source_medium, session_campaign) from it -- this is NOT a cross-join between attribution axes (the forbidden cross-join is session x first-user). Separate runReport from acquisition_daily_first_user (two marginal pulls, 10.3 pattern). dimensions lead with 'date' (manifest contract). row_limit is the top-N bound (default 50, clamped 10..200 via _get_page_top_n); orderBys conversions DESC + limit=top_n. Long tail beyond N dropped by design. verification_expected_rows_per_day <= top_n (upper bound, NOT exact). Conversion-event filter (lead_event_name) is a project preference, NOT hardcoded -- BLOCKED Phase B (default = all conversions).",
+            "metrics": [
+                "conversions",
+                "sessions"
+            ],
+            "dimensions": [
+                "date",
+                "session_source_medium",
+                "session_campaign"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 50,
+                "row_limit_min": 10,
+                "row_limit_max": 200,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": 50
+        },
+        {
+            "id": "acquisition_daily_first_user",
+            "display_name": "Acquisition Daily Report - First Click (limited ranking)",
+            "_comment": "Epic 16 story 16.1: first-click attribution = conversions by GA4 firstUserSourceMedium. AI-53 honesty: firstUserSourceMedium is DECLARED per the GA4 Data API doc but NOT verified live (Phase B gate, AC11 / AI-13 confirms via metadata). Separate runReport from acquisition_daily_session (combining session x first-user dimensions in ONE runReport would produce a session x first-user cross-join -- cardinality explosion + semantic nonsense). dimensions lead with 'date'. row_limit is the top-N bound (default 50, clamped 10..200); orderBys conversions DESC + limit=top_n; long tail dropped by design. verification_expected_rows_per_day <= top_n (upper bound). Conversion-event filter (lead_event_name) BLOCKED Phase B (default = all conversions).",
+            "metrics": [
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "first_user_source_medium"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 50,
+                "row_limit_min": 10,
+                "row_limit_max": 200,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": 50
+        },
+        {
+            "id": "transactions_daily",
+            "display_name": "E-commerce Transactions Daily (by transaction)",
+            "_comment": "Epic 17 story 17.4: GA4 e-commerce transactions = conversions + purchaseRevenue by transactionId at the day grain. This is the GA4 side of the Shopify x GA4 reconciliation (doc/synthese §3.2): the transaction_reconciliation mart FULL OUTER JOINs stg_ga4_transactions_daily against stg_shopify_orders_daily by (project_id, date, transaction_id) and MEASURES the coverage rate. GRAIN DISCIPLINE (RULE ABSOLUE, lesson epic-10 + decision 15.4): the transaction grain is a JOIN KEY, NOT a breakdown partition -- per-transaction rows do NOT total the connector day, so this profile has NO fact_daily_kpi UNION block (contrast every other GA4 profile). The raw table feeds ONLY stg_ga4_transactions_daily -> transaction_reconciliation. AI-53 honesty: transactionId (GA4 Data API v1 e-commerce dimension) and conversions / purchaseRevenue metric names are DECLARED per the doc but NOT verified live (no property connected; e-commerce tracking is a property-level setup). AC / AI-13 confirms exact names via properties/{p}/metadata (Phase B gate). A lead-gen site with no e-commerce returns ZERO transaction rows -> reconciliation degrades to 'no GA4 transactions' honestly. dimensions lead with 'date' (manifest contract). PAGINATION (point dur): a day can carry more transactions than one page; unlike the acquisition/pages top-N leaderboards, transactions are a JOIN KEY -- dropping the tail would understate the coverage denominator, so the pull ORDER BY transactionId + pages on offset to completeness within a documented bound (row_limit = per-request page size, env GA4_TXN_LIMIT; _MAX_TXN_PAGES caps the offset loop; any truncation is logged, never silent). verification_expected_rows_per_day = null (transaction cardinality is unbounded per day; it is not a fixed-N leaderboard).",
+            "metrics": [
+                "conversions",
+                "purchase_revenue"
+            ],
+            "dimensions": [
+                "date",
+                "transaction_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 10000,
+                "row_limit_min": 50,
+                "row_limit_max": 100000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven Daily Report",
+            "_comment": "Story 25.9 (extends the 25.8 meta-ads reference): the catalog IS the execution contract. Any cataloged GA4 field a datastream selects is extractable at execution -- core validates the selection against api_catalog.json and passes it into pull_catalog_daily, which builds the runReport dimensions[]+metrics[] from the selection. selection_mode=catalog_driven; the metrics/dimensions listed here are the tier-core default carriers (what a None selection resolves to, pruned of realtime-incompatible minute dims). GA4 hard limits: a single runReport takes at most 10 metrics AND 9 dimensions; a wider selection CHUNKS into >1 runReport (date carried in every chunk; dimension-chunks cross metric-chunks) and the per-chunk rows MERGE on the (date, breakdown) grain key. Realtime-only minute dims (dateHourMinute/minute/nthMinute) are refused at request-build with invalid_request (catalog_sources.realtime_incompatible_fields). Lands in the dedicated long raw_ga4_catalog_daily (date, metric_name, metric_value, breakdown_dimension, breakdown_value). The legacy exact_bundle profiles + raw_ga4_standard_daily are UNTOUCHED (AD-22).",
+            "metrics": [
+                "sessions",
+                "active_users",
+                "conversions",
+                "screen_page_views",
+                "purchase_revenue"
+            ],
+            "dimensions": [
+                "date",
+                "device_category",
+                "country",
+                "newVsReturning",
+                "landing_page",
+                "page",
+                "session_source_medium"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        }
+    ],
+    "_error_map_note": "Story 25.7 (playbook step 4): google-analytics declares NO error_map. Rationale -- core.pull_errors._extract_provider_code reads error.code from the JSON body, and the GA4 Data API (like all Google APIs) sets error.code to the NUMERIC HTTP status (e.g. 401 for UNAUTHENTICATED, 403 for PERMISSION_DENIED). So any refinement key would be either redundant with the pure-HTTP classification (401:401->auth_expired already holds via _base_class_for_status) or unreachable: the actually-discriminating tokens Google returns (error.status string 'PERMISSION_DENIED' / 'RESOURCE_EXHAUSTED', or error.errors[].reason 'rateLimitExceeded' / 'userRateLimitExceeded') are NOT what the generic extractor keys on, and core must never hardcode a provider vocabulary (AD-2 / HG-1). The pure-HTTP mapping is correct for GA4: 401->auth_expired (reconnect), 403->permission_denied, 400->invalid_request (catalog drift), 5xx->provider_transient (retry), 429->RateLimitError (breaker, handled before classify_http_error). The connector's non-429 raise sites therefore call classify_http_error(status, body) with no map and are LEFT UNCHANGED. If GA4 ever needs a 403 quota-vs-permission split, the correct fix is a richer core extractor (read error.status), not a per-provider code map.",
+    "canonical_metric_mapping": {
+        "sessions": "sessions",
+        "activeUsers": "active_users",
+        "conversions": "conversions",
+        "screenPageViews": "screen_page_views",
+        "purchaseRevenue": "purchase_revenue"
+    },
+    "canonical_dimension_mapping": {
+        "deviceCategory": "device_category",
+        "country": "country",
+        "newVsReturning": "user_type",
+        "landingPage": "landing_page",
+        "pagePath": "page",
+        "sessionSourceMedium": "session_source_medium",
+        "sessionCampaignName": "session_campaign",
+        "firstUserSourceMedium": "first_user_source_medium",
+        "transactionId": "transaction_id"
+    },
+    "widget_ref": "ui://core/daily-report",
+    "account_topology": {
+        "_comment": "Story 25.5 (AC5): GA4 account hierarchy = account > property. The reporting entity (selection_level) is the PROPERTY (a GA4 runReport targets properties/{id}). discover_accounts lists what the token can reach via the GA Admin API accountSummaries.list; core owns selection/access-check/trial/backfill. Additive per AD-2: core reads levels/selection_level/discovery generically, never GA4 vocabulary.",
+        "levels": [
+            {
+                "id": "account",
+                "label": "Account"
+            },
+            {
+                "id": "property",
+                "label": "Property"
+            }
+        ],
+        "selection_level": "property",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    },
+    "quota": {
+        "_comment": "Placeholder values for GA4 Data API Standard quota. GA4 quota is project-based (not per-minute points like Meta). These conservative values ensure the circuit breaker engages only on explicit 429 responses. Adjust based on observed project-level usage. See: https://developers.google.com/analytics/devguides/reporting/data/v1/quotas",
+        "window_seconds": 60,
+        "budget_points": 10,
+        "read_cost": 1,
+        "write_cost": 1
+    },
+    "source_capabilities": {
+        "contract_version": "1",
+        "time_context": {"locus": "property", "fallback": "gap"},
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "sessions",
+                "source_field": "sessions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "sessions exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "sessions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "active_users",
+                "source_field": "activeUsers",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "active users exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "active_users",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "conversions",
+                "source_field": "conversions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "conversions exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "conversions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "date",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "date exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "device_category",
+                "source_field": "deviceCategory",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "device category exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "device"
+                ],
+                "canonical_target": "device_category",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "country",
+                "source_field": "country",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "country exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "geography"
+                ],
+                "canonical_target": "country",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "newVsReturning",
+                "source_field": "newVsReturning",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "newVsReturning exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "user_type",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "landing_page",
+                "source_field": "landingPage",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "landing page exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "content"
+                ],
+                "canonical_target": "landing_page",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "screen_page_views",
+                "source_field": "screenPageViews",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "screen page views exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "screen_page_views",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "page",
+                "source_field": "pagePath",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "page exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "content"
+                ],
+                "canonical_target": "page",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "session_source_medium",
+                "source_field": "sessionSourceMedium",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "session source medium exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "session_source_medium",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "session_campaign",
+                "source_field": "sessionCampaignName",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "session campaign exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "session_campaign",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "first_user_source_medium",
+                "source_field": "firstUserSourceMedium",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "first user source medium exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "first_user_source_medium",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "purchase_revenue",
+                "source_field": "purchaseRevenue",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "purchase revenue exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "purchase_revenue",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "transaction_id",
+                "source_field": "transactionId",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "transaction id exposed by Google Analytics 4.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "transaction_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "standard_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "sessions",
+                    "active_users",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "device_category",
+                    "country"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "device_category",
+                        "country"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "unknown",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 60,
+                    "supported_modes": [
+                        "manual",
+                        "hourly",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull"
+                }
+            },
+            {
+                "id": "user_type_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "sessions",
+                    "active_users",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "newVsReturning"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "newVsReturning"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "unknown",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 60,
+                    "supported_modes": [
+                        "manual",
+                        "hourly",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_user_type_daily"
+                }
+            },
+            {
+                "id": "pages_daily_landing",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "sessions"
+                ],
+                "dimensions": [
+                    "date",
+                    "landing_page"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "landing_page"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "top_n",
+                    "max_pages": null,
+                    "row_limit": 50,
+                    "truncation_signal": "explicit"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 60,
+                    "supported_modes": [
+                        "manual",
+                        "hourly",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_pages_daily_landing"
+                }
+            },
+            {
+                "id": "pages_daily_paths",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "screen_page_views"
+                ],
+                "dimensions": [
+                    "date",
+                    "page"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "page"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "top_n",
+                    "max_pages": null,
+                    "row_limit": 50,
+                    "truncation_signal": "explicit"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 60,
+                    "supported_modes": [
+                        "manual",
+                        "hourly",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_pages_daily_paths"
+                }
+            },
+            {
+                "id": "acquisition_daily_session",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "conversions",
+                    "sessions"
+                ],
+                "dimensions": [
+                    "date",
+                    "session_source_medium",
+                    "session_campaign"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "session_source_medium",
+                        "session_campaign"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "top_n",
+                    "max_pages": null,
+                    "row_limit": 50,
+                    "truncation_signal": "explicit"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 60,
+                    "supported_modes": [
+                        "manual",
+                        "hourly",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_acquisition_daily_session"
+                }
+            },
+            {
+                "id": "acquisition_daily_first_user",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "first_user_source_medium"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "first_user_source_medium"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "top_n",
+                    "max_pages": null,
+                    "row_limit": 50,
+                    "truncation_signal": "explicit"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 60,
+                    "supported_modes": [
+                        "manual",
+                        "hourly",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_acquisition_daily_first_user"
+                }
+            },
+            {
+                "id": "transactions_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "conversions",
+                    "purchase_revenue"
+                ],
+                "dimensions": [
+                    "date",
+                    "transaction_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "transaction_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "offset",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 10000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 60,
+                    "supported_modes": [
+                        "manual",
+                        "hourly",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_transactions_daily"
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "sessions",
+                    "active_users",
+                    "conversions",
+                    "screen_page_views",
+                    "purchase_revenue"
+                ],
+                "dimensions": [
+                    "date",
+                    "device_category",
+                    "country",
+                    "newVsReturning",
+                    "landing_page",
+                    "page",
+                    "session_source_medium"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "device_category",
+                        "country",
+                        "newVsReturning",
+                        "landing_page",
+                        "page",
+                        "session_source_medium"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request_per_chunk"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 60,
+                    "supported_modes": [
+                        "manual",
+                        "hourly",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                }
+            }
+        ]
+    }
+}

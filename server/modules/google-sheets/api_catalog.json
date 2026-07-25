@@ -1,0 +1,66 @@
+{
+  "api_version": "sheets-v4 (tabular contract v1)",
+  "catalog_version": "1",
+  "connector": "google-sheets",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Planned budget amount for the period, as manually entered by the user in the linked Google Sheet. Mapped from a user-declared column (e.g. 'Budget', 'Budget plan') via the datastream column_mapping. Additive over rows. Currency is user-defined (no currency code stored at field level). NULL when the cell is empty or non-numeric (AD-9: never silently coerced to 0).",
+      "exposure": "exposed",
+      "field_id": "budget_declared",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "TABULAR",
+      "source_field": "budget_declared",
+      "tier": "core"
+    },
+    {
+      "description": "ISO-8601 date string identifying the period of the objective row. Parsed from the user-declared date_column in the datastream column_mapping (e.g. 'Date', 'Periode'). Rows with an empty or sentinel date value (-, N/A, null, #N/A) are skipped at parse time and never ingested (AD-9). Used as the primary time grain for joining with realised metrics.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TABULAR",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "Row identifier used to distinguish multiple objective rows on the same date (e.g. one row per marketing channel or campaign). Parsed from the optional row_id_column in the datastream column_mapping (e.g. 'Canal', 'Campagne'). When row_id_column is absent, defaults to the synthetic value 'row_N' where N is the 1-based row index in the sheet. Forms the composite grain (date, sheet_row_id) together with project_id.",
+      "exposure": "exposed",
+      "field_id": "sheet_row_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TABULAR",
+      "source_field": "sheet_row_id",
+      "tier": "core"
+    },
+    {
+      "description": "Conversion count objective for the period, as manually entered by the user in the linked Google Sheet. Mapped from a user-declared column (e.g. 'Objectif Conversions', 'Target Conversions') via the datastream column_mapping. Integer count; additive over rows. This is a forward-looking objective, not a realised conversion count. NULL when cell is empty or non-numeric.",
+      "exposure": "exposed",
+      "field_id": "target_conversions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "TABULAR",
+      "source_field": "target_conversions",
+      "tier": "core"
+    },
+    {
+      "description": "Revenue objective for the period, as manually entered by the user in the linked Google Sheet. Mapped from a user-declared column (e.g. 'Objectif CA', 'Target Revenue') via the datastream column_mapping. Additive over rows. This is a forward-looking objective, not a realised revenue figure; it does not participate in cross_source_conversions deduplication. NULL when cell is empty or non-numeric.",
+      "exposure": "exposed",
+      "field_id": "target_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "TABULAR",
+      "source_field": "target_revenue",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values"
+    }
+  ]
+}

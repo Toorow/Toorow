@@ -1,0 +1,27 @@
+{
+    "connector":  "brevo",
+    "api_version":  "v3",
+    "generated_at":  "2026-07-22T00:00:00Z",
+    "sources":  [
+                    {
+                        "kind":  "official",
+                        "file":  "official_fields.json",
+                        "parser":  "official_fields_json",
+                        "url":  "https://developers.brevo.com/reference/get-email-event-report",
+                        "fetched_at":  "2026-07-22"
+                    }
+                ],
+    "section_tier_map":  {
+                             "DIMENSION":  "core",
+                             "METRIC":  "core",
+                             "PERSONAL_DATA":  "advanced"
+                         },
+    "default_tier":  "standard",
+    "exposure_policy":  "catalog_driven",
+    "excluded_sections":  {
+                              "PERSONAL_DATA":  "protected-or-excluded: raw personal data is never exposed in public KPI facts"
+                          },
+    "excluded_fields":  {
+                            "protected_identifier":  "protected-or-excluded: raw personal identifier is replaced by a project-scoped hash"
+                        }
+}

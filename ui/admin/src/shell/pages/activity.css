@@ -1,0 +1,182 @@
+/**
+ * activity.css — page-specific styles for Activity (Governance › Activity).
+ *
+ * Follows the sources.css / data-quality.css / project-mapping.css conventions.
+ * Shell/layout classes (page-header, header-actions, panel, secondary-button,
+ * primary-button, quiet-button, selector, signal-label, signal-mark, number,
+ * mono/event, table-scroll) live in application.css and are global. This file
+ * only adds the Activity pieces: the panel headers, the changes-table cell
+ * layouts, the panel footer, and the calm alert-rule rows.
+ *
+ * Tokenized: every color references an application.css CSS variable, so the
+ * surface flips correctly in dark mode. Dates/counts use the Geist tabular
+ * treatment via .number (application.css); ids use .mono (application.css).
+ */
+
+/* --- Vertical rhythm between the two stacked panels. --- */
+.activity-panel {
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+.activity-panel:last-of-type {
+  margin-bottom: 0;
+}
+
+/* --- Panel header, mirroring source-panel-header / dq-panel-header. --- */
+.activity-panel-header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.activity-panel-header h2 {
+  margin: 0;
+  font: 600 19px "Lexend", sans-serif;
+}
+.activity-panel-header p {
+  margin: 4px 0 0;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- Changes table --- */
+.table-scroll .activity-table {
+  min-width: 860px;
+}
+.activity-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.activity-table th {
+  height: 42px;
+  padding: 0 20px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+.activity-table td {
+  height: 62px;
+  padding: 0 20px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+/* When: date (Geist tabular) over a muted time. */
+.when-cell strong {
+  display: block;
+  font-weight: 600;
+}
+.when-cell small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.actor-cell {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Entity target: mono id vs plain descriptive text. */
+.entity-id {
+  font-size: 12px;
+  color: var(--muted);
+}
+.entity-text {
+  color: var(--muted);
+}
+
+/* --- Panel footer, mirroring mapping-footer. --- */
+.activity-footer {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+.activity-footer-note {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+}
+
+/* --- Alert rules: calm rows (no dense table). --- */
+.rule-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rule-row {
+  display: grid;
+  grid-template-columns: 1fr 220px 120px;
+  align-items: center;
+  gap: 16px;
+  min-height: 68px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+}
+.rule-row:first-child {
+  border-top: 0;
+}
+.rule-main strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.rule-main small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.channel-label {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.rule-state {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* --- Narrow-desktop resilience (mirrors project-mapping.css media rule). --- */
+@media (max-width: 1320px) {
+  .rule-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "main state"
+      "channel state";
+    row-gap: 8px;
+  }
+  .rule-main {
+    grid-area: main;
+  }
+  .rule-channel {
+    grid-area: channel;
+  }
+  .rule-state {
+    grid-area: state;
+    align-self: start;
+  }
+}

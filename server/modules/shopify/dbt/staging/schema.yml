@@ -1,0 +1,106 @@
+version: 2
+
+sources:
+  - name: raw_shopify
+    description: "Immutable raw landing zone for Shopify orders (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_shopify_orders
+        description: >
+          Raw Shopify orders — one row per order × pull_id. Append-only (AD-7):
+          each pull run adds a new batch identified by pull_id. transaction_id is a
+          DETAIL dimension (GA4 × Shopify join key, Epic 17), not the grain key.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (order created_at day). Day grain."
+          - name: order_id
+            description: "Shopify order id. Supersede grain key with (project_id, date)."
+          - name: transaction_id
+            description: >
+              Representative Shopify payment transaction id. AI-53: field/shape to
+              confirm live (order.transactions[].id). GA4 × Shopify reconciliation
+              key (Epic 17). Nullable — some orders carry no payment transaction; the
+              >=95% presence quality test measures the real coverage.
+          - name: revenue
+            description: >
+              Order total (source currency). AI-53: mapped from order.total_price.
+              Additive (AD-4).
+          - name: refund_amount
+            description: >
+              Refund total for the order (source currency), DEDICATED positive column.
+              AI-53: order.total_refunded or SUM(refunds[].transactions[].amount).
+              NEVER subtracted silently from revenue (decision de story 15.4,
+              REFERENCE pour Stripe 15.7). Additive (AD-4).
+          - name: orders_count
+            description: "1 per order; summed to a daily order count in the mart. Additive (AD-4)."
+          - name: revenue_source_currency
+            description: "Order currency (e.g. 'EUR', 'USD'). Enables FX normalization in staging."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: "Project binding. 'default' for seeded test data; real project IDs otherwise (AD-14)."
+
+models:
+  - name: stg_shopify_orders_daily
+    description: >
+      Staging layer: maps raw Shopify order fields to canonical names. AD-4: only
+      additive metrics (revenue, refund_amount, orders_count). Supersede semantics
+      (AD-7): QUALIFY keeps the latest pull per (project_id, date, order_id).
+      Currency: revenue / refund_amount are FX-normalized to the project canonical
+      currency (EUR by default) via fx_rates; source values preserved. refund_amount
+      is a DEDICATED positive column (decision de story 15.4) — never netted into revenue.
+    tests:
+      # Grain uniqueness (AI-05): one row per project × date × order.
+      - unique:
+          name: stg_shopify_orders_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || order_id"
+      # Story 15.4 quality gate: transaction_id present (non-null) on >= 95% of orders.
+      # Singular test lives at tests/test_shopify_transaction_id_present.sql.
+    columns:
+      - name: date
+        description: "ISO-8601 date string, order created_at day."
+        tests:
+          - not_null
+      - name: order_id
+        description: "Shopify order id (grain key with project_id + date)."
+        tests:
+          - not_null
+      - name: transaction_id
+        description: >
+          Representative payment transaction id (GA4 × Shopify join key, Epic 17).
+          Nullable; the >=95% presence gate is enforced by the singular test.
+      - name: revenue
+        description: "Order total normalized to project currency (additive, AD-4)."
+        tests:
+          - not_null
+      - name: refund_amount
+        description: >
+          Refund total normalized to project currency — DEDICATED positive column,
+          never netted into revenue (decision de story 15.4). Additive (AD-4).
+        tests:
+          - not_null
+      - name: orders_count
+        description: "1 per order; summed to a daily count in the mart (additive, AD-4)."
+        tests:
+          - not_null
+      - name: revenue_source_value
+        description: "Raw order total in the order currency (AD-6: preserved for reconciliation)."
+        tests:
+          - not_null
+      - name: revenue_source_currency
+        description: "The currency of the raw order amount (e.g. 'EUR')."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding propagated from raw_shopify_orders."
+        tests:
+          - not_null

@@ -1,0 +1,17 @@
+{
+  "id": "organic_crossview",
+  "display_name": "Vue organique croisée GA4 × GSC",
+  "metrics": ["clicks", "impressions", "average_position", "sessions"],
+  "dimensions": ["date"],
+  "connectors": ["gsc", "google-analytics"],
+  "layout": {
+    "chart_type": "small_multiples",
+    "order_by": "date"
+  },
+  "narrative_prompt": "Vue croisée SEO+Analytics: corrèle clics GSC et sessions GA4 organiques par date. Divergences > 20% = signal à investiguer. Limite à 150 chars.",
+  "date_window": {
+    "default_days": 30,
+    "min_days": 7,
+    "max_days": 90
+  }
+}

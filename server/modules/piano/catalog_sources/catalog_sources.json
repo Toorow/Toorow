@@ -1,0 +1,171 @@
+{
+  "connector": "piano",
+  "product": "Piano Analytics (ex-AT Internet)",
+  "api_version": "v3",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_status": "Piano Analytics has NO fixed reporting schema: properties (dimensions) and metrics are per-site Data Model keys. The committed catalog is the STANDARD BASELINE (research dossier Annex A: 45 explicit metrics; Annex B: 103 standard property keys = 148 fields). Per-site CUSTOM keys are resolved live (field_discovery.mode=dynamic). This is the GA4-custom-dimension situation, more extreme (no static universal list exists by construction).",
+  "_disambiguation": "Target = Piano ANALYTICS (web/app analytics, GA4-equivalent), host https://api.atinternet.io/v3/data/. NOT Piano ID / Composer / VX / Activation (subscription/paywall/identity, api.piano.io, different APIs).",
+  "_derivation": {
+    "note": "official_fields.json is produced by build_official_fields.py (committed alongside, deterministic, no network/clock). There is NO metadata endpoint in the v3 Data API to list a site's properties/metrics (docs point to the Data Model UI; the third-party python wrapper only calls getData/getRowCount/getTotal). official_fields.json is therefore the STANDARD baseline authored from Piano standard-tagging docs, with section/tier enrichment cross-read from the Supermetrics catalog. Metrics use the m_-prefixed key (m_visits); properties use the bare key (device_type). Custom/site-defined keys are NOT emitted into the committed catalog -- they are resolved per site at use and validated live (unknown key -> 400 -> invalid_request / pull_invalid_request drift).",
+    "dynamic_catalog_rule": "field_discovery.mode = 'dynamic'. Completeness is proven by: (1) the baseline is exhaustively enumerated; (2) the connector's columns param is fully general (any Data Model key is expressible); (3) unknown keys fail loud. No list is ever truncated; no unknown key is silently dropped.",
+    "unit_rule": "Units are driven by the catalogued physical_type (integer/decimal), NEVER by an id suffix (google-ads 26.2 review lesson). Ratio metrics (physical_type decimal, e.g. m_bounce_rate) land raw at day grain and are recomputed at the semantic layer.",
+    "count_divergence": "Supermetrics publishes 48 metrics / 162 dimensions under a 'performance__' internal namespace (strip it to recover the Piano key family). Their metric/dimension count is a FLOOR that includes per-source permutations and deprecated/system fields; the committed baseline transcribes the dossier's explicitly-enumerated Annex A+B keys (45 explicit metrics + 103 standard property keys = 148 fields -- NO round-number padding). A real site with custom properties EXCEEDS this floor; those are resolved live (dynamic). The honest formula: 45 explicit metrics + a live-resolved dynamic surface, never a fabricated round total."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.piano.io/analytics/data-api/parameters/properties-metrics/",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "request_shape_and_methods",
+          "url": "https://developers.piano.io/analytics/data-api/technical-information/methods/",
+          "fetched_at": "2026-07-21",
+          "_note": "getData / getRowCount / getTotal, all synchronous, host https://api.atinternet.io/v3/data/ . No getStructure/metadata method exists."
+        },
+        {
+          "purpose": "request_json_example",
+          "url": "https://developers.piano.io/analytics/data-api/getting-started/first-call/",
+          "fetched_at": "2026-07-21",
+          "_note": "Verbatim body: {columns:[...], sort:[...], space:{s:[<site_id>]}, period:{p1:[{type:D,start,end}]}, max-results, page-num}"
+        },
+        {
+          "purpose": "response_structure",
+          "url": "https://developers.atinternet-solutions.com/data-api-en/rest-api-en/response-structure-parameters-rest-en/structure-of-the-response-rest-en/index.html",
+          "fetched_at": "2026-07-21",
+          "_note": "DataFeed[] -> {Context, Columns, Rows, totals, references}. The per-query Columns echo carries label+type for harvested enrichment."
+        },
+        {
+          "purpose": "error_codes",
+          "url": "https://developers.atinternet-solutions.com/data-api-en/reporting-api-v3/technical-information/error-codes/",
+          "fetched_at": "2026-07-21",
+          "_note": "200+ codes, API-Code string (Category_Subcode) + HTTP status + message. The unknown-column code is the InvalidColumns_* family -> pull_invalid_request drift."
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "url": "https://docs.supermetrics.com/docs/piano-analytics-at-internet-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/piano-analytics-at-internet-fields.md -o server/modules/piano/catalog_sources/supermetrics.md   # DO NOT COMMIT (enrichment snapshot only). 48 metrics / 162 dimensions under a 'performance__' prefix; provenance-only in v1 (descriptions authored in build_official_fields.py, so no 'file'/'parser' keys here)."
+    }
+  ],
+  "section_tier_map": {
+    "AUDIENCE - OVERALL TRAFFIC": "core",
+    "AUDIENCE - GEOLOCATION": "core",
+    "AUDIENCE - USERS": "core",
+    "CONTENT - PAGES": "core",
+    "TIME": "core",
+    "TECHNICAL - DEVICE": "core",
+    "SOURCE - ACQUISITION": "standard",
+    "CONTENT - CLICKS": "standard",
+    "CONTENT - EVENTS": "standard",
+    "CONTENT - INTERNAL SEARCH ENGINE": "standard",
+    "ECOMMERCE": "standard",
+    "AV INSIGHTS": "standard",
+    "AV INSIGHTS - CONTENTS": "standard",
+    "AV INSIGHTS - OVERVIEW": "standard",
+    "CONTENT - ONSITE ADS": "advanced",
+    "CONTENT - MV TESTING": "advanced",
+    "AUDIENCE - PRIVACY": "advanced",
+    "AV INSIGHTS - COMPLETION FUNNEL": "advanced",
+    "AV INSIGHTS - QOS DELIVERY": "advanced"
+  },
+  "field_tier_overrides": {
+    "m_visits": "core",
+    "m_unique_visitors": "core",
+    "m_page_loads": "core",
+    "m_bounce_rate": "core",
+    "m_events": "standard",
+    "m_clicks": "standard",
+    "date": "core",
+    "site_id": "core",
+    "device_type": "core",
+    "geo_country": "core",
+    "page": "core",
+    "src_source": "core",
+    "event_name": "standard"
+  },
+  "default_tier": "standard",
+  "non_additive_metrics": {
+    "_note": "Visit/visitor-scoped metrics do NOT sum across property breakdowns (Piano 'Why can't we sum visits on page analyses?'). Marked non_additive at the catalog (via build_official_fields.py); use getTotal for true totals; marts must not UNPIVOT-and-sum these across breakdowns.",
+    "keys": ["m_visits", "m_unique_visitors", "m_bounce_rate", "m_avg_pages_per_visit", "m_visit_duration", "m_exit_rate", "m_new_visitors"]
+  },
+  "probe": {
+    "request_style": "columns_json",
+    "batch_size": 10,
+    "structural_note": "getData POST over a 1-day window on the selected site: batch up to ~10 candidate columns (properties or metrics) alongside a single known core metric (m_visits) as {\"columns\":[...],\"space\":{\"s\":[<site_id>]},\"period\":{\"p1\":[{\"type\":\"D\",\"start\":D-1,\"end\":D-1}]},\"max-results\":1}. A batch that returns a 400 InvalidColumns_* is bisected so the exact rejected key is captured (never the whole batch). 509 QuotasExceeded pauses+resumes the SAME batch (breaker-aware, serialized per key -- NO parallel fan-out). A sort key must also be in columns. This probe both ratifies the baseline and DERIVES the live per-site catalog for a connected site."
+  },
+  "field_discovery": {
+    "mode": "dynamic",
+    "discovery_strategy": "baseline_plus_validate_on_use",
+    "baseline_source": "Piano standard-tagging Data Model (research dossier Annexes A+B; Supermetrics enrichment 48 m / 162 d floor)",
+    "per_site_note": "Custom properties/metrics are site-defined; the getData columns param accepts any Data Model key and validates it live (unknown -> 400 invalid_request -> pull_invalid_request drift). No per-site key is invented into the committed catalog. A confirmed Data Model admin/management endpoint (SPIKE -- not documented in the reachable developer portal) would upgrade this to full programmatic per-site generation (see ROLLOUT_NOTES).",
+    "allowed_targets": ["site"]
+  },
+  "period": {
+    "_note": "period object keyed p1 (p2.. for comparisons). Absolute: {type:D,start:YYYY-MM-DD,end:YYYY-MM-DD}. Relative: {type:R,granularity:D|M|Q|Y|H,startOffset:-1,endOffset:-1}. Timezone = site's; multi-site uses the most-easterly requested site's TZ.",
+    "recommended_refetch_days": 3,
+    "retention_note": "Historical backfill bounded by the client's Piano contract (typically 25-38 months); exceeding raises a RetentionMonths_* class 400."
+  },
+  "space": {
+    "_note": "space = {\"s\":[<site_id>,...]} -- the reporting-entity selector. site_id is an integer per measurement perimeter.",
+    "selector_key": "s"
+  },
+  "_request_limits": {
+    "_note": "Module-local companion consumed by connector.py at request-build time (validated BEFORE the API call; violations raise typed invalid_request without a provider round-trip).",
+    "_source": "POST /v3/data/getData endpoint description + method limits, Data Query API v3",
+    "max_columns": 50,
+    "max_results_per_call": 10000,
+    "max_rows_total": 200000,
+    "max_segments": 6,
+    "column_charset": "^[A-Za-z][A-Za-z0-9_.]*$",
+    "date_window_limits": {
+      "getdata_default": {
+        "max_days_back": 1155,
+        "max_range_days": 1155,
+        "_note": "Retention is contract-bound (typically 25-38 months ~ 1155 days at 38 months). A window exceeding the contract raises a RetentionMonths_* 400 live; the pre-call bound is a conservative ceiling, not a hard provider promise."
+      }
+    },
+    "paging": "getRowCount to plan, loop page-num with max-results=10000 until short page or 200k ceiling; log truncation (never silent). Chunk a >50-column selection into multiple getData calls sharing dimension keys + stable sort, merge on the (period, property-tuple) grain key."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {
+    "AV INSIGHTS - QOS DELIVERY": "QoS delivery metrics require AV (audio/video) tagging that a non-media site does not emit; excluded from default profiles until an AV profile exists (zero rows otherwise, honest degrade).",
+    "CONTENT - MV TESTING": "Multivariate-testing dimensions only populated on sites running Piano MV tests; excluded from default profiles.",
+    "AUDIENCE - PRIVACY": "Consent-mode metrics depend on the client's consent tagging; excluded from the core profile (present as advanced)."
+  },
+  "_exposure_note": "exposure = reachable through the profiles' getData columns. Under catalog_driven, every baseline field is exposed EXCEPT the excluded_sections families (which need AV/MV/consent tagging). Per-site CUSTOM keys are never in the committed catalog (dynamic, validated live). Non-additive metrics carry non_additive:true and are never blindly summed across breakdowns (semantic layer / getTotal).",
+  "_auth_and_quota": {
+    "auth_type": "api_key",
+    "header": "x-api-key: <access_key>_<secret_key>",
+    "credential_note": "Access key + secret key, from platform env PIANO_ACCESS_KEY / PIANO_SECRET_KEY (NEVER manifest). The x-api-key header value is <access>_<secret>. Key inherits the creating user's site permissions. Used immediately as a header, never logged (AD-3).",
+    "rate_limiting": "Concurrency-throttled. QuotasExceeded_TooManyRequests -> HTTP 509 -> core.quota.RateLimitError (breaker). Any 429 also -> RateLimitError. No published QPS/points. SERIALIZE pulls per connection (no parallel fan-out against one key)."
+  },
+  "error_map": {
+    "401:BadAuthentication": "auth_expired",
+    "403:UnauthorizedSite": "permission_denied",
+    "403:InvalidSpace": "permission_denied",
+    "400:InvalidColumns": "invalid_request",
+    "400:InvalidJSON": "invalid_request",
+    "400:InvalidPeriod": "invalid_request",
+    "400:InvalidSort": "invalid_request",
+    "400:InvalidFilter": "invalid_request",
+    "400:InvalidSegment": "invalid_request",
+    "500:UnknownError": "provider_transient",
+    "_note": "Keys are '<http_status>:<API_Code_Category>' -- the CATEGORY PREFIX only (connector._code_prefix reduces the Piano Category_Subcode to its Category before matching, so a full-code key would be unreachable and is never declared). Piano v3 error bodies carry an API-Code string (Category_Subcode). 509 QuotasExceeded_TooManyRequests and any 429 stay on the core.quota.RateLimitError breaker path (NOT in error_map). InvalidColumns_* is the catalog-drift key (unknown Data Model property/metric) -> pull_invalid_request drift. A bare 400 with no recognised code still classifies invalid_request by pure-HTTP fallback."
+  },
+  "_account_topology_note": {
+    "levels": ["organization", "site"],
+    "selection_level": "site",
+    "discovery": {
+      "callable": "discover_accounts",
+      "v1_strategy": "No documented public endpoint lists the sites an API key can reach (contrast GA4 accountSummaries.list). v1: candidate site ids are supplied to discovery (connection input), each VERIFIED by a 1-row getData access-check probe; unreachable candidates are dropped.",
+      "access_check": "POST /v3/data/getData {columns:[\"m_visits\"], space:{s:[<site_id>]}, period:{p1:[{type:R,granularity:D,startOffset:-1,endOffset:-1}]}, max-results:1} -> 200 reachable; UnauthorizedSite(403)/InvalidSpace_NoActiveSite -> not selectable.",
+      "spike": "Confirm/deny a Piano management/admin API that lists sites for the key; if it exists and the same x-api-key reads it, implement true site enumeration in discover_accounts (ROLLOUT_NOTES)."
+    },
+    "_no_env_vars": "No *_SITE_ID account fallback in the pull path (doctrine). The selected site_id lives in the topology scope (connection_ref); discovery candidates are the only place a client-supplied id enters, and every one is access-checked."
+  }
+}

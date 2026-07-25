@@ -1,0 +1,597 @@
+{
+    "schema_version":  "1.2",
+    "name":  "adobe-analytics",
+    "display_name":  "Adobe Analytics",
+    "public_catalog":  {
+                           "visibility":  "public",
+                           "category":  "analytics_product",
+                           "onboarding_modes":  [
+                                                    "connector_pull"
+                                                ],
+                           "verification":  {
+                                                "status":  "blocked",
+                                                "reason_code":  "live_evidence_not_ratified",
+                                                "follow_up":  "Probe an authorized Adobe product profile across discovery, two report suites, dynamic drift, pagination, breakdown, HTTP 206, timezone, quota and grain."
+                                            }
+                       },
+    "auth_type":  "oauth2",
+    "module_kind":  "kpi",
+    "provider_api_version":  "analytics-2.0",
+    "provider_api_base":  "https://analytics.adobe.io",
+    "_provider_api_note":  "Analytics APIs 2.0 only. OAuth Server-to-Server is the default; delegated OAuth User must be selected explicitly. JWT, SOAP and API 1.4 are forbidden.",
+    "auth":  {
+                 "type":  "oauth2",
+                 "auth_path":  "nango",
+                 "default_flow":  "oauth_server_to_server",
+                 "optional_flow":  "oauth_user",
+                 "required_header":  "x-api-key"
+             },
+    "account_topology":  {
+                             "levels":  [
+                                            "adobe_organization",
+                                            "global_company",
+                                            "report_suite"
+                                        ],
+                             "selection_level":  "report_suite",
+                             "discovery":  {
+                                               "callable":  "discover_accounts"
+                                           },
+                             "selection":  {
+                                               "required":  true,
+                                               "opaque":  true
+                                           }
+                         },
+    "report_profiles":  [
+                            {
+                                "id":  "daily_kpi",
+                                "display_name":  "Daily KPI",
+                                "metrics":  [
+                                                "occurrences",
+                                                "page_views",
+                                                "orders",
+                                                "revenue",
+                                                "visits",
+                                                "visitors"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "rsid",
+                                                   "dimension",
+                                                   "item_id",
+                                                   "item_value",
+                                                   "segment_ids"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  1000,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            },
+                            {
+                                "id":  "totals",
+                                "display_name":  "Report-suite totals",
+                                "metrics":  [
+                                                "occurrences",
+                                                "page_views",
+                                                "orders",
+                                                "revenue",
+                                                "visits",
+                                                "visitors",
+                                                "bounce_rate",
+                                                "average_time_spent"
+                                            ],
+                                "dimensions":  [
+                                                   "rsid",
+                                                   "segment_ids"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  false,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            },
+                            {
+                                "id":  "bounded_breakdown",
+                                "display_name":  "Bounded breakdown",
+                                "metrics":  [
+                                                "occurrences",
+                                                "page_views",
+                                                "orders",
+                                                "revenue",
+                                                "visits",
+                                                "visitors"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "rsid",
+                                                   "dimension",
+                                                   "item_id",
+                                                   "item_value",
+                                                   "parent_item_id",
+                                                   "segment_ids"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  1000,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            }
+                        ],
+    "canonical_metric_mapping":  {
+                                     "occurrences":  "events",
+                                     "page_views":  "page_views",
+                                     "orders":  "conversions",
+                                     "revenue":  "revenue",
+                                     "visits":  {
+                                                    "canonical":  "sessions",
+                                                    "aggregation_rule":  "max",
+                                                    "non_additive":  true
+                                                },
+                                     "visitors":  {
+                                                      "canonical":  "users",
+                                                      "aggregation_rule":  "max",
+                                                      "non_additive":  true
+                                                  },
+                                     "bounce_rate":  {
+                                                         "canonical":  "bounce_rate",
+                                                         "aggregation_rule":  "max",
+                                                         "non_additive":  true
+                                                     },
+                                     "average_time_spent":  {
+                                                                "canonical":  "average_time_spent",
+                                                                "aggregation_rule":  "max",
+                                                                "non_additive":  true
+                                                            }
+                                 },
+    "canonical_dimension_mapping":  {
+                                        "date":  "date",
+                                        "rsid":  "property_id",
+                                        "dimension":  "dimension",
+                                        "item_id":  "item_id",
+                                        "item_value":  "item_value",
+                                        "parent_item_id":  "parent_item_id",
+                                        "segment_ids":  "segment_ids"
+                                    },
+    "error_map":  {
+                      "401:401013":  "auth_expired",
+                      "403:403013":  "permission_denied",
+                      "403:403025":  "permission_denied",
+                      "400:400000":  "invalid_request",
+                      "404:404000":  "invalid_request",
+                      "500:500000":  "provider_transient"
+                  },
+    "quota":  {
+                  "window_seconds":  6,
+                  "budget_points":  12,
+                  "read_cost":  1,
+                  "write_cost":  1
+              },
+    "source_capabilities":  {
+                                "contract_version":  "1",
+                                "field_discovery":  {
+                                                        "mode":  "runtime",
+                                                        "allowed_targets":  [
+                                                                                "events",
+                                                                                "page_views",
+                                                                                "conversions",
+                                                                                "revenue",
+                                                                                "sessions",
+                                                                                "users",
+                                                                                "bounce_rate",
+                                                                                "average_time_spent",
+                                                                                "dimension",
+                                                                                "segment_ids"
+                                                                            ]
+                                                    },
+                                "fields":  [
+                                               {
+                                                   "field_id":  "date",
+                                                   "source_field":  "variables/daterangeday",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "date",
+                                                   "description":  "Report-suite-local calendar day.",
+                                                   "semantic_hints":  [
+                                                                          "date",
+                                                                          "timezone"
+                                                                      ],
+                                                   "canonical_target":  "date",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "rsid",
+                                                   "source_field":  "rsid",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Selected report suite id.",
+                                                   "semantic_hints":  [
+                                                                          "property",
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "property_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "dimension",
+                                                   "source_field":  "dimension",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Dynamic reportable dimension id.",
+                                                   "semantic_hints":  [
+                                                                          "dynamic"
+                                                                      ],
+                                                   "canonical_target":  "dimension",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "item_id",
+                                                   "source_field":  "rows.itemId",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Stable component item id.",
+                                                   "semantic_hints":  [
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "item_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "item_value",
+                                                   "source_field":  "rows.value",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Human-readable component value.",
+                                                   "semantic_hints":  [
+                                                                          "label"
+                                                                      ],
+                                                   "canonical_target":  "item_value",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "parent_item_id",
+                                                   "source_field":  "rowContainer.rowId",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Stable parent item for bounded breakdowns.",
+                                                   "semantic_hints":  [
+                                                                          "parent",
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "parent_item_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "segment_ids",
+                                                   "source_field":  "globalFilters.segmentId",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "json",
+                                                   "description":  "Exact selected segment ids.",
+                                                   "semantic_hints":  [
+                                                                          "segment"
+                                                                      ],
+                                                   "canonical_target":  "segment_ids",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "occurrences",
+                                                   "source_field":  "metrics/occurrences",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Occurrences at full report grain.",
+                                                   "semantic_hints":  [
+                                                                          "events"
+                                                                      ],
+                                                   "canonical_target":  "events",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "page_views",
+                                                   "source_field":  "metrics/pageviews",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Page views at full report grain.",
+                                                   "semantic_hints":  [
+                                                                          "traffic"
+                                                                      ],
+                                                   "canonical_target":  "page_views",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "orders",
+                                                   "source_field":  "metrics/orders",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Orders at full report grain.",
+                                                   "semantic_hints":  [
+                                                                          "conversion"
+                                                                      ],
+                                                   "canonical_target":  "conversions",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "revenue",
+                                                   "source_field":  "metrics/revenue",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Revenue in the report-suite currency.",
+                                                   "semantic_hints":  [
+                                                                          "revenue",
+                                                                          "currency"
+                                                                      ],
+                                                   "canonical_target":  "revenue",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "visits",
+                                                   "source_field":  "metrics/visits",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Visits at exact report grain.",
+                                                   "semantic_hints":  [
+                                                                          "sessions",
+                                                                          "non_additive"
+                                                                      ],
+                                                   "canonical_target":  "sessions",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  true
+                                               },
+                                               {
+                                                   "field_id":  "visitors",
+                                                   "source_field":  "metrics/visitors",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Visitors at exact report grain.",
+                                                   "semantic_hints":  [
+                                                                          "users",
+                                                                          "non_additive"
+                                                                      ],
+                                                   "canonical_target":  "users",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  true
+                                               },
+                                               {
+                                                   "field_id":  "bounce_rate",
+                                                   "source_field":  "metrics/bouncerate",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Non-additive bounce rate.",
+                                                   "semantic_hints":  [
+                                                                          "rate",
+                                                                          "non_additive"
+                                                                      ],
+                                                   "canonical_target":  "bounce_rate",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  true
+                                               },
+                                               {
+                                                   "field_id":  "average_time_spent",
+                                                   "source_field":  "metrics/averagetimespent",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "Non-additive average time spent.",
+                                                   "semantic_hints":  [
+                                                                          "average",
+                                                                          "non_additive"
+                                                                      ],
+                                                   "canonical_target":  "average_time_spent",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  true
+                                               }
+                                           ],
+                                "reports":  [
+                                                {
+                                                    "id":  "daily_kpi",
+                                                    "selection_mode":  "catalog_driven",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "occurrences",
+                                                                    "page_views",
+                                                                    "orders",
+                                                                    "revenue",
+                                                                    "visits",
+                                                                    "visitors"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "rsid",
+                                                                       "dimension",
+                                                                       "item_id",
+                                                                       "item_value",
+                                                                       "segment_ids"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "rsid",
+                                                                                 "dimension",
+                                                                                 "item_id",
+                                                                                 "item_value",
+                                                                                 "segment_ids"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "page",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  1000,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  30,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_daily_kpi"
+                                                                 }
+                                                },
+                                                {
+                                                    "id":  "totals",
+                                                    "selection_mode":  "catalog_driven",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "occurrences",
+                                                                    "page_views",
+                                                                    "orders",
+                                                                    "revenue",
+                                                                    "visits",
+                                                                    "visitors",
+                                                                    "bounce_rate",
+                                                                    "average_time_spent"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "rsid",
+                                                                       "segment_ids"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "rsid",
+                                                                                 "segment_ids"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "none",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  30,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_totals"
+                                                                 }
+                                                },
+                                                {
+                                                    "id":  "bounded_breakdown",
+                                                    "selection_mode":  "catalog_driven",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "occurrences",
+                                                                    "page_views",
+                                                                    "orders",
+                                                                    "revenue",
+                                                                    "visits",
+                                                                    "visitors"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "rsid",
+                                                                       "dimension",
+                                                                       "item_id",
+                                                                       "item_value",
+                                                                       "parent_item_id",
+                                                                       "segment_ids"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "rsid",
+                                                                                 "dimension",
+                                                                                 "item_id",
+                                                                                 "item_value",
+                                                                                 "parent_item_id",
+                                                                                 "segment_ids"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "page",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  1000,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  30,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_bounded_breakdown"
+                                                                 }
+                                                }
+                                            ]
+                            }
+}

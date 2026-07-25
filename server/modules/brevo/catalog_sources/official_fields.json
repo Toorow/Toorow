@@ -1,0 +1,114 @@
+[
+  {
+    "field_id": "date",
+    "source_field": "date",
+    "kind": "dimension",
+    "data_type": "date",
+    "section": "DIMENSION",
+    "description": "Campaign/event/list day."
+  },
+  {
+    "field_id": "account_id",
+    "source_field": "account.id",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Opaque OAuth account id."
+  },
+  {
+    "field_id": "source_id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Campaign, event or list source id."
+  },
+  {
+    "field_id": "channel",
+    "source_field": "channel",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Email, SMS, transactional or contacts snapshot channel."
+  },
+  {
+    "field_id": "event_type",
+    "source_field": "event",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Immutable transactional event type."
+  },
+  {
+    "field_id": "protected_identifier",
+    "source_field": "email",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "PERSONAL_DATA",
+    "description": "Project-salted hash; raw personal identifier is excluded."
+  },
+  {
+    "field_id": "sent",
+    "source_field": "statistics.globalStats.sent",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Messages sent."
+  },
+  {
+    "field_id": "delivered",
+    "source_field": "statistics.globalStats.delivered",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Messages delivered."
+  },
+  {
+    "field_id": "opens",
+    "source_field": "statistics.globalStats.uniqueViews",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Open counter; unique semantics stay full-grain."
+  },
+  {
+    "field_id": "clicks",
+    "source_field": "statistics.globalStats.clickers",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Click counter."
+  },
+  {
+    "field_id": "hard_bounces",
+    "source_field": "statistics.globalStats.hardBounces",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Hard bounces."
+  },
+  {
+    "field_id": "unsubscribed",
+    "source_field": "statistics.globalStats.unsubscriptions",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Unsubscriptions."
+  },
+  {
+    "field_id": "event_count",
+    "source_field": "event",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "One immutable transactional event."
+  },
+  {
+    "field_id": "contact_count",
+    "source_field": "totalSubscribers",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Point-in-time list size snapshot."
+  }
+]

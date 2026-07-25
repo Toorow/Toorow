@@ -1,0 +1,55 @@
+# Inbound runtime (Epic 38, Story 38.1) — managed-default deploy-time values.
+#
+# Copy to `inbound.auto.tfvars` (the real file is gitignored: see the root
+# .gitignore `infra/**/*.tfvars` rule with the `.example` exception) and adjust
+# for your hosting mode. NO SECRETS here — the signing key VALUE is a Secret
+# Manager version set out-of-band, never in tfvars or git (E38-NFR03).
+#
+# Managed (toorow Cloud) and self-hosted use the SAME artifact; only these
+# deploy-time values differ (AC4 — no code fork). See server/inbound/README.md
+# for the full deploy-time variable contract.
+
+# Provider-neutral seam selector. Managed default is Mailgun EU (DECISION
+# 2026-07-22, Jean). Self-hosted may set "cloudflare_worker" or reuse mailgun
+# against their own Mailgun account.
+inbound_provider = "mailgun"
+
+# Secret Manager secret id holding the provider signing key (REFERENCE only;
+# Terraform manages the secret resource, the operator sets the version value).
+inbound_signing_secret_id = "inbound-signing-secret"
+
+# Receiving domain. Recipients take the shape ds_<token>@<domain>. DNS mapping
+# is an operator [HUMAN GATE] step (see the story DNS runbook). Self-hosted
+# customers use their own subdomain.
+inbound_ingest_domain = "ingest.toorow.com"
+
+# Bounds (safe defaults). Body sized for large XLSX / .sav (SPSS) files.
+inbound_max_body_bytes   = 26214400 # 25 MiB
+inbound_max_header_bytes = 16384    # 16 KiB
+inbound_max_attachments  = 20
+inbound_max_instances    = 10
+
+# Quarantine bucket location + retention stub (real retention wired in 38.9).
+inbound_bucket_location           = "EU"
+inbound_quarantine_retention_days = 30
+
+# ---------------------------------------------------------------------------
+# Inbound BRIDGE (async bridge). Separate DB-enabled Cloud Run service that runs
+# the processing worker when a quarantine manifest lands (Pub/Sub push). NO
+# SECRETS here -- the worker secret VALUE and the DB DSN VALUE are Secret Manager
+# versions set out-of-band, never in tfvars or git.
+
+# Secret Manager secret id holding the shared worker secret (REFERENCE only;
+# Terraform manages the secret resource, the operator sets the version value).
+inbound_worker_secret_id = "inbound-worker-secret"
+
+# [HUMAN GATE] Secret Manager secret id holding the platform Postgres DSN
+# (PLATFORM_DB_URL). Point at the SAME secret the main server uses once it lands.
+platform_db_url_secret_id = "platform-db-url"
+
+# Bridge bounds + Pub/Sub wiring.
+inbound_bridge_max_instances        = 5
+inbound_bridge_ack_deadline_seconds = 120
+inbound_manifest_topic              = "inbound-manifest"
+inbound_manifest_subscription       = "inbound-manifest-push"
+inbound_manifest_object_prefix      = "inbound/"

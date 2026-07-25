@@ -1,0 +1,1052 @@
+{
+    "schema_version": "1.2",
+    "name": "microsoft-ads",
+    "display_name": "Microsoft Ads",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "paid_media",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract (25.6 live probe)."
+        }
+    },
+    "auth_type": "oauth2",
+    "module_kind": "kpi",
+    "provider_api_version": "v13",
+    "provider_api_base": "https://reporting.api.bingads.microsoft.com",
+    "provider_customer_api_base": "https://clientcenter.api.bingads.microsoft.com",
+    "_provider_api_note": "Story 26.4: the Bing Ads API version is pinned HERE and only here. connector.py builds every URL from provider_api_base|provider_customer_api_base + provider_api_version; api_catalog.json / catalog_sources.json api_version must equal this pin (module test enforces the coupling). Reporting is ASYNC (Submit -> Poll -> download ZIP CSV) and runs EXCLUSIVELY through core.async_reports.run_async_report (26.1 socle). Auth = Nango (Microsoft Identity, scopes msads.manage offline_access) + platform developer token env MICROSOFT_ADS_DEVELOPER_TOKEN (header DeveloperToken -- NEVER in this manifest). Headers CustomerId + CustomerAccountId are mandatory on every reporting call.",
+    "report_profiles": [
+        {
+            "id": "campaign_daily",
+            "display_name": "Campaign performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions",
+                "revenue"
+            ],
+            "dimensions": [
+                "time_period",
+                "account_id",
+                "campaign_id",
+                "campaign_name",
+                "campaign_type",
+                "campaign_status",
+                "currency_code"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "ad_group_daily",
+            "display_name": "Ad group performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions",
+                "revenue"
+            ],
+            "dimensions": [
+                "time_period",
+                "account_id",
+                "campaign_id",
+                "ad_group_id",
+                "ad_group_name",
+                "status",
+                "currency_code"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "ad_daily",
+            "display_name": "Ad performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions",
+                "revenue"
+            ],
+            "dimensions": [
+                "time_period",
+                "account_id",
+                "campaign_id",
+                "ad_group_id",
+                "ad_id",
+                "ad_type",
+                "ad_status",
+                "currency_code"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "keyword_daily",
+            "display_name": "Keyword performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions",
+                "revenue"
+            ],
+            "dimensions": [
+                "time_period",
+                "account_id",
+                "campaign_id",
+                "ad_group_id",
+                "keyword_id",
+                "keyword",
+                "keyword_status",
+                "currency_code"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "search_query_daily",
+            "display_name": "Search query performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions",
+                "revenue"
+            ],
+            "dimensions": [
+                "time_period",
+                "account_id",
+                "campaign_id",
+                "ad_group_id",
+                "keyword_id",
+                "keyword",
+                "search_query"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven daily (any selected column, 8 report types)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions"
+            ],
+            "dimensions": [
+                "time_period",
+                "account_id",
+                "campaign_id",
+                "campaign_name"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        }
+    ],
+    "error_map": {
+        "401:109": "auth_expired",
+        "401:105": "auth_revoked",
+        "401:3101": "auth_revoked",
+        "401:124": "auth_revoked",
+        "403:106": "permission_denied",
+        "403:2003": "permission_denied",
+        "400:116": "invalid_request",
+        "400:201": "invalid_request",
+        "400:205": "invalid_request",
+        "400:1102": "invalid_request",
+        "400:1490": "invalid_request",
+        "500:0": "provider_transient",
+        "400:2001": "invalid_request",
+        "400:2002": "invalid_request",
+        "400:2003": "invalid_request",
+        "400:2004": "invalid_request",
+        "400:2005": "invalid_request",
+        "400:2006": "invalid_request",
+        "400:2007": "invalid_request",
+        "400:2008": "invalid_request",
+        "400:2009": "invalid_request",
+        "400:2010": "invalid_request",
+        "400:2011": "invalid_request",
+        "400:2012": "invalid_request",
+        "400:2013": "invalid_request",
+        "400:2014": "invalid_request",
+        "400:2015": "invalid_request",
+        "400:2016": "invalid_request",
+        "400:2017": "invalid_request",
+        "400:2018": "invalid_request",
+        "400:2019": "invalid_request",
+        "400:2020": "invalid_request",
+        "400:2021": "invalid_request",
+        "400:2022": "invalid_request",
+        "400:2023": "invalid_request",
+        "400:2024": "invalid_request",
+        "400:2025": "invalid_request",
+        "400:2026": "invalid_request",
+        "400:2027": "invalid_request",
+        "400:2028": "invalid_request",
+        "400:2029": "invalid_request",
+        "400:2030": "invalid_request",
+        "400:2031": "invalid_request",
+        "400:2032": "invalid_request",
+        "400:2033": "invalid_request",
+        "400:2034": "invalid_request",
+        "400:2035": "invalid_request",
+        "400:2036": "invalid_request",
+        "400:2037": "invalid_request",
+        "400:2038": "invalid_request",
+        "400:2039": "invalid_request",
+        "400:2040": "invalid_request",
+        "400:2041": "invalid_request",
+        "400:2042": "invalid_request",
+        "400:2043": "invalid_request",
+        "400:2044": "invalid_request",
+        "400:2045": "invalid_request",
+        "400:2046": "invalid_request",
+        "400:2047": "invalid_request",
+        "400:2048": "invalid_request",
+        "400:2049": "invalid_request",
+        "400:2050": "invalid_request",
+        "400:2051": "invalid_request",
+        "400:2052": "invalid_request",
+        "400:2053": "invalid_request",
+        "400:2054": "invalid_request",
+        "400:2055": "invalid_request",
+        "400:2056": "invalid_request",
+        "400:2057": "invalid_request",
+        "400:2058": "invalid_request",
+        "400:2059": "invalid_request",
+        "400:2060": "invalid_request",
+        "400:2061": "invalid_request",
+        "400:2062": "invalid_request",
+        "400:2063": "invalid_request",
+        "400:2064": "invalid_request",
+        "400:2065": "invalid_request",
+        "400:2066": "invalid_request",
+        "400:2067": "invalid_request",
+        "400:2068": "invalid_request",
+        "400:2069": "invalid_request",
+        "400:2070": "invalid_request",
+        "400:2071": "invalid_request",
+        "400:2072": "invalid_request",
+        "400:2073": "invalid_request",
+        "400:2074": "invalid_request",
+        "400:2075": "invalid_request",
+        "400:2076": "invalid_request",
+        "400:2077": "invalid_request",
+        "400:2078": "invalid_request",
+        "400:2079": "invalid_request",
+        "400:2080": "invalid_request",
+        "400:2081": "invalid_request",
+        "400:2082": "invalid_request",
+        "400:2083": "invalid_request",
+        "400:2084": "invalid_request",
+        "400:2085": "invalid_request",
+        "400:2086": "invalid_request",
+        "400:2087": "invalid_request",
+        "400:2088": "invalid_request",
+        "400:2089": "invalid_request",
+        "400:2090": "invalid_request",
+        "400:2091": "invalid_request",
+        "400:2092": "invalid_request",
+        "400:2093": "invalid_request",
+        "400:2094": "invalid_request",
+        "400:2095": "invalid_request",
+        "400:2096": "invalid_request",
+        "400:2097": "invalid_request",
+        "400:2098": "invalid_request",
+        "400:2099": "invalid_request",
+        "400:2100": "invalid_request",
+        "400:2101": "invalid_request"
+    },
+    "_error_map_note": "Story 26.4 (dossier section 10, 774 codes parsed): keys are '<http_status>:<numeric body Code>' -- Microsoft returns application errors with generic HTTP 400/401/403 and the real classification key is the numeric Code inside ApiFaultDetail/AdApiFaultDetail Errors[] (body-first, HTTP fallback). Rate-limit codes are NOT in this map: 117 CallRateExceeded / 207 ConcurrentRequestOverLimit / 4204 Bulk throttling are declared in rate_limit_codes and raise core.quota.RateLimitError (breaker + re-queue) whatever the HTTP status. 400:2001-2101 is the ReportingService* validation family (columns 2015, aggregation 2007, dates 2009/2011/2041, scope 2019-2035, report id 2100/2101); 2100/2101 on a POLL of a previously valid reference are mapped by the connector to the canonical async 'expired' status (26.1 F-3) before this map applies. 5xx falls through to provider_transient via classify_http_error.",
+    "rate_limit_codes": [
+        "117",
+        "207",
+        "4204"
+    ],
+    "refetch": {
+        "nightly_days": 3,
+        "weekly_days": 30,
+        "monthly_days": 90,
+        "_note": "Dossier section 9: clicks ~2h, conversions ~3h, invalid-traffic adjustments up to a week+ (nightly 3d), conversions credited to the CLICK date with goal windows up to 90 days (weekly 30d, monthly 90d). Daily retention 36 months = hard backfill bound."
+    },
+    "canonical_metric_mapping": {
+        "spend": "cost",
+        "impressions": "impressions",
+        "clicks": "clicks",
+        "conversions": "conversions",
+        "revenue": "revenue"
+    },
+    "canonical_dimension_mapping": {
+        "time_period": "date",
+        "account_id": "account_id",
+        "campaign_id": "campaign_id",
+        "campaign_name": "campaign_name",
+        "campaign_type": "campaign_type",
+        "campaign_status": "campaign_status",
+        "currency_code": "currency_code",
+        "ad_group_id": "ad_group_id",
+        "ad_group_name": "ad_group_name",
+        "status": "ad_group_status",
+        "ad_id": "ad_id",
+        "ad_type": "ad_type",
+        "ad_status": "ad_status",
+        "keyword_id": "keyword_id",
+        "keyword": "keyword",
+        "keyword_status": "keyword_status",
+        "search_query": "search_query"
+    },
+    "quota": {
+        "window_seconds": 60,
+        "budget_points": 30,
+        "read_cost": 1,
+        "write_cost": 3,
+        "_note": "Dossier section 8: throttling is a 60s sliding window with INTERNAL, unpublished thresholds (codes 117/207/4204, no Retry-After header). Conservative budget: one read = one Submit + its polls; submits are serialized per connection because the concurrent-report cap (207) is undocumented. Calibration is a live-pass item (ROLLOUT_NOTES)."
+    },
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "spend",
+                "source_field": "Spend",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Ad spend in the account currency (CurrencyCode).",
+                "semantic_hints": [
+                    "spend",
+                    "currency"
+                ],
+                "canonical_target": "cost",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "impressions",
+                "source_field": "Impressions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Number of times the ads were shown.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "clicks",
+                "source_field": "Clicks",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Number of billable clicks on the ads.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "conversions",
+                "source_field": "Conversions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Conversions credited to the CLICK date (windows up to 90 days: past days restate -- refetch ladder).",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "conversions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "revenue",
+                "source_field": "Revenue",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Revenue reported by conversion goals (click-date attribution, restated like conversions).",
+                "semantic_hints": [
+                    "conversion",
+                    "currency"
+                ],
+                "canonical_target": "revenue",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "time_period",
+                "source_field": "TimePeriod",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "Reporting day (Daily aggregation bucket; report time zone pinned to GMT for cursor reproducibility).",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "account_id",
+                "source_field": "AccountId",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Advertiser account ID (the selected reporting account).",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "account_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_id",
+                "source_field": "CampaignId",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign ID.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_name",
+                "source_field": "CampaignName",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign display name.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_type",
+                "source_field": "CampaignType",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign type (Search / Shopping / Audience / Performance max / ...).",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "campaign_type",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_status",
+                "source_field": "CampaignStatus",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign status (Active / Paused / Deleted).",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "campaign_status",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "currency_code",
+                "source_field": "CurrencyCode",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Account billing currency (ISO 4217). Spend/Revenue land in this currency.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "currency_code",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "ad_group_id",
+                "source_field": "AdGroupId",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad group ID.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "ad_group_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "ad_group_name",
+                "source_field": "AdGroupName",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad group display name.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "ad_group_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "status",
+                "source_field": "Status",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad group status (AdGroupPerformance report Status column).",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "ad_group_status",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "ad_id",
+                "source_field": "AdId",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad ID.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "ad_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "ad_type",
+                "source_field": "AdType",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad type (Responsive search ad / Product ad / ...).",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "ad_type",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "ad_status",
+                "source_field": "AdStatus",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad status.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "ad_status",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "keyword_id",
+                "source_field": "KeywordId",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Keyword ID (keyword grain key).",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "keyword_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "keyword",
+                "source_field": "Keyword",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Keyword text.",
+                "semantic_hints": [
+                    "content"
+                ],
+                "canonical_target": "keyword",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "keyword_status",
+                "source_field": "KeywordStatus",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Keyword status.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "keyword_status",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "search_query",
+                "source_field": "SearchQuery",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Search query that triggered the ad (SearchQueryPerformance report).",
+                "semantic_hints": [
+                    "content"
+                ],
+                "canonical_target": "search_query",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "campaign_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_campaign_daily"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions",
+                    "revenue"
+                ],
+                "dimensions": [
+                    "time_period",
+                    "account_id",
+                    "campaign_id",
+                    "campaign_name",
+                    "campaign_type",
+                    "campaign_status",
+                    "currency_code"
+                ],
+                "supported_grains": [
+                    [
+                        "time_period",
+                        "account_id",
+                        "campaign_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "time_period",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "ad_group_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_ad_group_daily"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions",
+                    "revenue"
+                ],
+                "dimensions": [
+                    "time_period",
+                    "account_id",
+                    "campaign_id",
+                    "ad_group_id",
+                    "ad_group_name",
+                    "status",
+                    "currency_code"
+                ],
+                "supported_grains": [
+                    [
+                        "time_period",
+                        "account_id",
+                        "campaign_id",
+                        "ad_group_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "time_period",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "ad_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_ad_daily"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions",
+                    "revenue"
+                ],
+                "dimensions": [
+                    "time_period",
+                    "account_id",
+                    "campaign_id",
+                    "ad_group_id",
+                    "ad_id",
+                    "ad_type",
+                    "ad_status",
+                    "currency_code"
+                ],
+                "supported_grains": [
+                    [
+                        "time_period",
+                        "account_id",
+                        "campaign_id",
+                        "ad_group_id",
+                        "ad_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "time_period",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "keyword_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_keyword_daily"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions",
+                    "revenue"
+                ],
+                "dimensions": [
+                    "time_period",
+                    "account_id",
+                    "campaign_id",
+                    "ad_group_id",
+                    "keyword_id",
+                    "keyword",
+                    "keyword_status",
+                    "currency_code"
+                ],
+                "supported_grains": [
+                    [
+                        "time_period",
+                        "account_id",
+                        "ad_group_id",
+                        "keyword_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "time_period",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "search_query_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_search_query_daily"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions",
+                    "revenue"
+                ],
+                "dimensions": [
+                    "time_period",
+                    "account_id",
+                    "campaign_id",
+                    "ad_group_id",
+                    "keyword_id",
+                    "keyword",
+                    "search_query"
+                ],
+                "supported_grains": [
+                    [
+                        "time_period",
+                        "account_id",
+                        "ad_group_id",
+                        "search_query"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "time_period",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "time_period",
+                    "account_id",
+                    "campaign_id",
+                    "campaign_name"
+                ],
+                "supported_grains": [
+                    [
+                        "time_period",
+                        "account_id",
+                        "campaign_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "time_period",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            }
+        ]
+    },
+    "account_topology": {
+        "_comment": "Story 26.4 (dossier section 7): hierarchy Customer (manager, CustomerId) -> Advertiser Account (AccountId). The reporting entity (selection_level) is the ACCOUNT. discover_accounts = Customer Management v13 REST: User/Query (current user) then Accounts/Search paginated (predicate UserId Equals). Accounts carry the composite opaque id '<account_id>@<parent_customer_id>' so pulls resolve the mandatory CustomerId header without re-discovery (ids opaque to core, AD-2). Access check = SubmitGenerateReport of a 1-day tier-core campaign report on the selected account (submit success = access proven; the report itself is discarded). Core owns selection/access-check/trial/backfill; MICROSOFT_ADS_*_ID env vars are FORBIDDEN (doctrine 25.x).",
+        "levels": [
+            {
+                "id": "customer",
+                "label": "Customer (manager account)"
+            },
+            {
+                "id": "account",
+                "label": "Advertiser account"
+            }
+        ],
+        "selection_level": "account",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    }
+}

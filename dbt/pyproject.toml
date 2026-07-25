@@ -1,0 +1,21 @@
+# dbt/ — semantic layer scaffold (Story 1.1 minimal).
+# Pins dbt-core 1.11.x (v2/Fusion not yet GA — ARCHITECTURE-SPINE §Stack) and the
+# BigQuery adapter. Story 1.1 does not run dbt; this only reserves the pins so
+# `uv.lock` resolves them for the whole workspace.
+[project]
+name = "toorow-dbt"
+version = "0.1.0"
+description = "toorow dbt semantic layer scaffold"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "dbt-core==1.11.*",
+    "dbt-bigquery==1.11.*",
+    # Story 1.4 — DuckDB local fallback adapter (T2.3); switch to bigquery target for production.
+    # dbt-duckdb 1.9.x is compatible with dbt-core 1.11.x.
+    "dbt-duckdb>=1.9,<2.0",
+]
+
+# This is a dbt project, not an importable Python library, so it is a non-package
+# workspace member (uv installs its dependencies without building a wheel).
+[tool.uv]
+package = false

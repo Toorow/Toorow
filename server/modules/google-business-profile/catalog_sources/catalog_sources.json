@@ -1,0 +1,87 @@
+{
+  "connector": "google-business-profile",
+  "api_version": "v1 (Performance) + v4 (Reviews, legacy)",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "The Google Business Profile Performance API is small and fully enumerable: the DailyMetric enum is a fixed set of 11 requestable daily counts (all additive), transcribed in official_fields.json from https://developers.google.com/my-business/reference/performance/rest/v1/DailyMetric. No enrichment source (GBP is not a Supermetrics source). field_discovery.mode=static. The daily performance surface is the core; search keywords (monthly) and reviews (legacy v4, allowlist-gated) are separate planned facets.",
+    "central_design_fact": "HAS history but HARD-CAPPED at ~18 MONTHS (daily) -- data older than 18 months from the request date is unreachable. There is no backfill beyond that window: the connector must sync early and persist to the warehouse for anything longer (YoY). Plus a ~3-7 day reporting lag on recent days, and zero-days OMITTED from datedValues (gap-fill to 0).",
+    "access_gate": "DEFAULT quota is 0 QPM: a newly-enabled project is un-runnable until Google manually approves an access/quota request (no sandbox). Approved default = 300 QPM. Reviews (v4) additionally require allowlisting. These are provisioning gates, not auth-flow changes.",
+    "official_field_count": 25,
+    "official_metrics": 13,
+    "official_dimensions": 12
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.google.com/my-business/reference/performance/rest/v1/DailyMetric",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "performance_endpoint",
+          "url": "https://developers.google.com/my-business/reference/performance/rest/v1/locations/fetchMultiDailyMetricsTimeSeries",
+          "fetched_at": "2026-07-21",
+          "_note": "GET locations/{location}:fetchMultiDailyMetricsTimeSeries?dailyMetrics=&dailyRange.startDate=&dailyRange.endDate= -> multiDailyMetricTimeSeries[].dailyMetricTimeSeries[].timeSeries.datedValues[].{date,value}. value = stringified int64. Daily grain."
+        },
+        {
+          "purpose": "search_keywords_monthly",
+          "url": "https://developers.google.com/my-business/reference/performance/rest/v1/locations.searchkeywords.impressions.monthly/list",
+          "fetched_at": "2026-07-21",
+          "_note": "MONTHLY only; searchKeywordsCounts[].{searchKeyword, insightsValue:{value|threshold}}."
+        },
+        {
+          "purpose": "topology_accounts",
+          "url": "https://developers.google.com/my-business/reference/accountmanagement/rest/v1/accounts/list",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "topology_locations",
+          "url": "https://developers.google.com/my-business/reference/businessinformation/rest/v1/accounts.locations/list",
+          "fetched_at": "2026-07-21",
+          "_note": "locations/{location_id} = the reporting entity (Performance + Reviews take this id)."
+        },
+        {
+          "purpose": "reviews_legacy_v4",
+          "url": "https://developers.google.com/my-business/reference/rest/v4/accounts.locations.reviews/list",
+          "fetched_at": "2026-07-21",
+          "_note": "Legacy My Business API v4 host mybusiness.googleapis.com/v4. DEPRECATED surface but reviews still active 2026; ALLOWLIST-gated (403 without grant). Isolate behind an adapter."
+        },
+        {
+          "purpose": "scopes_and_quota",
+          "url": "https://developers.google.com/my-business/content/basic-setup",
+          "fetched_at": "2026-07-21",
+          "_note": "Single scope business.manage (read/write, no read-only). Default 0 QPM until access granted; approved 300 QPM."
+        }
+      ]
+    }
+  ],
+  "_no_enrichment": "GBP is NOT a Supermetrics source. The official DailyMetric enum + the v4 reviews / monthly search-keyword schemas are the sole authority -- sufficient because the surfaces are small and static.",
+  "section_tier_map": {
+    "PERFORMANCE - IMPRESSIONS": "core",
+    "PERFORMANCE - ACTIONS": "core",
+    "TIME": "core",
+    "TOPOLOGY": "core",
+    "SEARCH KEYWORDS": "standard",
+    "REVIEWS": "standard"
+  },
+  "field_tier_overrides": {
+    "account_id": "standard",
+    "location_title": "standard"
+  },
+  "default_tier": "standard",
+  "_field_discovery": {
+    "mode": "static",
+    "note": "Fixed DailyMetric enum + fixed v4/monthly schemas. No per-account custom fields. Full set committed in api_catalog.json."
+  },
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 11,
+    "structural_note": "fetchMultiDailyMetricsTimeSeries for ONE known location id over a 1-day window carries all requested DailyMetric series -> each cataloged metric records ok|empty by presence. Reviews (v4) + monthly search keywords probed separately once the account is allowlisted. Requires a granted (>0 QPM) project + a real GBP location; deferred (no test account 2026-07-21)."
+  },
+  "_verification": {
+    "status": "blocked",
+    "reason_code": "live_evidence_not_ratified",
+    "note": "No GBP test account AND default 0-QPM access gate (2026-07-21). Ratification deferred until a real GBP account with granted quota exists."
+  }
+}

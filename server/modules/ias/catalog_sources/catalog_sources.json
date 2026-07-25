@@ -1,0 +1,81 @@
+{
+  "connector": "ias",
+  "api_version": "reportingservice-2026-07-21",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "IAS = Integral Ad Science. The reporting product is 'IAS Signal'; the data API is the IAS Reporting API (RESTful, GET-only, synchronous) at https://api.integralplatform.com/reportingservice/api/. official_fields.json is a CURATED authority snapshot: the official reference (reporting.integralplatform.com/help/rs) is a login-gated SPA that is not statically fetchable, so the field set was assembled from IAS's own documented measurement families (viewability, invalid traffic / IVT, brand safety & suitability, risk categories, quality impressions, attention, video, carbon) cross-corroborated across three independent connector references. The camelCase source_field tokens follow the Funnel connector's field naming, which is the closest public proxy for the raw IAS API columns.",
+    "authority_caveat": "Because the exact wire field names, the date-range query-parameter names, and the JSON response envelope are NOT confirmable from a statically fetchable official page, this catalog is the DECLARED contract only. It is proven against the real API by the live ratification probe (scripts/ratify_connector.py), which stays deferred until a real IAS Signal account connects. public_catalog.verification stays 'blocked' until then. See ROLLOUT_NOTES.md.",
+    "exposure": "exposure_policy is 'manifest': the six additive count metrics + three structural dimensions declared in manifest.source_capabilities.fields are 'exposed' (extracted by the exact_bundle daily profiles); every other cataloged field is 'planned'. Ratio/rate and index metrics are deliberately left planned -- they are recomputed downstream from their additive numerator/denominator counts rather than summed."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://reporting.integralplatform.com/help/rs/home.html",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "reporting_api_overview",
+          "url": "https://helpcenter.integralplatform.com/article/reporting-api",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "attention_product",
+          "url": "https://integralads.com/solutions/attention/",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "url": "https://help.funnel.io/en/articles/8704186-what-data-can-i-get-from-integral-ad-science-ias",
+      "fetched_at": "2026-07-21",
+      "_purpose": "camelCase field naming + report families (closest public proxy for raw API columns)"
+    },
+    {
+      "kind": "enrichment",
+      "url": "https://docs.adverity.com/reference/connectors/connector-integral-ad-science.html",
+      "fetched_at": "2026-07-21",
+      "_purpose": "metric display names + dimension list cross-check"
+    },
+    {
+      "kind": "enrichment",
+      "url": "https://docs.supermetrics.com/docs/integral-ad-science-fields",
+      "fetched_at": "2026-07-21",
+      "_purpose": "field-family cross-check (Supermetrics uses its own performance__ prefix -- semantic only, not wire names)"
+    }
+  ],
+  "section_tier_map": {
+    "TIME": "core",
+    "STRUCTURE": "core",
+    "VIEWABILITY": "core",
+    "INVALID_TRAFFIC": "core",
+    "BRAND_SAFETY": "core",
+    "ENVIRONMENT": "standard",
+    "RISK_CATEGORY": "standard",
+    "FAILURE_REASON": "standard",
+    "QUALITY": "standard",
+    "VIDEO": "advanced",
+    "ATTENTION": "advanced",
+    "CARBON": "advanced"
+  },
+  "field_tier_overrides": {
+    "impressions": "core",
+    "measured_impressions": "core",
+    "viewable_impressions": "core",
+    "eligible_impressions": "core",
+    "invalid_traffic_ads": "core",
+    "brand_safety_passed_ads": "core",
+    "brand_safety_failed_ads": "core",
+    "campaign_id": "core",
+    "campaign_name": "core"
+  },
+  "default_tier": "standard",
+  "exposure_policy": "manifest",
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 25,
+    "structural_note": "The IAS Reporting API selects metrics + dimensions as query parameters on a GET /reportingservice/api/teams/{teamId}/platform/{platform}/campaigns/{campaignIds}/report over a date window. The probe would request up to 25 metric fields per call over a 1-day window against the selected team+campaign, bisecting a rejected batch to isolate the offending field. request_style/batch_size are declared now; the live probe is deferred until an IAS account connects (see ROLLOUT_NOTES.md)."
+  }
+}

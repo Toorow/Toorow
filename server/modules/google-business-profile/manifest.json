@@ -1,0 +1,310 @@
+{
+    "schema_version": "1.2",
+    "name": "google-business-profile",
+    "display_name": "Google Business Profile",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "analytics_product",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify once a real GBP account with granted quota (>0 QPM) exists (default 0-QPM access gate + no test account 2026-07-21)."
+        }
+    },
+    "auth_type": "google_direct",
+    "module_kind": "kpi",
+    "report_profiles": [
+        {
+            "id": "location_daily",
+            "display_name": "Location performance (daily)",
+            "metrics": [
+                "business_impressions_desktop_maps",
+                "business_impressions_desktop_search",
+                "business_impressions_mobile_maps",
+                "business_impressions_mobile_search",
+                "business_conversations",
+                "business_direction_requests",
+                "call_clicks",
+                "website_clicks",
+                "business_bookings",
+                "business_food_orders",
+                "business_food_menu_clicks"
+            ],
+            "dimensions": [
+                "date",
+                "location_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "_api_notes": "GET locations/{location}:fetchMultiDailyMetricsTimeSeries with all 11 DailyMetric values over the dailyRange, per selected location. Daily grain, all metrics ADDITIVE. History hard-capped at ~18 months; zero-days omitted by the API -> gap-filled to 0. Requires a granted (>0 QPM) project."
+        }
+    ],
+    "canonical_metric_mapping": {
+        "BUSINESS_IMPRESSIONS_DESKTOP_MAPS": "business_impressions_desktop_maps",
+        "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH": "business_impressions_desktop_search",
+        "BUSINESS_IMPRESSIONS_MOBILE_MAPS": "business_impressions_mobile_maps",
+        "BUSINESS_IMPRESSIONS_MOBILE_SEARCH": "business_impressions_mobile_search",
+        "BUSINESS_CONVERSATIONS": "business_conversations",
+        "BUSINESS_DIRECTION_REQUESTS": "business_direction_requests",
+        "CALL_CLICKS": "call_clicks",
+        "WEBSITE_CLICKS": "website_clicks",
+        "BUSINESS_BOOKINGS": "business_bookings",
+        "BUSINESS_FOOD_ORDERS": "business_food_orders",
+        "BUSINESS_FOOD_MENU_CLICKS": "business_food_menu_clicks"
+    },
+    "canonical_dimension_mapping": {},
+    "error_map": {
+        "400": "invalid_request",
+        "401": "auth_expired",
+        "403": "permission_denied",
+        "404": "permission_denied",
+        "429": "provider_transient",
+        "500": "provider_transient"
+    },
+    "_error_map_note": "VERIFIE le 2026-07-21. GBP APIs return the standard Google API error envelope { error: { code, message, status, errors[]:{message, domain, reason}, details } }. No GBP-specific numeric subcodes, so the map is keyed on HTTP STATUS alone: 401->auth_expired, 403->permission_denied (most commonly quota=0 / not-allowlisted, or missing location role), 404->permission_denied, 400->invalid_request, 5xx->provider_transient. 429 RESOURCE_EXHAUSTED (quota) raises core.quota.RateLimitError (breaker path). IMPORTANT provisioning caveat (not an error-map concern): a newly-enabled project has 0 QPM until Google approves an access request -> every call 403s until then; the v4 Reviews host is additionally allowlist-gated.",
+    "account_topology": {
+        "_comment": "Two-level GBP hierarchy across two APIs. Account Management accounts.list -> accounts/{account_id} (AccountType PERSONAL/LOCATION_GROUP/USER_GROUP/ORGANIZATION). Business Information accounts.locations.list -> locations/{location_id} = the REPORTING ENTITY (the Performance and Reviews endpoints are scoped by this id). One token can access multiple accounts and their locations. discover_accounts enumerates account->location and returns the reachable locations. Access-check = fetchMultiDailyMetricsTimeSeries returns 200 for a selected location. No *_LOCATION_ID env var (doctrine); the selected location lives in connection_ref.",
+        "levels": [
+            {
+                "id": "account",
+                "label": "Account"
+            },
+            {
+                "id": "location",
+                "label": "Location"
+            }
+        ],
+        "selection_level": "location",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    },
+    "quota": {
+        "window_seconds": 60,
+        "budget_points": 300,
+        "read_cost": 1,
+        "write_cost": 1,
+        "_rate_limit_note": "VERIFIE le 2026-07-21 (https://developers.google.com/my-business/content/limits): DEFAULT 0 QPM (project un-runnable until Google approves an access/quota request -- no sandbox); approved default 300 QPM across Performance/BusinessInformation/AccountManagement. Budget = 300 points / 60s (the approved ceiling). fetchMultiDailyMetricsTimeSeries batches all 11 metrics in ONE call per location per range. 429 RESOURCE_EXHAUSTED -> RateLimitError."
+    },
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "business_impressions_desktop_maps",
+                "source_field": "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Business impressions on Google Maps on Desktop (deduped per unique user per day). Additive.",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "business_impressions_desktop_maps",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "business_impressions_desktop_search",
+                "source_field": "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Business impressions on Google Search on Desktop (deduped per unique user per day). Additive.",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "business_impressions_desktop_search",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "business_impressions_mobile_maps",
+                "source_field": "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Business impressions on Google Maps on Mobile (deduped per unique user per day). Additive.",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "business_impressions_mobile_maps",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "business_impressions_mobile_search",
+                "source_field": "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Business impressions on Google Search on Mobile (deduped per unique user per day). Additive. Total impressions = sum of the 4 BUSINESS_IMPRESSIONS_* metrics.",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "business_impressions_mobile_search",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "business_conversations",
+                "source_field": "BUSINESS_CONVERSATIONS",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Message conversations received on the profile. Additive.",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "business_conversations",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "business_direction_requests",
+                "source_field": "BUSINESS_DIRECTION_REQUESTS",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Direction requests to the location. Additive.",
+                "semantic_hints": ["conversion", "count"],
+                "canonical_target": "business_direction_requests",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "call_clicks",
+                "source_field": "CALL_CLICKS",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Call-button clicks. Additive.",
+                "semantic_hints": ["conversion", "count"],
+                "canonical_target": "call_clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "website_clicks",
+                "source_field": "WEBSITE_CLICKS",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Website-link clicks. Additive.",
+                "semantic_hints": ["conversion", "count"],
+                "canonical_target": "website_clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "business_bookings",
+                "source_field": "BUSINESS_BOOKINGS",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Bookings via Reserve with Google. Additive.",
+                "semantic_hints": ["conversion", "count"],
+                "canonical_target": "business_bookings",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "business_food_orders",
+                "source_field": "BUSINESS_FOOD_ORDERS",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Food orders from the profile. Additive.",
+                "semantic_hints": ["conversion", "count"],
+                "canonical_target": "business_food_orders",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "business_food_menu_clicks",
+                "source_field": "BUSINESS_FOOD_MENU_CLICKS",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Menu-content clicks (deduped per unique user per day). Additive.",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "business_food_menu_clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "date",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "Reporting day (YYYY-MM-DD) from datedValues[].date. Zero-days gap-filled to 0.",
+                "semantic_hints": ["date"],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "location_id",
+                "source_field": "location_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "The reporting entity: Business Profile location id (locations/{location_id}). Stamped on every row.",
+                "semantic_hints": ["identifier"],
+                "canonical_target": "location_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "location_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_location_daily"
+                },
+                "metrics": [
+                    "business_impressions_desktop_maps",
+                    "business_impressions_desktop_search",
+                    "business_impressions_mobile_maps",
+                    "business_impressions_mobile_search",
+                    "business_conversations",
+                    "business_direction_requests",
+                    "call_clicks",
+                    "website_clicks",
+                    "business_bookings",
+                    "business_food_orders",
+                    "business_food_menu_clicks"
+                ],
+                "dimensions": [
+                    "date",
+                    "location_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "location_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": ["gte", "lte"]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request_per_location"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": ["manual", "daily"]
+                }
+            }
+        ]
+    }
+}

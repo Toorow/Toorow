@@ -1,0 +1,322 @@
+[
+  {
+    "field_id": "member_count",
+    "source_field": "member_count",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total number of club members at the moment of the snapshot. THE key competitive metric. Non-additive point-in-time LEVEL (aggregation_rule=latest, non_additive): never summed across snapshot dates or across clubs; the growth trend is derived downstream as member_count(t) - member_count(t-1), null on the first snapshot. Strava returns no history (DetailedClub is a current-value snapshot), so the series exists only from first connection onward.",
+    "section": "CLUB - METRICS"
+  },
+  {
+    "field_id": "following_count",
+    "source_field": "following_count",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of accounts the club follows, at the moment of the snapshot. Non-additive point-in-time LEVEL (aggregation_rule=latest, non_additive), same discipline as member_count.",
+    "section": "CLUB - METRICS"
+  },
+  {
+    "field_id": "post_count",
+    "source_field": "post_count",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of posts in the club (present on some DetailedClub responses). Non-additive point-in-time level. Cataloged, not extracted by the v1 profiles (planned).",
+    "section": "CLUB - METRICS"
+  },
+  {
+    "field_id": "date",
+    "source_field": "date",
+    "kind": "dimension",
+    "data_type": "date",
+    "description": "Snapshot date (YYYY-MM-DD) STAMPED at extraction time. Strava's Clubs API returns no date field of its own; every club object is a point-in-time snapshot, so the connector stamps the pull's UTC date. This is the time grain of the snapshot fact (one row per club per snapshot date).",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "club_id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Strava club unique identifier (DetailedClub.id). The snapshot grain key. Competitor club ids are supplied as per-project config (resolved once from strava.com/clubs/<slug>); own club ids come from GET /athlete/clubs discovery.",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "club_name",
+    "source_field": "name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Club display name (DetailedClub.name).",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "sport_type",
+    "source_field": "sport_type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Club primary sport type (DetailedClub.sport_type): cycling / running / triathlon / other.",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "club_city",
+    "source_field": "city",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Club city (DetailedClub.city). Free-form location string; NOT the vocabulary-governed GA4 country/device dimension (renamed club_* on purpose to avoid vocabulary collision).",
+    "section": "CLUB - LOCATION"
+  },
+  {
+    "field_id": "club_state",
+    "source_field": "state",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Club state/region (DetailedClub.state). Free-form location string.",
+    "section": "CLUB - LOCATION"
+  },
+  {
+    "field_id": "club_country",
+    "source_field": "country",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Club country (DetailedClub.country). Free-form location string (NOT an ISO-3166 code); renamed club_country to avoid colliding with the vocabulary-governed 'country' dimension.",
+    "section": "CLUB - LOCATION"
+  },
+  {
+    "field_id": "is_private",
+    "source_field": "private",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the club is private (DetailedClub.private). A private competitor club is unreachable by a non-member (GET /clubs/{id} returns 404); such an id is skipped with an alert, never a fabricated zero.",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "is_verified",
+    "source_field": "verified",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the club is verified (DetailedClub.verified).",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "club_url",
+    "source_field": "url",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Club vanity URL slug (DetailedClub.url).",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "is_own_club",
+    "source_field": "is_own_club",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "STAMPED by the connector: true when the snapshotted club is one the connected athlete belongs to (from GET /athlete/clubs discovery), false when it is a config-supplied competitor club. Lets the mart separate own vs competitor series.",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "featured",
+    "source_field": "featured",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the club is featured (DetailedClub.featured). Cataloged, not extracted by v1 profiles (planned).",
+    "section": "CLUB - MEMBERSHIP FLAGS"
+  },
+  {
+    "field_id": "membership",
+    "source_field": "membership",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Authenticated athlete's membership status relative to this club: 'member' or 'pending' (DetailedClub.membership/member). Only meaningful for own clubs. Planned.",
+    "section": "CLUB - MEMBERSHIP FLAGS"
+  },
+  {
+    "field_id": "admin",
+    "source_field": "admin",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the authenticated athlete is an admin of this club (DetailedClub.admin). Own clubs only. Planned.",
+    "section": "CLUB - MEMBERSHIP FLAGS"
+  },
+  {
+    "field_id": "owner",
+    "source_field": "owner",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the authenticated athlete owns this club (DetailedClub.owner). Own clubs only. Planned.",
+    "section": "CLUB - MEMBERSHIP FLAGS"
+  },
+  {
+    "field_id": "club_type",
+    "source_field": "club_type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Club type (DetailedClub.club_type). Planned.",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "description",
+    "source_field": "description",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Club description text (DetailedClub.description). Planned.",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "activity_types",
+    "source_field": "activity_types",
+    "kind": "dimension",
+    "data_type": "array",
+    "description": "Array of activity types supported by the club (DetailedClub.activity_types). Planned.",
+    "section": "CLUB - IDENTITY"
+  },
+  {
+    "field_id": "resource_state",
+    "source_field": "resource_state",
+    "kind": "dimension",
+    "data_type": "integer",
+    "description": "Strava resource detail level (3=detailed). Structural metadata, not analytical. Planned.",
+    "section": "CLUB - MEMBERSHIP FLAGS"
+  },
+  {
+    "field_id": "cover_photo",
+    "source_field": "cover_photo",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "URL of the club large cover photo (~1185x580). Media asset. Planned.",
+    "section": "CLUB - MEDIA"
+  },
+  {
+    "field_id": "cover_photo_small",
+    "source_field": "cover_photo_small",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "URL of the club small cover photo (~360x176). Media asset. Planned.",
+    "section": "CLUB - MEDIA"
+  },
+  {
+    "field_id": "profile",
+    "source_field": "profile",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "URL of the club large profile image. Media asset. Planned.",
+    "section": "CLUB - MEDIA"
+  },
+  {
+    "field_id": "profile_medium",
+    "source_field": "profile_medium",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "URL of the club 60x60 profile image. Media asset. Planned.",
+    "section": "CLUB - MEDIA"
+  },
+  {
+    "field_id": "athlete_id",
+    "source_field": "athlete_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Connected athlete id (GET /athlete -> DetailedAthlete.id). Used ONLY to key the connection identity; never extracted into snapshot rows. Note: club member/activity feeds are anonymized and expose NO athlete id, so the connection is keyed here, not on feed athletes. Planned.",
+    "section": "ATHLETE (connection key)"
+  },
+  {
+    "field_id": "activity_name",
+    "source_field": "name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Name of a club activity (ClubActivity.name), from GET /clubs/{id}/activities. Own clubs only (membership-gated); anonymized feed with no stable primary key. Planned (own_club_full).",
+    "section": "CLUB ACTIVITY FEED"
+  },
+  {
+    "field_id": "activity_distance",
+    "source_field": "distance",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Distance of a club activity in meters (ClubActivity.distance). Own clubs only, anonymized feed. Planned (own_club_full).",
+    "section": "CLUB ACTIVITY FEED"
+  },
+  {
+    "field_id": "activity_moving_time",
+    "source_field": "moving_time",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Moving time of a club activity in seconds (ClubActivity.moving_time). Own clubs only, anonymized feed. Planned (own_club_full).",
+    "section": "CLUB ACTIVITY FEED"
+  },
+  {
+    "field_id": "activity_elapsed_time",
+    "source_field": "elapsed_time",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Elapsed time of a club activity in seconds (ClubActivity.elapsed_time). Own clubs only, anonymized feed. Planned (own_club_full).",
+    "section": "CLUB ACTIVITY FEED"
+  },
+  {
+    "field_id": "activity_total_elevation_gain",
+    "source_field": "total_elevation_gain",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Total elevation gain of a club activity in meters (ClubActivity.total_elevation_gain). Own clubs only, anonymized feed. Planned (own_club_full).",
+    "section": "CLUB ACTIVITY FEED"
+  },
+  {
+    "field_id": "activity_sport_type",
+    "source_field": "sport_type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Sport type of a club activity (ClubActivity.sport_type). Own clubs only, anonymized feed. Planned (own_club_full).",
+    "section": "CLUB ACTIVITY FEED"
+  },
+  {
+    "field_id": "activity_athlete_firstname",
+    "source_field": "firstname",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "First name of the athlete on a club activity (ClubActivity.athlete.firstname). ANONYMIZED (first name only, no athlete id). Own clubs only. Planned (own_club_full).",
+    "section": "CLUB ACTIVITY FEED"
+  },
+  {
+    "field_id": "activity_athlete_lastinitial",
+    "source_field": "lastname",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Last initial of the athlete on a club activity (ClubActivity.athlete.lastname, e.g. 'S.'). ANONYMIZED, no athlete id. Own clubs only. Planned (own_club_full).",
+    "section": "CLUB ACTIVITY FEED"
+  },
+  {
+    "field_id": "member_firstname",
+    "source_field": "firstname",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "First name of a club member (ClubAthlete.firstname), from GET /clubs/{id}/members. ANONYMIZED (first name only, no athlete id). Own clubs only (membership-gated). Planned (own_club_full).",
+    "section": "CLUB MEMBERS"
+  },
+  {
+    "field_id": "member_lastinitial",
+    "source_field": "lastname",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Last initial of a club member (ClubAthlete.lastname). ANONYMIZED, no athlete id. Own clubs only. Planned (own_club_full).",
+    "section": "CLUB MEMBERS"
+  },
+  {
+    "field_id": "member_status",
+    "source_field": "member",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Membership status of a club member: 'member' or 'pending' (ClubAthlete.member/membership; capture whichever the live API returns). Own clubs only. Planned (own_club_full).",
+    "section": "CLUB MEMBERS"
+  },
+  {
+    "field_id": "member_is_admin",
+    "source_field": "admin",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether a club member is an admin (ClubAthlete.admin), from GET /clubs/{id}/members or /admins. Own clubs only. Planned (own_club_full).",
+    "section": "CLUB MEMBERS"
+  },
+  {
+    "field_id": "member_is_owner",
+    "source_field": "owner",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether a club member is the owner (ClubAthlete.owner). Own clubs only. Planned (own_club_full).",
+    "section": "CLUB MEMBERS"
+  }
+]

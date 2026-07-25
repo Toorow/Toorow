@@ -1,0 +1,361 @@
+{
+    "schema_version": "1.2",
+    "name": "piano",
+    "display_name": "Piano Analytics",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "analytics_product",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract (25.6 live probe) against a test Piano site with real custom Data Model keys -- including the dynamic-catalog unknown-column drift path and the Data Model admin-endpoint spike (ROLLOUT_NOTES)."
+        }
+    },
+    "auth_type": "api_key",
+    "module_kind": "kpi",
+    "provider_api_version": "v3",
+    "provider_api_base": "https://api.atinternet.io",
+    "_provider_api_note": "Story 28.1: Piano Analytics Data Query API v3 is pinned HERE and only here. connector.py builds every URL from provider_api_base + provider_api_version (POST /v3/data/getData). api_catalog.json / catalog_sources.json api_version must equal this pin.",
+    "report_profiles": [
+        {
+            "id": "baseline_daily",
+            "display_name": "Baseline traffic (daily)",
+            "metrics": ["m_visits", "m_unique_visitors", "m_page_loads"],
+            "dimensions": ["date", "device_type", "geo_country"],
+            "extraction_capabilities": {
+                "row_limit": 10000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "audience_daily",
+            "display_name": "Audience by device and country (daily)",
+            "metrics": ["m_visits", "m_unique_visitors", "m_page_loads"],
+            "dimensions": ["date", "device_type", "geo_country"],
+            "extraction_capabilities": {
+                "row_limit": 10000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "sources_daily",
+            "display_name": "Acquisition sources (daily)",
+            "metrics": ["m_visits", "m_unique_visitors"],
+            "dimensions": ["date", "src_source", "src_medium"],
+            "extraction_capabilities": {
+                "row_limit": 10000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "events_daily",
+            "display_name": "Onsite events (daily)",
+            "metrics": ["m_events"],
+            "dimensions": ["date", "event_name"],
+            "extraction_capabilities": {
+                "row_limit": 10000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven daily (any selected Data Model column, getData)",
+            "metrics": ["m_visits", "m_unique_visitors", "m_page_loads"],
+            "dimensions": ["date", "device_type", "geo_country"],
+            "extraction_capabilities": {
+                "row_limit": 10000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        }
+    ],
+    "error_map": {
+        "401:BadAuthentication": "auth_expired",
+        "403:UnauthorizedSite": "permission_denied",
+        "403:InvalidSpace": "permission_denied",
+        "400:InvalidColumns": "invalid_request",
+        "400:InvalidJSON": "invalid_request",
+        "400:InvalidPeriod": "invalid_request",
+        "400:InvalidSort": "invalid_request",
+        "400:InvalidFilter": "invalid_request",
+        "400:InvalidSegment": "invalid_request",
+        "500:UnknownError": "provider_transient"
+    },
+    "_error_map_note": "Story 28.1 (dossier section 7): keys are '<http_status>:<API_Code_Category>' -- the CATEGORY PREFIX only. Piano v3 error bodies carry an API-Code string (Category_Subcode); connector._code_prefix() reduces it to its Category before matching, so every key here is a bare Category (BadAuthentication, UnauthorizedSite, InvalidSpace, InvalidColumns, ...) -- NEVER a full Category_Subcode (a full-code key would be unreachable). 401 BadAuthentication_* -> auth_expired (rotate/re-enter key). 403 UnauthorizedSite / InvalidSpace_* -> permission_denied (the site access-check signal). 400 InvalidColumns_* is THE dynamic-catalog drift key: an unknown Data Model property/metric key -> invalid_request + pull_invalid_request drift (NOT a crash, NOT a silent drop). 509 QuotasExceeded_TooManyRequests and any 429 stay on the core.quota.RateLimitError breaker path (NOT in this map): serialize per connection + backoff. 5xx fall through to pure-HTTP provider_transient.",
+    "refetch": {
+        "nightly_days": 3,
+        "weekly_days": 14,
+        "monthly_days": 30,
+        "_note": "Dossier section 6: Piano is near-real-time event-collection analytics that stabilises within ~24h; there is no long conversion-restatement window (contrast google-ads). nightly 3d covers late/queued hits + offline-app sync + short reprocessing; weekly 14d / monthly 30d cover consent/identity reprocessing tails. Per-datastream overridable."
+    },
+    "canonical_metric_mapping": {
+        "m_visits": "visits",
+        "m_unique_visitors": "unique_visitors",
+        "m_page_loads": "page_loads",
+        "m_events": "events"
+    },
+    "canonical_dimension_mapping": {
+        "date": "date",
+        "site_id": "site_id",
+        "device_type": "device_type",
+        "geo_country": "geo_country",
+        "src_source": "src_source",
+        "src_medium": "src_medium",
+        "event_name": "event_name"
+    },
+    "quota": {
+        "window_seconds": 60,
+        "budget_points": 60,
+        "read_cost": 1,
+        "write_cost": 1,
+        "_note": "Dossier section 4: Piano publishes NO QPS/points budget -- throttling is on CONCURRENT calls (QuotasExceeded_TooManyRequests HTTP 509). The 60/min budget is a conservative default; the real guard is per-connection serialization (no parallel fan-out) + the 509/429 breaker with backoff."
+    },
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "runtime",
+            "allowed_targets": ["site"]
+        },
+        "fields": [
+            {
+                "field_id": "m_visits",
+                "source_field": "m_visits",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Number of visits (sessions). NON-ADDITIVE (AD-4): visit-scoped, does not sum across property breakdowns; landed raw.",
+                "semantic_hints": ["sessions", "count"],
+                "canonical_target": "visits",
+                "aggregation": "latest",
+                "non_additive": true
+            },
+            {
+                "field_id": "m_unique_visitors",
+                "source_field": "m_unique_visitors",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Number of unique visitors. NON-ADDITIVE (AD-4): visitor-scoped, does not sum across property breakdowns; landed raw.",
+                "semantic_hints": ["users", "count"],
+                "canonical_target": "unique_visitors",
+                "aggregation": "latest",
+                "non_additive": true
+            },
+            {
+                "field_id": "m_page_loads",
+                "source_field": "m_page_loads",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Page displays (page views / page loads).",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "page_loads",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "m_events",
+                "source_field": "m_events",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Number of onsite events.",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "events",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "date",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "Reporting day (Piano DATE property at granularity D, site timezone).",
+                "semantic_hints": ["date"],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "device_type",
+                "source_field": "device_type",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Device type (desktop / mobile / tablet).",
+                "semantic_hints": ["label"],
+                "canonical_target": "device_type",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "geo_country",
+                "source_field": "geo_country",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Visitor country.",
+                "semantic_hints": ["label"],
+                "canonical_target": "geo_country",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "src_source",
+                "source_field": "src_source",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Acquisition source.",
+                "semantic_hints": ["attribution"],
+                "canonical_target": "src_source",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "src_medium",
+                "source_field": "src_medium",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Acquisition medium.",
+                "semantic_hints": ["attribution"],
+                "canonical_target": "src_medium",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "event_name",
+                "source_field": "event_name",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Event name.",
+                "semantic_hints": ["label"],
+                "canonical_target": "event_name",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "baseline_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {"status": "selectable"},
+                "dispatch": {"callable": "pull_baseline_daily"},
+                "metrics": ["m_visits", "m_unique_visitors", "m_page_loads"],
+                "dimensions": ["date", "device_type", "geo_country"],
+                "supported_grains": [["date", "device_type", "geo_country"]],
+                "compatibility": [],
+                "filters": [{"field_id": "date", "operators": ["gte", "lte"]}],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 20,
+                    "row_limit": 10000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {"read_points": 1, "unit": "request"},
+                "incremental": {"mode": "date_window", "cursor_field": null},
+                "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}
+            },
+            {
+                "id": "audience_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {"status": "selectable"},
+                "dispatch": {"callable": "pull_audience_daily"},
+                "metrics": ["m_visits", "m_unique_visitors", "m_page_loads"],
+                "dimensions": ["date", "device_type", "geo_country"],
+                "supported_grains": [["date", "device_type", "geo_country"]],
+                "compatibility": [],
+                "filters": [{"field_id": "date", "operators": ["gte", "lte"]}],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 20,
+                    "row_limit": 10000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {"read_points": 1, "unit": "request"},
+                "incremental": {"mode": "date_window", "cursor_field": null},
+                "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}
+            },
+            {
+                "id": "sources_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {"status": "selectable"},
+                "dispatch": {"callable": "pull_sources_daily"},
+                "metrics": ["m_visits", "m_unique_visitors"],
+                "dimensions": ["date", "src_source", "src_medium"],
+                "supported_grains": [["date", "src_source", "src_medium"]],
+                "compatibility": [],
+                "filters": [{"field_id": "date", "operators": ["gte", "lte"]}],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 20,
+                    "row_limit": 10000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {"read_points": 1, "unit": "request"},
+                "incremental": {"mode": "date_window", "cursor_field": null},
+                "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}
+            },
+            {
+                "id": "events_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {"status": "selectable"},
+                "dispatch": {"callable": "pull_events_daily"},
+                "metrics": ["m_events"],
+                "dimensions": ["date", "event_name"],
+                "supported_grains": [["date", "event_name"]],
+                "compatibility": [],
+                "filters": [{"field_id": "date", "operators": ["gte", "lte"]}],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 20,
+                    "row_limit": 10000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {"read_points": 1, "unit": "request"},
+                "incremental": {"mode": "date_window", "cursor_field": null},
+                "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {"status": "selectable"},
+                "dispatch": {"callable": "pull_catalog_daily"},
+                "metrics": ["m_visits", "m_unique_visitors", "m_page_loads"],
+                "dimensions": ["date", "device_type", "geo_country"],
+                "supported_grains": [["date", "device_type", "geo_country"]],
+                "compatibility": [],
+                "filters": [{"field_id": "date", "operators": ["gte", "lte"]}],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 20,
+                    "row_limit": 10000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {"read_points": 1, "unit": "request"},
+                "incremental": {"mode": "date_window", "cursor_field": null},
+                "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}
+            }
+        ]
+    },
+    "account_topology": {
+        "_comment": "Story 28.1 (pattern 25.5): Piano reporting topology is organization -> site. The selected reporting entity is the SITE (space.s=[<site_id>]). There is NO documented public endpoint that enumerates the sites an API key can reach: v1 discovery verifies candidate site ids via a 1-day getData access-check probe (unreachable candidates dropped). PIANO_*_SITE_ID account fallbacks are FORBIDDEN in the pull path (doctrine); selection/access-check/trial/backfill are the core topology flows.",
+        "levels": [
+            {"id": "organization", "label": "Organization"},
+            {"id": "site", "label": "Site"}
+        ],
+        "selection_level": "site",
+        "discovery": {"callable": "discover_accounts"}
+    }
+}

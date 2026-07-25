@@ -1,0 +1,444 @@
+{
+    "schema_version":  "1.2",
+    "name":  "amazon-dsp",
+    "display_name":  "Amazon DSP",
+    "public_catalog":  {
+                           "visibility":  "public",
+                           "category":  "paid_media",
+                           "onboarding_modes":  [
+                                                    "connector_pull"
+                                                ],
+                           "verification":  {
+                                                "status":  "blocked",
+                                                "reason_code":  "live_evidence_not_ratified",
+                                                "follow_up":  "Probe a real DSP seat across regional account/advertiser discovery, two report families, GZIP/CSV artifacts, 401/425/429 behavior, routing and grain."
+                                            }
+                       },
+    "auth_type":  "oauth2",
+    "module_kind":  "kpi",
+    "provider_api_version":  "reporting-v3",
+    "provider_api_base":  "https://advertising-api.amazon.com",
+    "_provider_api_note":  "Standalone Amazon DSP module. Reporting v3 requests require Amazon-Ads-AccountId and never use Sponsored Ads profile scope.",
+    "auth":  {
+                 "type":  "oauth2",
+                 "auth_path":  "nango",
+                 "scope":  "advertising::campaign_management",
+                 "required_headers":  [
+                                          "Amazon-Ads-ClientId",
+                                          "Amazon-Ads-AccountId"
+                                      ]
+             },
+    "account_topology":  {
+                             "levels":  [
+                                            "region",
+                                            "dsp_ads_account",
+                                            "advertiser"
+                                        ],
+                             "selection_level":  "advertiser",
+                             "discovery":  {
+                                               "callable":  "discover_accounts"
+                                           },
+                             "selection":  {
+                                               "required":  true,
+                                               "opaque":  true
+                                           }
+                         },
+    "report_profiles":  [
+                            {
+                                "id":  "campaign_daily",
+                                "display_name":  "DSP campaign daily",
+                                "metrics":  [
+                                                "impressions",
+                                                "clicks",
+                                                "totalCost",
+                                                "purchases",
+                                                "sales"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "advertiserId",
+                                                   "region"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            },
+                            {
+                                "id":  "catalog_daily",
+                                "display_name":  "DSP catalog daily",
+                                "metrics":  [
+                                                "impressions",
+                                                "clicks",
+                                                "totalCost",
+                                                "purchases",
+                                                "sales"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "advertiserId",
+                                                   "region"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull"
+                            },
+                            {
+                                "id":  "benchmarks",
+                                "display_name":  "DSP benchmarks",
+                                "metrics":  [
+
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "advertiserId",
+                                                   "region"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  false,
+                                                                "realtime":  false
+                                                            },
+                                "availability":  {
+                                                     "status":  "unavailable",
+                                                     "reason_code":  "dedicated_grain_required",
+                                                     "follow_up":  "Implement and validate a DAILY/WEEKLY/MONTHLY non-additive benchmark grain."
+                                                 },
+                                "extraction_path":  "custom_pull"
+                            }
+                        ],
+    "canonical_metric_mapping":  {
+                                     "impressions":  "impressions",
+                                     "clicks":  "clicks",
+                                     "totalCost":  "cost",
+                                     "purchases":  "conversions",
+                                     "sales":  "revenue"
+                                 },
+    "canonical_dimension_mapping":  {
+                                        "date":  "date",
+                                        "advertiserId":  "advertiser_id",
+                                        "region":  "region",
+                                        "ads_account_id":  "account_id",
+                                        "report_type":  "report_type",
+                                        "group_by":  "group_by"
+                                    },
+    "error_map":  {
+                      "400:INVALID_ARGUMENT":  "invalid_request",
+                      "401:UNAUTHORIZED":  "auth_expired",
+                      "403:FORBIDDEN":  "permission_denied",
+                      "404:NOT_FOUND":  "invalid_request",
+                      "425:TOO_EARLY":  "provider_transient",
+                      "500:INTERNAL_ERROR":  "provider_transient",
+                      "502:BAD_GATEWAY":  "provider_transient",
+                      "503:UNAVAILABLE":  "provider_transient",
+                      "504:TIMEOUT":  "provider_transient"
+                  },
+    "quota":  {
+                  "window_seconds":  60,
+                  "budget_points":  30,
+                  "read_cost":  1,
+                  "write_cost":  3
+              },
+    "source_capabilities":  {
+                                "contract_version":  "1",
+                                "field_discovery":  {
+                                                        "mode":  "static",
+                                                        "allowed_targets":  [
+
+                                                                            ]
+                                                    },
+                                "fields":  [
+                                               {
+                                                   "field_id":  "date",
+                                                   "source_field":  "date",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "date",
+                                                   "description":  "DSP reporting day.",
+                                                   "semantic_hints":  [
+                                                                          "date"
+                                                                      ],
+                                                   "canonical_target":  "date",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "advertiserId",
+                                                   "source_field":  "advertiserId",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Selected DSP advertiser.",
+                                                   "semantic_hints":  [
+                                                                          "advertiser",
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "advertiser_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "region",
+                                                   "source_field":  "region",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "Amazon Ads API region.",
+                                                   "semantic_hints":  [
+                                                                          "region"
+                                                                      ],
+                                                   "canonical_target":  "region",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "impressions",
+                                                   "source_field":  "impressions",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "DSP impressions.",
+                                                   "semantic_hints":  [
+                                                                          "delivery"
+                                                                      ],
+                                                   "canonical_target":  "impressions",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "clicks",
+                                                   "source_field":  "clicks",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "DSP clicks.",
+                                                   "semantic_hints":  [
+                                                                          "delivery"
+                                                                      ],
+                                                   "canonical_target":  "clicks",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "totalCost",
+                                                   "source_field":  "totalCost",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "DSP total cost.",
+                                                   "semantic_hints":  [
+                                                                          "cost",
+                                                                          "currency"
+                                                                      ],
+                                                   "canonical_target":  "cost",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "purchases",
+                                                   "source_field":  "purchases",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "DSP purchases.",
+                                                   "semantic_hints":  [
+                                                                          "conversion"
+                                                                      ],
+                                                   "canonical_target":  "conversions",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "sales",
+                                                   "source_field":  "sales",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "DSP sales value.",
+                                                   "semantic_hints":  [
+                                                                          "revenue"
+                                                                      ],
+                                                   "canonical_target":  "revenue",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               }
+                                           ],
+                                "reports":  [
+                                                {
+                                                    "id":  "campaign_daily",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "impressions",
+                                                                    "clicks",
+                                                                    "totalCost",
+                                                                    "purchases",
+                                                                    "sales"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "advertiserId",
+                                                                       "region"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "advertiserId",
+                                                                                 "region"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "none",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  3,
+                                                                       "unit":  "report"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_campaign_daily"
+                                                                 }
+                                                },
+                                                {
+                                                    "id":  "catalog_daily",
+                                                    "selection_mode":  "catalog_driven",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+                                                                    "impressions",
+                                                                    "clicks",
+                                                                    "totalCost",
+                                                                    "purchases",
+                                                                    "sales"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "advertiserId",
+                                                                       "region"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "advertiserId",
+                                                                                 "region"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "none",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  3,
+                                                                       "unit":  "report"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull_catalog_daily"
+                                                                 }
+                                                },
+                                                {
+                                                    "id":  "benchmarks",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "unavailable",
+                                                                         "reason_code":  "dedicated_grain_required",
+                                                                         "follow_up":  "Implement and validate a DAILY/WEEKLY/MONTHLY non-additive benchmark grain."
+                                                                     },
+                                                    "metrics":  [
+
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "advertiserId",
+                                                                       "region"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "advertiserId",
+                                                                                 "region"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "none",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  3,
+                                                                       "unit":  "report"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                }
+                                                }
+                                            ]
+                            }
+}

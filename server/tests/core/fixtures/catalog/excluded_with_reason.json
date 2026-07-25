@@ -1,0 +1,26 @@
+{
+  "catalog_version": "1",
+  "connector": "fixture-connector",
+  "api_version": "v2026-01",
+  "sources": [
+    {
+      "url": "https://example.dev/docs/api",
+      "kind": "official",
+      "fetched_at": "2026-07-21T00:00:00Z"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "fields": [
+    {
+      "field_id": "gamma_metric",
+      "source_field": "gamma_raw",
+      "kind": "metric",
+      "physical_type": "integer",
+      "description": "A metric excluded for a documented reason.",
+      "section": "GAMMA",
+      "tier": "advanced",
+      "exposure": "excluded",
+      "exclusion_reason": "Not supported by the extraction pipeline in the current phase."
+    }
+  ]
+}

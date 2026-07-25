@@ -1,0 +1,36 @@
+[
+  {
+    "pull_id": "pull_gbp_001",
+    "connector": "google-business-profile",
+    "date": "2026-07-01",
+    "location_id": "locations/12345678901234567890",
+    "BUSINESS_IMPRESSIONS_DESKTOP_MAPS": "120",
+    "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH": "340",
+    "BUSINESS_IMPRESSIONS_MOBILE_MAPS": "880",
+    "BUSINESS_IMPRESSIONS_MOBILE_SEARCH": "1560",
+    "BUSINESS_CONVERSATIONS": "7",
+    "BUSINESS_DIRECTION_REQUESTS": "63",
+    "CALL_CLICKS": "48",
+    "WEBSITE_CLICKS": "112",
+    "BUSINESS_BOOKINGS": "5",
+    "BUSINESS_FOOD_ORDERS": "0",
+    "BUSINESS_FOOD_MENU_CLICKS": "0"
+  },
+  {
+    "pull_id": "pull_gbp_001",
+    "connector": "google-business-profile",
+    "date": "2026-07-02",
+    "location_id": "locations/12345678901234567890",
+    "BUSINESS_IMPRESSIONS_DESKTOP_MAPS": "98",
+    "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH": "301",
+    "BUSINESS_IMPRESSIONS_MOBILE_MAPS": "812",
+    "BUSINESS_IMPRESSIONS_MOBILE_SEARCH": "1490",
+    "BUSINESS_CONVERSATIONS": "4",
+    "BUSINESS_DIRECTION_REQUESTS": "55",
+    "CALL_CLICKS": "39",
+    "WEBSITE_CLICKS": "104",
+    "BUSINESS_BOOKINGS": "3",
+    "BUSINESS_FOOD_ORDERS": "0",
+    "BUSINESS_FOOD_MENU_CLICKS": "0"
+  }
+]

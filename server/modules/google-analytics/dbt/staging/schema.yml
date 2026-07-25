@@ -1,0 +1,582 @@
+version: 2
+
+sources:
+  - name: raw_ga4
+    description: "Immutable raw landing zone for GA4 daily standard reports (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_ga4_standard_daily
+        description: >
+          Raw GA4 standard daily metrics — one row per date × device_category × country × pull_id.
+          Append-only (AD-7): each loader run adds a new batch identified by pull_id.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (e.g. '2026-04-01'). Day grain."
+          - name: device_category
+            description: "GA4 device category: 'desktop', 'mobile', or 'tablet'."
+          - name: country
+            description: >
+              GA4 full-name country (e.g. 'France', 'United Kingdom').
+              Story 4.1: normalized to ISO-3166 alpha-2 at staging time via normalize_dimension macro.
+          - name: sessions
+            description: "Total sessions for the day/device/country combination."
+          - name: active_users
+            description: "Active users for the day/device/country combination. Always ≤ sessions."
+          - name: conversions
+            description: "Conversions for the day/device/country combination. Always ≤ active_users."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: >
+              Project binding. 'default' for seeded test data; real project IDs for
+              data pulled via the trigger endpoint (Story 2.7 AC6).
+      - name: raw_ga4_user_type_daily
+        description: >
+          Epic 10 (story 10.1): raw GA4 user_type daily metrics -- one row per
+          date x user_type x pull_id. Sourced from the GA4 newVsReturning
+          dimension (values: 'new', 'returning', 'unknown'). Append-only (AD-7).
+          Parallel, non-interfering with raw_ga4_standard_daily (no device/country
+          columns).
+        columns:
+          - name: date
+            description: "ISO-8601 date string (e.g. '2026-04-01'). Day grain."
+          - name: user_type
+            description: >
+              GA4 newVsReturning canonical value: 'new', 'returning', or 'unknown'
+              (GA4 '(not set)' mapped to 'unknown' in the connector before insert).
+          - name: sessions
+            description: "Total sessions for the day/user_type combination."
+          - name: active_users
+            description: "Active users for the day/user_type combination."
+          - name: conversions
+            description: "Conversions for the day/user_type combination."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: >
+              Project binding. 'default' for seeded test data; real project IDs for
+              data pulled via the trigger endpoint.
+      - name: raw_ga4_landing_daily
+        description: >
+          Epic 10 (story 10.3): raw GA4 entry-page daily metrics -- one row per
+          date x landing_page x pull_id. Sourced from the GA4 landingPage dimension
+          (sessions metric). Append-only (AD-7). TOP-N BOUNDED: the pull applies
+          orderBys sessions DESC + limit=page_top_n, so only the top-N landing pages
+          per day are landed -- the long tail is dropped by design (does NOT sum to
+          the connector daily total). Parallel, non-interfering with the standard /
+          user_type raw tables (no device/country columns).
+        columns:
+          - name: date
+            description: "ISO-8601 date string (e.g. '2026-04-01'). Day grain."
+          - name: landing_page
+            description: >
+              GA4 landingPage value (URL path, e.g. '/', '/pricing'). GA4 '(not set)'
+              mapped to 'unknown' in the connector before insert.
+          - name: sessions
+            description: "Sessions that began on this landing page for the day."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: >
+              Project binding. 'default' for seeded test data; real project IDs for
+              data pulled via the trigger endpoint.
+      - name: raw_ga4_paths_daily
+        description: >
+          Epic 10 (story 10.3): raw GA4 top-page daily metrics -- one row per
+          date x page x pull_id. Sourced from the GA4 pagePath dimension
+          (screenPageViews metric). Append-only (AD-7). TOP-N BOUNDED (orderBys
+          screenPageViews DESC + limit=page_top_n; long tail dropped by design).
+          AI-53: the screenPageViews metric name is declared but not verified live
+          (Phase B gate). Parallel, non-interfering with the other GA4 raw tables.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (e.g. '2026-04-01'). Day grain."
+          - name: page
+            description: >
+              GA4 pagePath value (URL path, e.g. '/', '/blog/x'). GA4 '(not set)'
+              mapped to 'unknown' in the connector before insert.
+          - name: screen_page_views
+            description: "Page/screen views for this page for the day (GA4 screenPageViews)."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: >
+              Project binding. 'default' for seeded test data; real project IDs for
+              data pulled via the trigger endpoint.
+      - name: raw_ga4_acquisition_session
+        description: >
+          Epic 16 (story 16.1): raw GA4 last-click acquisition metrics -- one row per
+          date x session_source_medium x session_campaign x pull_id. Sourced from the
+          GA4 sessionSourceMedium x sessionCampaignName dimensions (conversions +
+          sessions metrics). Append-only (AD-7). TOP-N BOUNDED: the pull applies
+          orderBys conversions DESC + limit=top_n, so only the top-N combos per day are
+          landed -- the long tail is dropped by design (does NOT sum to the connector
+          daily total). AI-53: dimension names declared but not verified live (Phase B
+          gate). '(not set)' -> 'unknown', '(direct)' -> 'direct'. Parallel,
+          non-interfering with the other GA4 raw tables.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (e.g. '2026-04-01'). Day grain."
+          - name: session_source_medium
+            description: >
+              GA4 sessionSourceMedium value (e.g. 'google / cpc'). '(not set)' ->
+              'unknown', '(direct)' -> 'direct' in the connector before insert.
+          - name: session_campaign
+            description: >
+              GA4 sessionCampaignName value. '(not set)' -> 'unknown' in the connector
+              before insert (fallback if the dimension is absent live).
+          - name: conversions
+            description: "Conversions attributed to this last-click source/medium x campaign."
+          - name: sessions
+            description: "Sessions for this last-click source/medium x campaign."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: >
+              Project binding. 'default' for seeded test data; real project IDs for
+              data pulled via the trigger endpoint.
+      - name: raw_ga4_acquisition_first_user
+        description: >
+          Epic 16 (story 16.1): raw GA4 first-click acquisition metrics -- one row per
+          date x first_user_source_medium x pull_id. Sourced from the GA4
+          firstUserSourceMedium dimension (conversions metric). Append-only (AD-7).
+          TOP-N BOUNDED (orderBys conversions DESC + limit=top_n; long tail dropped by
+          design). AI-53: firstUserSourceMedium declared but not verified live (Phase B
+          gate). '(not set)' -> 'unknown', '(direct)' -> 'direct'. Parallel,
+          non-interfering with the other GA4 raw tables.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (e.g. '2026-04-01'). Day grain."
+          - name: first_user_source_medium
+            description: >
+              GA4 firstUserSourceMedium value (e.g. 'facebook / cpc'). '(not set)' ->
+              'unknown', '(direct)' -> 'direct' in the connector before insert.
+          - name: conversions
+            description: "Conversions attributed to this first-click source/medium."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: >
+              Project binding. 'default' for seeded test data; real project IDs for
+              data pulled via the trigger endpoint.
+      - name: raw_ga4_transactions_daily
+        description: >
+          Epic 17 (story 17.4): raw GA4 e-commerce transactions -- one row per
+          date x transaction_id x pull_id. Sourced from the GA4 transactionId dimension
+          (conversions + purchaseRevenue metrics). Append-only (AD-7). This raw table is
+          the GA4 side of the Shopify x GA4 reconciliation (doc/synthese §3.2). GRAIN
+          DISCIPLINE (RULE ABSOLUE): transaction_id is a JOIN KEY, NOT a breakdown
+          partition -- it feeds ONLY stg_ga4_transactions_daily -> transaction_reconciliation
+          and NEVER fact_daily_kpi (the transaction grain does not total the connector
+          day). AI-53: transactionId dimension + purchaseRevenue metric DECLARED but not
+          verified live (Phase B gate; e-commerce tracking is property-level -- a lead-gen
+          site returns zero rows). Parallel, non-interfering with the other GA4 raw tables.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (e.g. '2026-04-01'). Day grain."
+          - name: transaction_id
+            description: >
+              GA4 transactionId (the e-commerce transaction id, join key to
+              stg_shopify_orders_daily.transaction_id). Nullable: GA4 '(not set)'/'' is
+              mapped to NULL in the connector before insert (a transaction with no id
+              cannot be reconciled -- honest blind spot, never a fake match bucket).
+          - name: conversions
+            description: "Conversions attributed to this transaction (additive, AD-4)."
+          - name: purchase_revenue
+            description: >
+              GA4 purchaseRevenue for this transaction (additive, AD-4). AI-53: metric
+              name declared, confirmed live via metadata (Phase B).
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: >
+              Project binding. 'default' for seeded test data; real project IDs for
+              data pulled via the trigger endpoint.
+
+models:
+  - name: stg_ga4_standard_daily
+    description: >
+      Staging layer: selects and passes through raw GA4 fields with canonical names.
+      Story 4.1 (AC4): country and device_category are normalized via the normalize_dimension macro.
+      Raw values preserved as country_source and device_category_source (AD-6: store source AND normalized).
+      AD-4: only additive metrics (sessions, active_users, conversions) -- no ratio columns.
+      Supersede semantics (AD-7, Story 3.4): when multiple pulls cover the same grain
+      (project_id, date, device_category, country), the QUALIFY clause keeps only
+      the latest pull (ORDER BY pull_id DESC). ULIDs are lexicographically monotonic
+      so this is equivalent to keeping the newest pull timestamp.
+      AS-OF groundwork (Story 3.4): to reproduce KPI state as-of past date D, query
+      raw_ga4_standard_daily directly with WHERE pull_id <= 'pull_<cutoff ULID>'.
+      Story 4.6 will formalize this as an as-of parameter on get_daily_report.
+    tests:
+      # Metric integrity: sessions >= active_users >= conversions (AC6, AD-4)
+      - sessions_gte_active_users
+      - active_users_gte_conversions
+    columns:
+      - name: date_source
+        description: >
+          Raw source date from GA4 Standard Reporting API (already in the property's
+          reporting timezone). Story 4.2 (AC6): preserved as-is for provenance.
+          Identical to date at day grain — no time shift applied (HG-4).
+      - name: date
+        description: >
+          ISO-8601 date string, re-labeled to project timezone policy at day grain.
+          At day grain, identical to date_source (no convert_timezone() at day grain — HG-4).
+        tests:
+          - not_null
+      - name: device_category_source
+        description: "Raw GA4 device category value before normalization (AD-6)."
+      - name: device_category
+        description: >
+          Canonical device category from dim_device (e.g. 'desktop', 'mobile', 'tablet').
+          Story 4.1 (AC4): normalized via normalize_dimension macro. Unknown values produce NULL
+          which fails the not_null test below (HG-2: unknown value = dbt test failure).
+        tests:
+          - not_null
+      - name: country_source
+        description: "Raw GA4 country name before normalization (e.g. 'France'). AD-6."
+      - name: country
+        description: >
+          Canonical ISO-3166 alpha-2 country code from dim_country (e.g. 'FR').
+          Story 4.1 (AC4): normalized via normalize_dimension macro. Unknown values produce NULL
+          which fails the not_null test below (HG-2: unknown value = dbt test failure).
+        tests:
+          - not_null
+      - name: sessions
+        description: "Total sessions (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: active_users
+        description: "Active users (additive metric, AD-4). Always ≤ sessions."
+        tests:
+          - not_null
+      - name: conversions
+        description: "Conversions (additive metric, AD-4). Always ≤ active_users."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: >
+          Project binding for this row. 'default' for seeded test data;
+          real project IDs (e.g. 'jean-ga4') for data pulled via the trigger endpoint.
+          Propagated from raw_ga4_standard_daily (Story 2.7 AC6).
+
+  - name: stg_ga4_user_type_daily
+    description: >
+      Staging layer (Epic 10, story 10.1): GA4 user_type_daily profile. Selects
+      and passes through raw GA4 newVsReturning rows with the canonical 'user_type'
+      column (values: 'new', 'returning', 'unknown'). NO country/device normalization
+      (this profile carries neither dimension). AD-4: only additive metrics
+      (sessions, active_users, conversions) -- no ratio columns.
+      Supersede semantics (AD-7): when multiple pulls cover the same grain
+      (project_id, date, user_type), the QUALIFY clause keeps only the latest pull
+      (ORDER BY pull_id DESC). ULIDs are lexicographically monotonic so this keeps
+      the newest pull. Parallel, non-interfering with stg_ga4_standard_daily -- it
+      lands a distinct breakdown_dimension='user_type' partition in fact_daily_kpi
+      and does NOT change device_category/country totals.
+    tests:
+      # AI-05 grain uniqueness: one row per project_id x date x user_type.
+      - unique:
+          name: stg_ga4_user_type_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || user_type"
+    columns:
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: user_type
+        description: >
+          Canonical GA4 newVsReturning value: 'new', 'returning', or 'unknown'
+          ('(not set)' is mapped to 'unknown' in the connector before insert).
+        tests:
+          - not_null
+      - name: sessions
+        description: "Total sessions (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: active_users
+        description: "Active users (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: conversions
+        description: "Conversions (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: >
+          Project binding for this row. 'default' for seeded test data; real
+          project IDs for data pulled via the trigger endpoint. Propagated from
+          raw_ga4_user_type_daily.
+        tests:
+          - not_null
+
+  - name: stg_ga4_landing_daily
+    description: >
+      Staging layer (Epic 10, story 10.3): GA4 pages_daily_landing profile. Selects
+      raw GA4 landingPage rows with the canonical 'landing_page' column and the
+      additive 'sessions' metric. NO country/device normalization (this profile
+      carries neither dimension). AD-4: additive metric only (sessions).
+      Supersede semantics (AD-7): QUALIFY keeps the latest pull per
+      (project_id, date, landing_page). TOP-N BOUNDED: raw rows are already the top-N
+      landing pages per day (the pull drops the long tail) -- so this partition does
+      NOT sum to the connector daily total (documented on the mart; reconciliation
+      test asserts other partitions unchanged + <= N distinct landing_page/day).
+      Parallel, non-interfering with the standard / user_type staging models -- it
+      lands a distinct breakdown_dimension='landing_page' partition in fact_daily_kpi.
+    tests:
+      # AI-05 grain uniqueness: one row per project_id x date x landing_page.
+      - unique:
+          name: stg_ga4_landing_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || landing_page"
+    columns:
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: landing_page
+        description: >
+          GA4 landingPage value (URL path). GA4 '(not set)' mapped to 'unknown' in
+          the connector before insert.
+        tests:
+          - not_null
+      - name: sessions
+        description: "Sessions that began on this landing page (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: >
+          Project binding. 'default' for seeded test data; real project IDs for data
+          pulled via the trigger endpoint. Propagated from raw_ga4_landing_daily.
+        tests:
+          - not_null
+
+  - name: stg_ga4_paths_daily
+    description: >
+      Staging layer (Epic 10, story 10.3): GA4 pages_daily_paths profile. Selects
+      raw GA4 pagePath rows with the canonical 'page' column and the additive
+      'screen_page_views' metric. NO country/device normalization. AD-4: additive
+      metric only (screen_page_views). AI-53: screenPageViews declared but not
+      verified live (Phase B gate). Supersede semantics (AD-7): QUALIFY keeps the
+      latest pull per (project_id, date, page). TOP-N BOUNDED (long tail dropped;
+      partition does NOT sum to the connector daily total). Parallel, non-interfering
+      with the other GA4 staging models -- lands breakdown_dimension='page' with
+      connector='google-analytics' (distinct from the GSC 'page' partition, which
+      carries connector='gsc').
+    tests:
+      # AI-05 grain uniqueness: one row per project_id x date x page.
+      - unique:
+          name: stg_ga4_paths_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || page"
+    columns:
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: page
+        description: >
+          GA4 pagePath value (URL path). GA4 '(not set)' mapped to 'unknown' in the
+          connector before insert.
+        tests:
+          - not_null
+      - name: screen_page_views
+        description: "Page/screen views for this page (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: >
+          Project binding. 'default' for seeded test data; real project IDs for data
+          pulled via the trigger endpoint. Propagated from raw_ga4_paths_daily.
+        tests:
+          - not_null
+
+  - name: stg_ga4_acquisition_session
+    description: >
+      Staging layer (Epic 16, story 16.1): GA4 acquisition_daily_session profile
+      (last click). Selects raw GA4 sessionSourceMedium x sessionCampaignName rows with
+      the canonical 'session_source_medium' + 'session_campaign' columns and the additive
+      'conversions' + 'sessions' metrics. NO country/device normalization. AD-4: additive
+      metrics only. The mart derives TWO MARGINAL partitions
+      (breakdown_dimension='session_source_medium' AND ='session_campaign') from this
+      single-grain row -- NOT a cross-join between attribution axes. Supersede semantics
+      (AD-7): QUALIFY keeps the latest pull per
+      (project_id, date, session_source_medium, session_campaign). TOP-N BOUNDED (long
+      tail dropped; partition does NOT sum to the connector daily total). AI-53:
+      dimension names declared but not verified live (Phase B gate).
+    tests:
+      # AI-05 grain uniqueness: one row per project_id x date x source_medium x campaign.
+      - unique:
+          name: stg_ga4_acquisition_session_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || session_source_medium || '|' || session_campaign"
+    columns:
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: session_source_medium
+        description: >
+          GA4 sessionSourceMedium canonical value ('(not set)' -> 'unknown',
+          '(direct)' -> 'direct' in the connector before insert).
+        tests:
+          - not_null
+      - name: session_campaign
+        description: >
+          GA4 sessionCampaignName canonical value ('(not set)' -> 'unknown').
+        tests:
+          - not_null
+      - name: conversions
+        description: "Conversions (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: sessions
+        description: "Sessions (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: >
+          Project binding. Propagated from raw_ga4_acquisition_session.
+        tests:
+          - not_null
+
+  - name: stg_ga4_acquisition_first_user
+    description: >
+      Staging layer (Epic 16, story 16.1): GA4 acquisition_daily_first_user profile
+      (first click). Selects raw GA4 firstUserSourceMedium rows with the canonical
+      'first_user_source_medium' column and the additive 'conversions' metric. NO
+      country/device normalization. AD-4: additive metric only. Supersede semantics
+      (AD-7): QUALIFY keeps the latest pull per
+      (project_id, date, first_user_source_medium). TOP-N BOUNDED (long tail dropped;
+      partition does NOT sum to the connector daily total). SEPARATE from the session
+      profile (no session x first-user cross-join). AI-53: firstUserSourceMedium
+      declared but not verified live (Phase B gate). Lands
+      breakdown_dimension='first_user_source_medium' in fact_daily_kpi.
+    tests:
+      # AI-05 grain uniqueness: one row per project_id x date x first_user_source_medium.
+      - unique:
+          name: stg_ga4_acquisition_first_user_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || first_user_source_medium"
+    columns:
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: first_user_source_medium
+        description: >
+          GA4 firstUserSourceMedium canonical value ('(not set)' -> 'unknown',
+          '(direct)' -> 'direct' in the connector before insert).
+        tests:
+          - not_null
+      - name: conversions
+        description: "Conversions (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: >
+          Project binding. Propagated from raw_ga4_acquisition_first_user.
+        tests:
+          - not_null
+
+  - name: stg_ga4_transactions_daily
+    description: >
+      Staging layer (Epic 17, story 17.4): GA4 transactions_daily profile. Selects raw
+      GA4 transactionId rows with the canonical 'transaction_id' join key and the additive
+      'conversions' + 'purchase_revenue' metrics. NO country/device normalization. AD-4:
+      additive metrics only. Supersede semantics (AD-7): QUALIFY keeps the latest pull per
+      (project_id, date, transaction_id). GRAIN DISCIPLINE (RULE ABSOLUE, lesson epic-10 +
+      decision 15.4): transaction_id is a JOIN KEY, NOT a breakdown partition -- this model
+      feeds ONLY transaction_reconciliation.sql and NEVER fact_daily_kpi (the transaction
+      grain does not total the connector day). transaction_id is nullable (GA4 '(not set)'
+      -> NULL): a transaction with no id cannot be reconciled and is filtered out of the
+      mart's match denominator (honest blind spot, never a fake match). AI-53: transactionId
+      + purchaseRevenue declared but not verified live (Phase B gate).
+    tests:
+      # AI-05 grain uniqueness: one row per project_id x date x transaction_id.
+      # NULL-id rows are excluded via a WHERE (a NULL id is not a grain key -- it is an
+      # unreconcilable blind-spot row; the mart handles it separately).
+      - unique:
+          name: stg_ga4_transactions_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || transaction_id"
+            config:
+              where: "transaction_id IS NOT NULL"
+    columns:
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: transaction_id
+        description: >
+          GA4 transactionId (join key to stg_shopify_orders_daily.transaction_id).
+          Nullable ('(not set)' -> NULL): unreconcilable rows land honestly and are
+          filtered out of the mart's match denominator (never a fake match bucket).
+      - name: conversions
+        description: "Conversions for this transaction (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: purchase_revenue
+        description: "GA4 purchaseRevenue for this transaction (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: >
+          Project binding. Propagated from raw_ga4_transactions_daily.
+        tests:
+          - not_null

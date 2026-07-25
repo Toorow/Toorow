@@ -1,0 +1,196 @@
+{
+  "schema_version": "1.2",
+  "name": "google-ad-manager",
+  "display_name": "Google Ad Manager",
+  "auth_type": "google_direct",
+  "module_kind": "kpi",
+  "public_catalog": {
+    "visibility": "public",
+    "category": "ad_server",
+    "onboarding_modes": [
+      "connector_pull"
+    ],
+    "verification": {
+      "status": "blocked",
+      "reason_code": "live_evidence_not_ratified",
+      "follow_up": "Ratify and run the independent connector evidence contract (probe 25.6)."
+    }
+  },
+  "_source_note": "REST-only. GAM SOAP is deprecated/removed; the Interactive Reports API (admanager.googleapis.com/v1/networks/{nc}/reports) is the sole data path. Reports are ASYNC jobs: submit -> poll operation -> fetch rows. Catalogue (765 dims / 527 metrics, revision 20260528) + REST client ported from C:/Users/littl/Programmation/gam-native (see gam-connector-from-gam-native memory).",
+  "report_profiles": [
+    {
+      "id": "historical_daily",
+      "display_name": "Historical Daily Report",
+      "_comment": "Pivot profile under GAM report type HISTORICAL. Metrics/dimensions reference catalogue field_ids (= snake_case of the GAM enum, e.g. ad_server_revenue); canonical names (ad_revenue) come from canonical_metric_mapping. MONEY metrics stay in MICROS; ÷1e6 once at read.",
+      "metrics": [
+        "ad_server_impressions",
+        "ad_server_clicks",
+        "ad_server_revenue"
+      ],
+      "dimensions": [
+        "date",
+        "ad_unit_name",
+        "line_item_name"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    }
+  ],
+  "canonical_metric_mapping": {
+    "AD_SERVER_IMPRESSIONS": "impressions",
+    "AD_SERVER_CLICKS": "clicks",
+    "AD_SERVER_REVENUE": "ad_revenue"
+  },
+  "canonical_dimension_mapping": {
+    "DATE": "date",
+    "AD_UNIT_NAME": "ad_unit_name",
+    "LINE_ITEM_NAME": "line_item_name"
+  },
+  "_canonical_mapping_note": "TODO(catalogue port): these are the core-tier seeds only. The full source->canonical mapping is derived per field from the ported catalogue. SEMANTIC GUARD (see gam-connector-from-gam-native memory): AUDIENCE_SEGMENT_* (GAM ad-server audiences) must NOT share a canonical target with GA4-built audiences; GOOGLE_ANALYTICS_* (GA<->GAM ad-monetization link) must NOT map to the same canonical metric as GA4 behavioral revenue/engagement. Distinct provenance + canonical targets.",
+  "widget_ref": "ui://core/daily-report",
+  "account_topology": {
+    "_comment": "GAM hierarchy: the reporting entity (selection_level) is the NETWORK (a REST report targets networks/{networkCode}/reports). discover_accounts lists networks the token can reach via networks.list. Core owns selection/access-check/trial/backfill (AD-2).",
+    "levels": [
+      {
+        "id": "network",
+        "label": "Network"
+      }
+    ],
+    "selection_level": "network",
+    "discovery": {
+      "callable": "discover_accounts"
+    }
+  },
+  "quota": {
+    "_comment": "TODO: confirm GAM REST quota. Placeholder conservative values; the report job is async so the cost is per submitted job + polls. See https://developers.google.com/ad-manager/api/rate_limits",
+    "window_seconds": 60,
+    "budget_points": 10,
+    "read_cost": 1,
+    "write_cost": 1
+  },
+  "_error_map_note": "TODO(catalogue port): GAM REST 400s embed a (type.googleapis.com/google.ads.admanager.v1.X) detail and, like all Google APIs, set error.code to the numeric HTTP status. Decide during port whether a provider code map refines anything beyond pure-HTTP classification (401->auth_expired, 403->permission_denied, 400->invalid_request, 5xx->provider_transient, 429->RateLimitError); the gam-native _summarize_gam_error / _raise_report_status logic is the reference.",
+  "source_capabilities": {
+    "contract_version": "1",
+    "time_context": {"locus": "network", "fallback": "gap"},
+    "field_discovery": {
+      "mode": "static",
+      "allowed_targets": []
+    },
+    "fields": [
+      {
+        "field_id": "ad_server_impressions",
+        "source_field": "AD_SERVER_IMPRESSIONS",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Ad server impressions exposed by Google Ad Manager.",
+        "semantic_hints": ["delivery", "count"],
+        "canonical_target": "impressions",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "ad_server_clicks",
+        "source_field": "AD_SERVER_CLICKS",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Ad server clicks exposed by Google Ad Manager.",
+        "semantic_hints": ["engagement", "count"],
+        "canonical_target": "clicks",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "ad_server_revenue",
+        "source_field": "AD_SERVER_REVENUE",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "Ad server total revenue (MONEY, returned in micros, ÷1e6 once at read). Data format: `MONEY`",
+        "semantic_hints": ["revenue", "currency"],
+        "canonical_target": "ad_revenue",
+        "aggregation": "sum",
+        "non_additive": false,
+        "money": {"native_unit": "micros", "currency_source": "network"}
+      },
+      {
+        "field_id": "date",
+        "source_field": "DATE",
+        "kind": "dimension",
+        "physical_type": "date",
+        "description": "Report date exposed by Google Ad Manager.",
+        "semantic_hints": ["date"],
+        "canonical_target": "date",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "ad_unit_name",
+        "source_field": "AD_UNIT_NAME",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Ad unit name exposed by Google Ad Manager.",
+        "semantic_hints": ["inventory"],
+        "canonical_target": "ad_unit_name",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "line_item_name",
+        "source_field": "LINE_ITEM_NAME",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Line item name exposed by Google Ad Manager.",
+        "semantic_hints": ["delivery"],
+        "canonical_target": "line_item_name",
+        "aggregation": "none",
+        "non_additive": false
+      }
+    ],
+    "reports": [
+      {
+        "id": "historical_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": ["ad_server_impressions", "ad_server_clicks", "ad_server_revenue"],
+        "dimensions": ["date", "ad_unit_name", "line_item_name"],
+        "supported_grains": [
+          ["date", "ad_unit_name", "line_item_name"]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": ["gte", "lte"]
+          }
+        ],
+        "pagination": {
+          "mode": "none",
+          "completeness": "unknown",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "unknown"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "report_job"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 60,
+          "supported_modes": ["manual", "daily"]
+        },
+        "dispatch": {
+          "callable": "pull"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,203 @@
+{
+    "schema_version":  "1.2",
+    "name":  "github",
+    "display_name":  "GitHub",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "business_context",
+        "onboarding_modes": ["context_source"],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "auth_type":  "api_key",
+    "module_kind":  "context",
+    "report_profiles":  [
+                            {
+                                "id":  "releases",
+                                "display_name":  "Releases",
+                                "landing":  "context_events",
+                                "metrics":  [
+
+                                            ],
+                                "dimensions":  [
+                                                   "date"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "verification_expected_rows_per_day":  null
+                            },
+                            {
+                                "id":  "deployments",
+                                "display_name":  "Deployments",
+                                "landing":  "context_events",
+                                "metrics":  [
+
+                                            ],
+                                "dimensions":  [
+                                                   "date"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  true,
+                                                                "realtime":  false
+                                                            },
+                                "verification_expected_rows_per_day":  null
+                            }
+                        ],
+    "error_map":  {},
+    "_error_map_note":  "GitHub REST API is pure HTTP -- no numeric provider error codes. Error bodies use {\"message\": \"Bad credentials\"} format; classify_http_error extracts provider codes from 'error.code', 'error_code', or 'code' fields only, so no error_map keys will ever fire for GitHub (the body carries no extractable code). Pure-HTTP classification applies: 401 -> auth_expired, 403 -> permission_denied. The 403 rate-limit case is architecturally ambiguous: GitHub sends 403 (not 429) with X-RateLimit-Remaining:0 headers when the primary rate limit is exceeded; secondary rate limits may return 429. The connector currently raises a raw PermissionError on all 403s (pre-25.2 code path in _pull_releases/_pull_deployments) rather than routing through classify_http_error. Splitting 403 rate-limit vs 403 permission-denied requires header inspection, which classify_http_error does not support. Deferred to a future connector refactor (post-25.7). 429 handling per core.quota.RateLimitError contract is a no-op in practice until the connector migrates off raw PermissionError.",
+    "_account_topology_note":  "Token-scoped context source: one PAT or OAuth token addresses exactly one repository (owner+repo stored in Nango connection metadata). No account discovery hierarchy exists -- the repository itself is the root scope. account_topology is not declared.",
+    "canonical_metric_mapping":  {
+
+                                 },
+    "canonical_event_mapping":  {
+                                    "release":  "release",
+                                    "deployment":  "deployment"
+                                },
+    "canonical_dimension_mapping":  {
+
+                                    },
+    "source_capabilities":  {
+                                "contract_version":  "1",
+                                "field_discovery":  {
+                                                        "mode":  "static",
+                                                        "allowed_targets":  [
+
+                                                                            ]
+                                                    },
+                                "fields":  [
+                                               {
+                                                   "field_id":  "date",
+                                                   "source_field":  "published_at/created_at",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "date",
+                                                   "description":  "date exposed by GitHub.",
+                                                   "semantic_hints":  [
+                                                                          "date"
+                                                                      ],
+                                                   "canonical_target":  "date",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               }
+                                           ],
+                                "reports":  [
+                                                {
+                                                    "id":  "releases",
+                                                    "landing":  "context_events",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "selectable"
+                                                                     },
+                                                    "metrics":  [
+
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "none",
+                                                                       "completeness":  "unknown",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "unknown"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  0,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                },
+                                                    "dispatch":  {
+                                                                     "callable":  "pull"
+                                                                 }
+                                                },
+                                                {
+                                                    "id":  "deployments",
+                                                    "landing":  "context_events",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "unavailable",
+                                                                         "reason_code":  "profile_behavior_unproven",
+                                                                         "follow_up":  "Complete GitHub deployments extraction support."
+                                                                     },
+                                                    "metrics":  [
+
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+                                                                    {
+                                                                        "field_id":  "date",
+                                                                        "operators":  [
+                                                                                          "gte",
+                                                                                          "lte"
+                                                                                      ]
+                                                                    }
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "none",
+                                                                       "completeness":  "unknown",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "unknown"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  0,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                }
+                                                }
+                                            ]
+                            }
+}

@@ -1,0 +1,296 @@
+/**
+ * provenance.css — page-specific styles for Provenance (Governance workspace).
+ *
+ * Shell/layout classes (frame, sidebar, topbar, main, panel, page-header,
+ * selector, signal-label, signal-mark, provider-logo, number, mono/event) live
+ * in application.css and are global. This file only adds the provenance-surface
+ * classes that are NOT already in application.css:
+ *   provenance-explainer, provenance-explainer-header, guarantee-rows,
+ *   guarantee-row, guarantee-icon, guarantee-copy, guarantee-key,
+ *   provenance-panel, provenance-panel-header, table-scroll, provenance-table,
+ *   datastream-cell, figure-cell, pull-cell, pull-more, mapping-tag, fx-cell,
+ *   fx-none, published-cell, provenance-footer, footer-note.
+ *
+ * Tokenized: every color references an application.css CSS variable only
+ * (--ink, --muted, --surface, --surface-2, --page, --line, --info, --success,
+ * --error, --focus) so the surface flips correctly in dark. IDs render in
+ * JetBrains Mono via the global .mono class; numbers/dates in Geist tabular via
+ * the global .number class.
+ */
+
+/* --- Explainer panel: what provenance guarantees --- */
+.provenance-explainer {
+  margin-bottom: 18px;
+}
+.provenance-explainer-header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.provenance-explainer-header h2 {
+  margin: 0;
+  font: 600 19px "Lexend", sans-serif;
+}
+.provenance-explainer-header p {
+  margin: 4px 0 0;
+  max-width: 560px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.guarantee-rows {
+  display: flex;
+  flex-direction: column;
+}
+.guarantee-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+}
+.guarantee-row:first-child {
+  border-top: 0;
+}
+.guarantee-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--info);
+}
+.guarantee-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.guarantee-copy {
+  flex: 1;
+  min-width: 0;
+}
+.guarantee-copy strong {
+  display: block;
+  font-size: 14px;
+}
+.guarantee-copy p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 620px;
+}
+.guarantee-key {
+  flex: none;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--page);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* --- Panel: recent published figures --- */
+.provenance-panel {
+  overflow: hidden;
+}
+.provenance-panel-header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.provenance-panel-header h2 {
+  margin: 0;
+  font: 600 19px "Lexend", sans-serif;
+}
+.provenance-panel-header p {
+  margin: 4px 0 0;
+  max-width: 560px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- Scroll wrapper for the provenance table --- */
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--line) transparent;
+  scrollbar-gutter: stable;
+}
+.table-scroll:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.table-scroll .provenance-table {
+  min-width: 1020px;
+}
+.table-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+}
+
+/* --- Provenance table --- */
+.provenance-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.provenance-table th {
+  height: 42px;
+  padding: 0 16px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+.provenance-table td {
+  height: 72px;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+/* Datastream cell: connector logo + label. */
+.datastream-cell {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.datastream-cell strong {
+  display: block;
+  font-size: 13px;
+}
+.datastream-cell small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Figure cell: metric name + grain note. */
+.figure-cell strong {
+  display: block;
+  font-size: 13px;
+}
+.figure-cell small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Pull ids cell: mono chips + overflow count. */
+.pull-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.pull-cell code {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--page);
+  color: var(--ink);
+  font-size: 12px;
+}
+.pull-more {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Mapping version tag: mono pill. */
+.mapping-tag {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+/* FX as-of cell: date (Geist) over rate (mono). */
+.fx-cell strong {
+  display: block;
+  font-size: 13px;
+}
+.fx-cell small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.fx-none {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.published-cell {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* --- Footer --- */
+.provenance-footer {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+.footer-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- Narrow-desktop resilience --- */
+@media (max-width: 1320px) {
+  .provenance-panel-header {
+    min-height: auto;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 14px 20px;
+  }
+  .guarantee-row {
+    flex-wrap: wrap;
+  }
+  .guarantee-key {
+    margin-left: 48px;
+  }
+  .provenance-footer {
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-block: 10px;
+  }
+}

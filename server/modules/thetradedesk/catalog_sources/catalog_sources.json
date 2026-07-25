@@ -1,0 +1,479 @@
+{
+  "connector": "thetradedesk",
+  "api_version": "v3",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_status": "DRAFT: field vocabulary is the Supermetrics 2026-04-23 snapshot (275 fields, Annex A). The TRUE authority is the live ReportTemplate facet enum (GET /v3/myreports/reportschedule/facets), transcribed at probe time and diffed against this baseline (e.g. 'Selling party name/ID' superseding SupplyVendor). Promotion to non-DRAFT requires the probe (ROLLOUT_NOTES.md). public_catalog.verification stays 'blocked' until then.",
+  "_derivation": {
+    "note": "official_fields.json is produced by build_official_fields.py (committed alongside, deterministic, local-only). There is NO machine-readable TTD field enum and the Partner Portal is a client-side-rendered SPA (WebFetch + r.jina.ai both return empty -- same failure mode as the amazon-ads docs site). The AUTHORITY for field VOCABULARY is the Supermetrics catalog (docs.supermetrics.com/docs/the-trade-desk-fields.md, 275 fields = 164 dimensions + 111 metrics, 22 sections) transcribed VERBATIM into Annex A of _bmad-output/implementation-artifacts/research/thetradedesk-catalog-research.md. A mandatory live probe of the facets endpoint settles divergences.",
+    "count_divergence": "Supermetrics 275 (164 dim + 111 met). 12 fields are Supermetrics connector plumbing (DATASOURCE x3 + QUERY x9, system_metadata.* / dataSourceName) -> excluded: enrichment-only. 14 fields are TTD DEPRECATED (10) + LEGACY (4) still queryable for historical windows -> exposed with a deprecated note. Net TTD-API surface ~263. The provider may be AHEAD of Supermetrics (e.g. 'Selling party name/ID' replacing SupplyVendor) -> probe adds facet-only fields (inverted drift).",
+    "field_identity": "TTD reports are dimensions + metrics selected on a ReportTemplate (analogous to amazon-ads columns on a report type). Ratio/derived metrics (Cpm, Cpc, Ctr, CpaClick, CpaView, CpaTouch, CpaTimeWeightedDecay) are NON-ADDITIVE (AD-4): stored raw per row, recomputed in the semantic layer. PlayerRewind is an ADDITIVE count despite the 'Rewind' name (NOT mis-tagged). Physical types transposed from the Supermetrics data-type column; the live probe / report CSV is authority for coercion. Landing numeric coercion is driven by the catalog physical_type, never by an id suffix.",
+    "non_additive_metrics": [
+      "CpaClick",
+      "CpaTimeWeightedDecay",
+      "CpaTouch",
+      "CpaView",
+      "Cpc",
+      "Cpm",
+      "Ctr"
+    ]
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://partner.thetradedesk.com/v3/portal/api/ref/get-myreports-reportschedule-facets",
+      "fetched_at": "2026-07-21",
+      "_note": "DRAFT authority: the field VOCABULARY here is the Supermetrics snapshot transposed by build_official_fields.py (Annex A). The listed url is the live facets endpoint that is the TRUE authority -- it is an SPA/portal ref not renderable by WebFetch/jina; transcribe verbatim at probe time and diff against the 275-field baseline.",
+      "_also": [
+        {
+          "purpose": "reporting_overview (My Reports vs Hourly Feeds vs REDS)",
+          "url": "https://partner.thetradedesk.com/v3/portal/reds/doc/ReportingOverview",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "report_schedules_doc",
+          "url": "https://partner.thetradedesk.com/v3/portal/reds/doc/ReportSchedules",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "aggregated_reports_execution (async cycle + download)",
+          "url": "https://partner.thetradedesk.com/v3/portal/reds/doc/AggregatedReportsExecution",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "authentication (POST /v3/authentication -> TTD-Auth token + ExpirationDateUtc)",
+          "url": "https://partner.thetradedesk.com/v3/portal/api/doc/Authentication",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "file": null,
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/the-trade-desk-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/the-trade-desk-fields.md -o /tmp/ttd-sources/supermetrics.md   # DO NOT COMMIT (enrichment snapshot). Updated 2026-04-23.",
+      "_parse_note": "275 unique fields = 164 dimensions + 111 metrics across 22 sections. Field-vocabulary baseline (no official machine-readable enum exists). Full transcription in Annex A of thetradedesk-catalog-research.md. Enrichment file intentionally NOT shipped: descriptions come from official_fields.json (the transposed authority); fusion runs with the official source alone."
+    }
+  ],
+  "airbyte_meltano": {
+    "airbyte": "ABSENT -- airbyte.com/connectors/the-trade-desk is a connector-request landing page; no source-the-trade-desk in airbytehq/airbyte; community fork joshuamc98/add-the-trade-desk-source has no trade-desk code.",
+    "meltano": "ABSENT -- no tap-thetradedesk on Meltano Hub; only the generic tap-airbyte-wrapper (moot without an Airbyte image).",
+    "consequence": "no external streams/licence/maturity to inherit; built from Supermetrics + live probe like amazon-ads."
+  },
+  "section_tier_map": {
+    "COST": "core",
+    "PERFORMANCE": "core",
+    "CAMPAIGN": "core",
+    "AD GROUP": "core",
+    "ADVERTISER": "core",
+    "TIME": "core",
+    "CONVERSIONS": "standard",
+    "AD": "standard",
+    "GEO": "standard",
+    "PLATFORM": "standard",
+    "AUDIENCE": "standard",
+    "INVENTORY": "standard",
+    "CATEGORY": "standard",
+    "DEAL": "standard",
+    "DATA ELEMENT": "standard",
+    "PARTNER": "standard",
+    "RECENCY": "standard",
+    "PLAYER": "advanced",
+    "DEPRECATED": "advanced",
+    "LEGACY": "advanced",
+    "DATASOURCE": "advanced",
+    "QUERY": "advanced"
+  },
+  "field_tier_overrides": {
+    "Impressions": "core",
+    "Clicks": "core",
+    "Bids": "core",
+    "AdvertiserCostAdvCurrency": "core",
+    "AdvertiserCostUSD": "core",
+    "TtdCostUsd": "core",
+    "PartnerCostUsd": "core",
+    "TotalClickConversions": "core",
+    "TotalViewThroughConversions": "core",
+    "date": "core",
+    "AdvertiserId": "core",
+    "AdvertiserName": "core",
+    "CampaignId": "core",
+    "CampaignName": "core",
+    "AdGroupId": "core",
+    "AdGroupName": "core",
+    "PartnerId": "core"
+  },
+  "default_tier": "standard",
+  "exposure_policy": "catalog_driven",
+  "field_counts": {
+    "total": 275,
+    "dimensions": 164,
+    "metrics": 111,
+    "excluded_enrichment_only": 12,
+    "deprecated_legacy_exposed": 14
+  },
+  "excluded_fields": {
+    "dataSourceName": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.data_source_login_owners": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.data_source_logins": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.query_accounts": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.query_date_end": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.query_date_range_end": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.query_date_range_start": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.query_date_start": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.query_duration": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.query_excluded_accounts": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.query_filters": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body.",
+    "system_metadata.query_timezone": "enrichment-only: Supermetrics connector run metadata (system_metadata.* / dataSourceName), NOT a TTD MyReports column. Never emitted to the manifest or a report body."
+  },
+  "field_compatibility": {
+    "schema_version": "1",
+    "_note": "Core field-compat contract (core/field_compat.py). ONE selectable_set per managed ReportTemplate scoped {\"report_template\": <id>}; allowed_fields = that template's legal dimension+metric set. Enforcement: connector calls core.field_compat.enforce_selection BEFORE building the reportschedule body -- a column absent from the template facet set never reaches the provider (typed invalid_request with the rule id). GENERATED by build_official_fields.py from REPORT_TEMPLATES. These rules are RECOMMENDED (dossier section 8); the LIVE facet enum is authority and confirms/extends them at probe (DRAFT status).",
+    "rules": [
+      {
+        "id": "selectable_conversions",
+        "kind": "selectable_set",
+        "scope": {
+          "report_template": "conversions"
+        },
+        "allowed_fields": [
+          "AdvertiserId",
+          "CampaignId",
+          "ClickConversion01",
+          "ClickConversion01Revenue",
+          "ClickConversion02",
+          "ClickConversion02Revenue",
+          "ClickConversion03",
+          "ClickConversion03Revenue",
+          "ClickConversion04",
+          "ClickConversion04Revenue",
+          "ClickConversion05",
+          "ClickConversion05Revenue",
+          "ClickConversion06",
+          "ClickConversion06Revenue",
+          "ConversionTouch01",
+          "ConversionTouch01Revenue",
+          "ConversionTouch02",
+          "ConversionTouch02Revenue",
+          "ConversionTouch03",
+          "ConversionTouch03Revenue",
+          "ConversionTouch04",
+          "ConversionTouch04Revenue",
+          "ConversionTouch05",
+          "ConversionTouch05Revenue",
+          "ConversionTouch06",
+          "ConversionTouch06Revenue",
+          "TimeWeightedDecayConversion01",
+          "TimeWeightedDecayConversion01Revenue",
+          "TimeWeightedDecayConversion02",
+          "TimeWeightedDecayConversion02Revenue",
+          "TimeWeightedDecayConversion03",
+          "TimeWeightedDecayConversion03Revenue",
+          "TimeWeightedDecayConversion04",
+          "TimeWeightedDecayConversion04Revenue",
+          "TimeWeightedDecayConversion05",
+          "TimeWeightedDecayConversion05Revenue",
+          "TimeWeightedDecayConversion06",
+          "TimeWeightedDecayConversion06Revenue",
+          "ViewThroughConversion01",
+          "ViewThroughConversion01Revenue",
+          "ViewThroughConversion02",
+          "ViewThroughConversion02Revenue",
+          "ViewThroughConversion03",
+          "ViewThroughConversion03Revenue",
+          "ViewThroughConversion04",
+          "ViewThroughConversion04Revenue",
+          "ViewThroughConversion05",
+          "ViewThroughConversion05Revenue",
+          "ViewThroughConversion06",
+          "ViewThroughConversion06Revenue",
+          "date"
+        ],
+        "_source": "recommended managed ReportTemplate columns (dossier section 8); the LIVE facet enum is authority and must confirm/extend this at probe time"
+      },
+      {
+        "id": "selectable_creative",
+        "kind": "selectable_set",
+        "scope": {
+          "report_template": "creative"
+        },
+        "allowed_fields": [
+          "AdFormat",
+          "AdGroupId",
+          "AdvertiserCostAdvCurrency",
+          "CampaignId",
+          "Clicks",
+          "CreativeId",
+          "CreativeName",
+          "Impressions",
+          "TotalClickConversions",
+          "date"
+        ],
+        "_source": "recommended managed ReportTemplate columns (dossier section 8); the LIVE facet enum is authority and must confirm/extend this at probe time"
+      },
+      {
+        "id": "selectable_daily_performance",
+        "kind": "selectable_set",
+        "scope": {
+          "report_template": "daily_performance"
+        },
+        "allowed_fields": [
+          "AdGroupId",
+          "AdvertiserCostAdvCurrency",
+          "AdvertiserCostUSD",
+          "AdvertiserId",
+          "Bids",
+          "CampaignId",
+          "Clicks",
+          "Impressions",
+          "PartnerCostUsd",
+          "TotalClickConversions",
+          "TotalViewThroughConversions",
+          "TtdCostUsd",
+          "date"
+        ],
+        "_source": "recommended managed ReportTemplate columns (dossier section 8); the LIVE facet enum is authority and must confirm/extend this at probe time"
+      },
+      {
+        "id": "selectable_geo_platform",
+        "kind": "selectable_set",
+        "scope": {
+          "report_template": "geo_platform"
+        },
+        "allowed_fields": [
+          "AdvertiserCostAdvCurrency",
+          "Browser",
+          "City",
+          "Clicks",
+          "Country",
+          "CountryCode",
+          "DeviceType",
+          "Impressions",
+          "Metro",
+          "OperatingSystem",
+          "Region",
+          "date"
+        ],
+        "_source": "recommended managed ReportTemplate columns (dossier section 8); the LIVE facet enum is authority and must confirm/extend this at probe time"
+      },
+      {
+        "id": "selectable_video_player",
+        "kind": "selectable_set",
+        "scope": {
+          "report_template": "video_player"
+        },
+        "allowed_fields": [
+          "AdGroupId",
+          "CreativeId",
+          "Player25Complete",
+          "Player50Complete",
+          "Player75Complete",
+          "PlayerClose",
+          "PlayerCollapse",
+          "PlayerCompletedViews",
+          "PlayerEngagedViews",
+          "PlayerErrors",
+          "PlayerExpansion",
+          "PlayerFullscreen",
+          "PlayerInvitationAccept",
+          "PlayerMute",
+          "PlayerPause",
+          "PlayerResume",
+          "PlayerRewind",
+          "PlayerSkip",
+          "PlayerStarts",
+          "PlayerUnmute",
+          "PlayerViews",
+          "date"
+        ],
+        "_source": "recommended managed ReportTemplate columns (dossier section 8); the LIVE facet enum is authority and must confirm/extend this at probe time"
+      }
+    ]
+  },
+  "report_template_compatibility": {
+    "_note": "TTD MyReports is NOT create-on-the-fly: a ReportTemplate (dimensions+metrics+filters) must pre-exist (created in the My Reports app UI or cloned from a predefined template). Realistic model = one managed template per report profile. Each entry maps a report profile to its dimensions/metrics; the connector caches the resolved ReportScheduleId per datastream (listing is slow, ~1 min+). columns_ref points at template_columns.json (the generated per-template requestable set feeding the field_compat selectable_set rules).",
+    "_source": "https://partner.thetradedesk.com/v3/portal/reds/doc/ReportSchedules",
+    "templates": {
+      "daily_performance": {
+        "tier": "core",
+        "dimensions": [
+          "date",
+          "AdvertiserId",
+          "CampaignId",
+          "AdGroupId"
+        ],
+        "metrics": [
+          "Impressions",
+          "Clicks",
+          "Bids",
+          "AdvertiserCostAdvCurrency",
+          "AdvertiserCostUSD",
+          "TtdCostUsd",
+          "PartnerCostUsd",
+          "TotalClickConversions",
+          "TotalViewThroughConversions"
+        ],
+        "columns_ref": "template_columns.json"
+      },
+      "conversions": {
+        "tier": "standard",
+        "dimensions": [
+          "date",
+          "AdvertiserId",
+          "CampaignId"
+        ],
+        "metrics": [
+          "ClickConversion01",
+          "ClickConversion01Revenue",
+          "ClickConversion02",
+          "ClickConversion02Revenue",
+          "ClickConversion03",
+          "ClickConversion03Revenue",
+          "ClickConversion04",
+          "ClickConversion04Revenue",
+          "ClickConversion05",
+          "ClickConversion05Revenue",
+          "ClickConversion06",
+          "ClickConversion06Revenue",
+          "ConversionTouch01",
+          "ConversionTouch01Revenue",
+          "ConversionTouch02",
+          "ConversionTouch02Revenue",
+          "ConversionTouch03",
+          "ConversionTouch03Revenue",
+          "ConversionTouch04",
+          "ConversionTouch04Revenue",
+          "ConversionTouch05",
+          "ConversionTouch05Revenue",
+          "ConversionTouch06",
+          "ConversionTouch06Revenue",
+          "TimeWeightedDecayConversion01",
+          "TimeWeightedDecayConversion01Revenue",
+          "TimeWeightedDecayConversion02",
+          "TimeWeightedDecayConversion02Revenue",
+          "TimeWeightedDecayConversion03",
+          "TimeWeightedDecayConversion03Revenue",
+          "TimeWeightedDecayConversion04",
+          "TimeWeightedDecayConversion04Revenue",
+          "TimeWeightedDecayConversion05",
+          "TimeWeightedDecayConversion05Revenue",
+          "TimeWeightedDecayConversion06",
+          "TimeWeightedDecayConversion06Revenue",
+          "ViewThroughConversion01",
+          "ViewThroughConversion01Revenue",
+          "ViewThroughConversion02",
+          "ViewThroughConversion02Revenue",
+          "ViewThroughConversion03",
+          "ViewThroughConversion03Revenue",
+          "ViewThroughConversion04",
+          "ViewThroughConversion04Revenue",
+          "ViewThroughConversion05",
+          "ViewThroughConversion05Revenue",
+          "ViewThroughConversion06",
+          "ViewThroughConversion06Revenue"
+        ],
+        "columns_ref": "template_columns.json"
+      },
+      "creative": {
+        "tier": "standard",
+        "dimensions": [
+          "date",
+          "CampaignId",
+          "AdGroupId",
+          "CreativeId",
+          "CreativeName",
+          "AdFormat"
+        ],
+        "metrics": [
+          "Impressions",
+          "Clicks",
+          "AdvertiserCostAdvCurrency",
+          "TotalClickConversions"
+        ],
+        "columns_ref": "template_columns.json"
+      },
+      "geo_platform": {
+        "tier": "standard",
+        "dimensions": [
+          "date",
+          "Country",
+          "CountryCode",
+          "Region",
+          "Metro",
+          "City",
+          "DeviceType",
+          "Browser",
+          "OperatingSystem"
+        ],
+        "metrics": [
+          "Impressions",
+          "Clicks",
+          "AdvertiserCostAdvCurrency"
+        ],
+        "columns_ref": "template_columns.json"
+      },
+      "video_player": {
+        "tier": "advanced",
+        "dimensions": [
+          "date",
+          "AdGroupId",
+          "CreativeId"
+        ],
+        "metrics": [
+          "Player25Complete",
+          "Player50Complete",
+          "Player75Complete",
+          "PlayerClose",
+          "PlayerCollapse",
+          "PlayerCompletedViews",
+          "PlayerEngagedViews",
+          "PlayerErrors",
+          "PlayerExpansion",
+          "PlayerFullscreen",
+          "PlayerInvitationAccept",
+          "PlayerMute",
+          "PlayerPause",
+          "PlayerResume",
+          "PlayerRewind",
+          "PlayerSkip",
+          "PlayerStarts",
+          "PlayerUnmute",
+          "PlayerViews"
+        ],
+        "columns_ref": "template_columns.json"
+      }
+    }
+  },
+  "_freshness_and_lookback": {
+    "refresh_cadence": "aggregated reports batch; third-party integrations refresh 6am CST daily",
+    "restatement": "conversion families (click/view-through/touch/time-weighted-decay, pixels 01-06) restate as attribution windows close; treat last ~3-7 days as provisional",
+    "attribution_windows": "ReportTemplate-configured (set in the My Reports UI), NOT a global API constant -> confirm at probe",
+    "date_window": "set on the ReportSchedule body (rolling window), not an arbitrary API date picker; default backfill observed 1 day",
+    "download_url_ttl_hours": 1,
+    "recommended_refetch": "nightly 3d (attribution provisional tail) + weekly 14d + monthly 45d; AD-7 supersede (QUALIFY on pull_id) makes every re-pull idempotent",
+    "report_generation": "asynchronous: POST reportschedule (referencing a pre-existing ReportTemplate) -> executions on recurrence -> poll reportexecution/query to Complete -> download pre-signed DownloadURL (amazon-ads flow shape)"
+  },
+  "_auth_and_quota": {
+    "auth_type": "api_key OR Login/Password (settled at probe)",
+    "authentication_endpoint": "POST https://api.thetradedesk.com/v3/authentication",
+    "authentication_body": {
+      "Login": "<api-user>",
+      "Password": "<api-secret>"
+    },
+    "authentication_response": {
+      "Token": "<token>",
+      "ExpirationDateUtc": "<iso8601>"
+    },
+    "auth_header": "TTD-Auth: <token>",
+    "long_lived_token": "alternative to Login/Password: a long-lived token generated once in the partner portal (shown once). Manifest auth path (Nango vs platform api_key) settled at probe.",
+    "token_ttl": "time-limited (ExpirationDateUtc); exact TTL UNDOCUMENTED (commonly a 90-day sliding window) -> proactive refresh before expiry (connector refreshes when ExpirationDateUtc is passed).",
+    "required_headers": [
+      "TTD-Auth: <token>",
+      "Content-Type: application/json"
+    ],
+    "rate_limiting": "UNDOCUMENTED per partner/advertiser. 429 -> core.quota.RateLimitError (breaker); no published Retry-After -> default exponential backoff, conservative pacing. Spread report creation through the day; listing reports is slow (~1 min+), cache ReportScheduleId per datastream."
+  }
+}

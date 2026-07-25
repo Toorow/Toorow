@@ -1,0 +1,24 @@
+{
+  "id": "floodlight_daily",
+  "display_name": "CM360 Floodlight conversions",
+  "metrics": [
+    "conversions",
+    "conversions_value"
+  ],
+  "dimensions": [
+    "date",
+    "advertiser_id",
+    "campaign_id",
+    "floodlight_activity_id"
+  ],
+  "layout": {
+    "chart_type": "line",
+    "order_by": "date"
+  },
+  "narrative_prompt": "Summarize Floodlight outcomes while preserving attribution semantics.",
+  "date_window": {
+    "default_days": 30,
+    "min_days": 1,
+    "max_days": 90
+  }
+}

@@ -1,0 +1,16 @@
+/*
+ * AC7 font-subsetting strategy — Material Symbols removal for this widget.
+ *
+ * The shared @toorow/shell inlines @fontsource/material-symbols-outlined
+ * (7 weights × ~600 KB = ~4.4 MB WOFF2) via fonts.css. This widget deliberately
+ * uses inline <svg> icon components (src/icons.tsx) instead of the icon font,
+ * so it needs NONE of the Material Symbols glyphs.
+ *
+ * vite.config.ts aliases "@fontsource/material-symbols-outlined/index.css" to
+ * this empty stub, so the 4.4 MB font never enters this widget's single-file
+ * bundle. Roboto Flex (the text face, required by UX-DR9) stays inlined via the
+ * shell's other @import.
+ *
+ * This is AC7 Option B (SVG-icon replacement) applied non-invasively — the shell
+ * source is untouched; only this widget's Vite resolution is redirected.
+ */

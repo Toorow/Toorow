@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toorow.dev/schemas/datastream-projection.schema.json",
+  "title": "toorow Datastream safe KPI projection plan (Story 12.4)",
+  "description": "Derived, deterministic artifact compiled from ONE immutable 12.3 mapping version. Encodes the full-grain relation shape (all dimensions preserved at the declared joint grain), the safe canonical projection (additive measures + exactly one governed dimension projection into fact_daily_kpi), the cardinality/scan estimate, and the closed set of compile-time rejection issues. Never a mart writer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "projection_contract_version",
+    "mapping_version_id",
+    "plan_version_id",
+    "source_schema_hash",
+    "executable",
+    "grain",
+    "full_grain_relation",
+    "additive_measures",
+    "governed_dimension_projection",
+    "estimate",
+    "issues"
+  ],
+  "properties": {
+    "projection_contract_version": { "const": "1" },
+    "mapping_version_id": { "type": "string", "minLength": 1 },
+    "plan_version_id": { "type": "string", "minLength": 1 },
+    "source_schema_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "capability_fingerprint": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "executable": {
+      "type": "boolean",
+      "description": "True iff issues is empty. A projection with ANY issue fails closed and blocks publication (12.5 owns publication)."
+    },
+    "grain": {
+      "type": "array",
+      "description": "The declared joint grain (ordered field_ids). Every selected dimension is preserved in the full-grain relation.",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "full_grain_relation": {
+      "$ref": "#/$defs/full_grain_relation"
+    },
+    "additive_measures": {
+      "type": "array",
+      "description": "Measures accepted into fact_daily_kpi. A measure is accepted ONLY iff aggregation='sum' AND non_additive=false via app.mdm_canonical_fields.",
+      "items": { "$ref": "#/$defs/additive_measure" }
+    },
+    "governed_dimension_projection": {
+      "description": "The SINGLE governed dimension projected into the canonical breakdown_dimension/breakdown_value slot, or null when no dimension is projected. Never more than one.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/governed_dimension_projection" }
+      ]
+    },
+    "estimate": { "$ref": "#/$defs/estimate" },
+    "issues": {
+      "type": "array",
+      "description": "Closed set of deterministic compile-time rejection issues. Non-empty => not executable => blocks publication.",
+      "items": { "$ref": "#/$defs/issue" }
+    }
+  },
+  "$defs": {
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Provenance columns carried on every full-grain row and queryable alongside the grain.",
+      "required": [
+        "execution_id",
+        "pull_id",
+        "mapping_version_id",
+        "plan_version_id",
+        "loaded_at"
+      ],
+      "properties": {
+        "execution_id": { "const": "execution_id" },
+        "pull_id": { "const": "pull_id" },
+        "mapping_version_id": { "const": "mapping_version_id" },
+        "plan_version_id": { "const": "plan_version_id" },
+        "loaded_at": { "const": "loaded_at" }
+      }
+    },
+    "full_grain_relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One row per the declared joint grain. Every selected dimension is its own typed column (never collapsed into a breakdown_dimension/breakdown_value pair). Distinct artifact from fact_daily_kpi.",
+      "required": [
+        "grain_columns",
+        "grain_key",
+        "source_fields",
+        "provenance",
+        "scope_columns"
+      ],
+      "properties": {
+        "grain_columns": {
+          "type": "array",
+          "description": "Ordered typed grain columns (one per selected dimension).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field_id", "type_class"],
+            "properties": {
+              "field_id": { "type": "string", "minLength": 1 },
+              "type_class": { "enum": ["date", "numeric", "string"] }
+            }
+          }
+        },
+        "grain_key": {
+          "const": "grain_key",
+          "description": "Deterministic '|'-joined ordered grain values. AI-05 uniqueness key: no two rows share a grain_key."
+        },
+        "source_fields": {
+          "type": "array",
+          "description": "Every selected source measure/field kept as its own typed column (not aggregated away).",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "scope_columns": {
+          "type": "array",
+          "items": { "enum": ["project_id", "connector"] },
+          "minItems": 2,
+          "uniqueItems": true
+        }
+      }
+    },
+    "additive_measure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field_id", "metric", "mdm_target", "aggregation", "non_additive"],
+      "properties": {
+        "field_id": { "type": "string", "minLength": 1 },
+        "metric": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical metric name landing in fact_daily_kpi.metric."
+        },
+        "mdm_target": {
+          "type": ["string", "null"],
+          "pattern": "^mdm_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "aggregation": { "const": "sum" },
+        "non_additive": { "const": false }
+      }
+    },
+    "governed_dimension_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Exactly one governed source dimension mapped to the canonical breakdown slot. It must sort so MIN(breakdown_dimension) never selects it (a parallel series, not a new canonical slot).",
+      "required": ["field_id", "breakdown_dimension", "mdm_target"],
+      "properties": {
+        "field_id": { "type": "string", "minLength": 1 },
+        "breakdown_dimension": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Value landing in fact_daily_kpi.breakdown_dimension for this projected series."
+        },
+        "mdm_target": {
+          "type": ["string", "null"],
+          "pattern": "^mdm_[0-9A-HJKMNP-TV-Z]{26}$"
+        }
+      }
+    },
+    "estimate": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Metadata-based cardinality/scan estimate (no live BigQuery dry-run in 12.4). Compared against the project-scoped governed threshold.",
+      "required": [
+        "estimated_grain_cardinality",
+        "estimated_scan_bytes",
+        "max_grain_cardinality",
+        "max_scan_bytes",
+        "over_limit",
+        "expensive_fields",
+        "threshold_source"
+      ],
+      "properties": {
+        "estimated_grain_cardinality": { "type": "integer", "minimum": 0 },
+        "estimated_scan_bytes": { "type": "integer", "minimum": 0 },
+        "max_grain_cardinality": { "type": "integer", "minimum": 1 },
+        "max_scan_bytes": { "type": "integer", "minimum": 1 },
+        "over_limit": { "type": "boolean" },
+        "expensive_fields": {
+          "type": "array",
+          "description": "Concrete field_ids driving the estimate over the limit (named, never silently dropped).",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "threshold_source": {
+          "enum": ["project_preference", "documented_default"],
+          "description": "project_preference when app.project_preferences supplied the value; documented_default otherwise (no platform-wide hardcode leaks silently)."
+        },
+        "approved": {
+          "type": "boolean",
+          "description": "True when the operator supplied the explicit governed approval flag/reason for an over-limit projection."
+        }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "path", "field_ids", "repair"],
+      "properties": {
+        "code": {
+          "enum": [
+            "non_additive_measure_projected",
+            "ungoverned_dimension_projection",
+            "governed_dim_shadows_canonical",
+            "mixed_grain_projection",
+            "cardinality_over_limit",
+            "scan_over_limit",
+            "mapping_not_executable",
+            "mapping_drift"
+          ]
+        },
+        "path": { "type": "string", "minLength": 1 },
+        "field_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "repair": { "type": "object" }
+      }
+    }
+  }
+}

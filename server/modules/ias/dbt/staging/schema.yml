@@ -1,0 +1,28 @@
+version: 2
+
+sources:
+  - name: raw_ias
+    description: "Immutable raw landing zone for Integral Ad Science data (AD-7: append-only)."
+    schema: main
+    tables:
+      - name: raw_ias_daily
+        description: "Raw IAS daily measurement (viewability / IVT / brand safety) at campaign grain. Append-only (AD-7)."
+
+models:
+  - name: stg_ias_daily
+    description: >
+      Staging: IAS daily measurement at project_id x date x campaign_id grain.
+      QUALIFY supersede (AD-7): latest pull per grain wins. All metrics additive
+      (AD-4); rates are recomputed downstream from these counts, never stored.
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: campaign_id
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_ias_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || campaign_id"

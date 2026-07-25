@@ -1,0 +1,25 @@
+{
+  "connector": "test-connector",
+  "api_version": "v1",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "default_tier": "standard",
+  "sources": [
+    {
+      "url": "https://example.dev/docs/api",
+      "kind": "official",
+      "fetched_at": "2026-07-21T00:00:00Z"
+    },
+    {
+      "url": "https://docs.supermetrics.com/docs/test-connector-fields.md",
+      "kind": "enrichment",
+      "fetched_at": "2026-07-21T00:00:00Z"
+    }
+  ],
+  "section_tier_map": {
+    "AD": "core",
+    "TARGETING": "standard"
+  },
+  "field_tier_overrides": {
+    "spend": "advanced"
+  }
+}

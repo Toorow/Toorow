@@ -1,0 +1,28 @@
+version: 2
+
+sources:
+  - name: raw_monday
+    schema: main
+    description: Append-only monday board/item/column/schema snapshots.
+    tables:
+      - name: raw_monday_board_snapshot
+
+models:
+  - name: stg_monday_board_snapshot
+    description: Latest full-grain monday board item-column state; no KPI projection.
+    columns:
+      - name: project_id
+        tests: [not_null]
+      - name: board_id
+        tests: [not_null]
+      - name: item_id
+        tests: [not_null]
+      - name: column_id
+        tests: [not_null]
+      - name: schema_fingerprint
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_monday_board_snapshot_grain_unique
+          arguments:
+            column_name: "project_id || '|' || board_id || '|' || item_id || '|' || column_id"

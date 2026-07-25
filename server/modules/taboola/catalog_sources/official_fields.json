@@ -1,0 +1,138 @@
+[
+  {
+    "field_id": "date",
+    "source_field": "date",
+    "kind": "dimension",
+    "data_type": "date",
+    "section": "DIMENSION",
+    "description": "Advertiser-local report day."
+  },
+  {
+    "field_id": "account_id",
+    "source_field": "account_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Selected advertiser account."
+  },
+  {
+    "field_id": "campaign_id",
+    "source_field": "campaign_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Campaign id."
+  },
+  {
+    "field_id": "item_id",
+    "source_field": "item_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Top content item id."
+  },
+  {
+    "field_id": "site_id",
+    "source_field": "site_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Publisher site id."
+  },
+  {
+    "field_id": "country",
+    "source_field": "country",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Country breakdown."
+  },
+  {
+    "field_id": "platform",
+    "source_field": "platform",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Platform breakdown."
+  },
+  {
+    "field_id": "record_id",
+    "source_field": "record_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Immutable history record id."
+  },
+  {
+    "field_id": "change_time",
+    "source_field": "change_time",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "section": "DIMENSION",
+    "description": "History change time."
+  },
+  {
+    "field_id": "change_type",
+    "source_field": "change_type",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "History change type."
+  },
+  {
+    "field_id": "entity_id",
+    "source_field": "entity_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Changed entity id."
+  },
+  {
+    "field_id": "impressions",
+    "source_field": "impressions",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Impressions."
+  },
+  {
+    "field_id": "clicks",
+    "source_field": "clicks",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Clicks."
+  },
+  {
+    "field_id": "spent",
+    "source_field": "spent",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Spend in account currency."
+  },
+  {
+    "field_id": "conversions",
+    "source_field": "conversions",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Physical conversion count."
+  },
+  {
+    "field_id": "conversion_value",
+    "source_field": "conversion_value",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Conversion value."
+  },
+  {
+    "field_id": "change_count",
+    "source_field": "change_count",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "One immutable history change record."
+  }
+]

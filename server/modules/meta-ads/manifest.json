@@ -1,0 +1,560 @@
+{
+    "schema_version": "1.2",
+    "name": "meta-ads",
+    "display_name": "Meta Ads",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "paid_media",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "auth_type": "oauth2",
+    "report_profiles": [
+        {
+            "id": "campaign_daily",
+            "display_name": "Campaign Performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id",
+                "campaign_name"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "adset_daily",
+            "display_name": "Ad Set Performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "adset_id",
+                "adset_name",
+                "campaign_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "creative_daily",
+            "display_name": "Creative Performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "ad_id",
+                "creative_id",
+                "adset_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven daily (any selected field)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id",
+                "campaign_name"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        }
+    ],
+    "error_map": {
+        "401:190": "auth_expired",
+        "401:458": "auth_revoked",
+        "401:459": "auth_revoked",
+        "401:460": "auth_revoked",
+        "401:463": "auth_revoked",
+        "401:464": "auth_revoked",
+        "401:467": "auth_revoked",
+        "403:10": "permission_denied",
+        "403:200": "permission_denied",
+        "400:100": "invalid_request",
+        "500:1": "provider_transient",
+        "500:2": "provider_transient"
+    },
+    "canonical_metric_mapping": {
+        "spend": "cost",
+        "impressions": "impressions",
+        "clicks": "clicks",
+        "conversions": "conversions"
+    },
+    "canonical_dimension_mapping": {
+        "campaign_id": "campaign_id",
+        "campaign_name": "campaign_name",
+        "adset_id": "adset_id",
+        "adset_name": "adset_name",
+        "ad_id": "ad_id",
+        "creative_id": "creative_id"
+    },
+    "quota": {
+        "window_seconds": 300,
+        "budget_points": 60,
+        "read_cost": 1,
+        "write_cost": 3
+    },
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "spend",
+                "source_field": "spend",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "spend exposed by Meta Ads.",
+                "semantic_hints": [
+                    "spend",
+                    "currency"
+                ],
+                "canonical_target": "cost",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "impressions",
+                "source_field": "impressions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "impressions exposed by Meta Ads.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "clicks",
+                "source_field": "clicks",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "clicks exposed by Meta Ads.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "conversions",
+                "source_field": "conversions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "conversions exposed by Meta Ads.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "conversions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "date_start",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "date exposed by Meta Ads.",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_id",
+                "source_field": "campaign_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "campaign id exposed by Meta Ads.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_name",
+                "source_field": "campaign_name",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "campaign name exposed by Meta Ads.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "adset_id",
+                "source_field": "adset_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "adset id exposed by Meta Ads.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "adset_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "adset_name",
+                "source_field": "adset_name",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "adset name exposed by Meta Ads.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "adset_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "ad_id",
+                "source_field": "ad_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "ad id exposed by Meta Ads.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "ad_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "creative_id",
+                "source_field": "creative_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "creative id exposed by Meta Ads.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "creative_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "campaign_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id",
+                    "campaign_name"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id",
+                        "campaign_name"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "unknown",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_campaign_daily"
+                }
+            },
+            {
+                "id": "adset_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "adset_id",
+                    "adset_name",
+                    "campaign_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "adset_id",
+                        "adset_name",
+                        "campaign_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "unknown",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_adset_daily"
+                }
+            },
+            {
+                "id": "creative_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "ad_id",
+                    "creative_id",
+                    "adset_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "ad_id",
+                        "creative_id",
+                        "adset_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "unknown",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_creative_daily"
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id",
+                    "campaign_name"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id",
+                        "campaign_name"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "unknown",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                }
+            }
+        ]
+    },
+    "account_topology": {
+        "_comment": "Story 25.5 stitch: Meta topology is a single flat level -- the token's reachable ad accounts (/me/adaccounts). The selected reporting entity is the AD ACCOUNT (pulls target act_<digits>/insights). Replaces the META_ADS_AD_ACCOUNT_ID env-var pattern (deprecated, removed at 25.7 rollout).",
+        "levels": [
+            {
+                "id": "ad_account",
+                "label": "Ad account"
+            }
+        ],
+        "selection_level": "ad_account",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    }
+}

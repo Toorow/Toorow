@@ -1,0 +1,202 @@
+[
+  {
+    "field_id": "date",
+    "source_field": "published_at/created_at",
+    "kind": "dimension",
+    "data_type": "date",
+    "section": "TIME",
+    "description": "Date of the GitHub event (release: published_at truncated to YYYY-MM-DD; deployment: created_at truncated to YYYY-MM-DD). Used as the primary time dimension for context_events rows. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe."
+  },
+  {
+    "field_id": "release_id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "integer",
+    "section": "RELEASE",
+    "description": "Unique integer identifier for the release object returned by the GitHub REST API."
+  },
+  {
+    "field_id": "tag_name",
+    "source_field": "tag_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "RELEASE",
+    "description": "Git tag that identifies the release (e.g. 'v2.3.1'). Used as the event label in context_events."
+  },
+  {
+    "field_id": "release_name",
+    "source_field": "name",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "RELEASE",
+    "description": "Human-readable title of the release. Falls back to tag_name when null. Stored as context_event description."
+  },
+  {
+    "field_id": "release_body",
+    "source_field": "body",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "RELEASE",
+    "description": "Markdown release notes body. Available in the API response; not currently extracted to context_events."
+  },
+  {
+    "field_id": "draft",
+    "source_field": "draft",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "section": "RELEASE",
+    "description": "True when the release is a draft (unpublished). Draft releases have no published_at timestamp."
+  },
+  {
+    "field_id": "prerelease",
+    "source_field": "prerelease",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "section": "RELEASE",
+    "description": "True when the release is marked as a pre-release (e.g. alpha, beta, RC)."
+  },
+  {
+    "field_id": "release_created_at",
+    "source_field": "created_at",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "section": "RELEASE",
+    "description": "ISO-8601 timestamp when the release object was created in GitHub (may precede publication)."
+  },
+  {
+    "field_id": "published_at",
+    "source_field": "published_at",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "section": "RELEASE",
+    "description": "ISO-8601 timestamp when the release was published. Null for draft releases. Source of the 'date' dimension for the releases profile."
+  },
+  {
+    "field_id": "target_commitish",
+    "source_field": "target_commitish",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "RELEASE",
+    "description": "Branch name or commit SHA the release tag points to (e.g. 'main', 'v2-stable')."
+  },
+  {
+    "field_id": "release_author_login",
+    "source_field": "author.login",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "RELEASE",
+    "description": "GitHub login (username) of the user who created the release."
+  },
+  {
+    "field_id": "deployment_id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "integer",
+    "section": "DEPLOYMENT",
+    "description": "Unique integer identifier for the deployment object returned by the GitHub REST API."
+  },
+  {
+    "field_id": "deployment_ref",
+    "source_field": "ref",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DEPLOYMENT",
+    "description": "Branch name, tag, or commit SHA that was deployed (e.g. 'main', 'v2.3.1'). Used in the event label."
+  },
+  {
+    "field_id": "environment",
+    "source_field": "environment",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DEPLOYMENT",
+    "description": "Target deployment environment name (e.g. 'production', 'staging', 'preview'). Used in the event label."
+  },
+  {
+    "field_id": "original_environment",
+    "source_field": "original_environment",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DEPLOYMENT",
+    "description": "The initial environment name before any promotion/redirection. May differ from environment after a pipeline changes the target."
+  },
+  {
+    "field_id": "deployment_task",
+    "source_field": "task",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DEPLOYMENT",
+    "description": "Deployment task name (typically 'deploy' or 'deploy:migrations'). Describes the type of deployment action."
+  },
+  {
+    "field_id": "deployment_sha",
+    "source_field": "sha",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DEPLOYMENT",
+    "description": "Full commit SHA that was deployed. Useful for correlating deployments with specific code changes."
+  },
+  {
+    "field_id": "deployment_description",
+    "source_field": "description",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DEPLOYMENT",
+    "description": "Short human-readable description of the deployment, supplied at creation time. May be null."
+  },
+  {
+    "field_id": "deployment_created_at",
+    "source_field": "created_at",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "section": "DEPLOYMENT",
+    "description": "ISO-8601 timestamp when the deployment was created. Source of the 'date' dimension for the deployments profile."
+  },
+  {
+    "field_id": "deployment_updated_at",
+    "source_field": "updated_at",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "section": "DEPLOYMENT",
+    "description": "ISO-8601 timestamp of the last status update for the deployment."
+  },
+  {
+    "field_id": "transient_environment",
+    "source_field": "transient_environment",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "section": "DEPLOYMENT",
+    "description": "True when the deployment environment is ephemeral (e.g. a per-PR preview environment)."
+  },
+  {
+    "field_id": "production_environment",
+    "source_field": "production_environment",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "section": "DEPLOYMENT",
+    "description": "True when the target environment is the production environment."
+  },
+  {
+    "field_id": "deployment_creator_login",
+    "source_field": "creator.login",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DEPLOYMENT",
+    "description": "GitHub login (username) of the user or bot that triggered the deployment."
+  },
+  {
+    "field_id": "repo_owner",
+    "source_field": "_connection_config.owner",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "REPOSITORY",
+    "description": "GitHub repository owner (user or organization name). Supplied via connection_config at pull time; not a field in the release/deployment payload itself."
+  },
+  {
+    "field_id": "repo_name",
+    "source_field": "_connection_config.repo",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "REPOSITORY",
+    "description": "GitHub repository name. Supplied via connection_config at pull time; not a field in the release/deployment payload itself."
+  }
+]

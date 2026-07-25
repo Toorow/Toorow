@@ -1,0 +1,47 @@
+{
+  "drift_ids": [],
+  "enrichment_only": 27,
+  "enrichment_only_ids": [
+    "ad_id",
+    "ad_name",
+    "atom",
+    "dataSourceName",
+    "day_of_month",
+    "day_of_week_name",
+    "day_of_week_name_iso",
+    "first_paying_users_d0",
+    "rejected_reattribution_click_injection_rate",
+    "system_metadata.data_source_login_owners",
+    "system_metadata.data_source_logins",
+    "system_metadata.query_accounts",
+    "system_metadata.query_date_end",
+    "system_metadata.query_date_range_end",
+    "system_metadata.query_date_range_start",
+    "system_metadata.query_date_start",
+    "system_metadata.query_duration",
+    "system_metadata.query_excluded_accounts",
+    "system_metadata.query_filters",
+    "system_metadata.query_timezone",
+    "today",
+    "week_iso",
+    "year_month",
+    "year_of_week",
+    "year_of_week_iso",
+    "year_week",
+    "year_week_iso"
+  ],
+  "enrichment_total": 131,
+  "exposure_counts": {
+    "exposed": 15,
+    "planned": 363
+  },
+  "matched": 104,
+  "official_duplicate_ids": [],
+  "official_only": 274,
+  "official_total": 378,
+  "tier_counts": {
+    "advanced": 262,
+    "core": 60,
+    "standard": 56
+  }
+}

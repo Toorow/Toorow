@@ -1,0 +1,40 @@
+{
+  "pull_inputs": {
+    "connection_id": "conn-conformance",
+    "date_from": "2026-07-01",
+    "date_to": "2026-07-10",
+    "project_id": "proj-conformance",
+    "pull_id": "pull_CONFORMANCE001",
+    "profile_id": "releases",
+    "connection_config": {
+      "owner": "acme",
+      "repo": "website"
+    }
+  },
+  "api_responses": {
+    "https://api.github.com/repos/acme/website/releases": {
+      "status_code": 200,
+      "json": [
+        {
+          "tag_name": "v2.3.1",
+          "name": "Release 2.3.1 — conformance fixture",
+          "published_at": "2026-07-04T10:00:00Z"
+        },
+        {
+          "tag_name": "v2.3.2",
+          "name": "Hotfix 2.3.2 — conformance fixture",
+          "published_at": "2026-07-06T14:30:00Z"
+        },
+        {
+          "tag_name": "v2.2.0",
+          "name": "Old release — out of range",
+          "published_at": "2026-06-01T08:00:00Z"
+        }
+      ]
+    }
+  },
+  "expected_rows_written": 2,
+  "expected_event_types": ["release"],
+  "expected_platform": "github",
+  "expected_source": "github"
+}

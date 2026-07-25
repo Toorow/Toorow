@@ -1,0 +1,9 @@
+{
+  "name": "test-connector",
+  "source_capabilities": {
+    "fields": [
+      {"field_id": "impressions", "kind": "metric"},
+      {"field_id": "country", "kind": "dimension"}
+    ]
+  }
+}

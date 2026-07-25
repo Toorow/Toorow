@@ -1,0 +1,16 @@
+{
+  "id": "daily_summary",
+  "display_name": "Google Ad Manager — Daily Summary",
+  "metrics": ["impressions", "clicks", "ad_revenue"],
+  "dimensions": ["date"],
+  "layout": {
+    "chart_type": "line",
+    "order_by": "date"
+  },
+  "narrative_prompt": "TODO(catalogue port): summarise ad-server delivery and revenue trend in 1-2 sentences; note MONEY is in network currency (micros already divided).",
+  "date_window": {
+    "default_days": 30,
+    "min_days": 7,
+    "max_days": 90
+  }
+}

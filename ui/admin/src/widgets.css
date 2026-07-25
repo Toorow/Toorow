@@ -1,0 +1,77 @@
+/**
+ * widgets.css — page-specific styles for WidgetCardsPage (Analyze › Widgets).
+ *
+ * The application shell renders the frame, sidebar, topbar, and
+ * <main className="main">. This page renders only the content inside <main>:
+ * the page header and a grid of widget-template cards. Shell/layout classes
+ * (panel, page-header, header-actions, buttons, etc.) live in application.css
+ * and are global; this file only adds the catalog grid + card internals, in the
+ * spirit of overview.css / sources.css.
+ *
+ * Tokenized: every color references an application.css CSS variable, so the page
+ * is dark-safe. The category tag uses the rose accent tints; the type tag uses
+ * the neutral surface. Any numbers use the Geist tabular treatment.
+ */
+
+.widget-catalog {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.widget-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 176px;
+  padding: 22px;
+}
+
+.widget-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.widget-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.widget-tag.category {
+  color: var(--ink);
+  background: var(--rose-soft);
+}
+.widget-tag.type {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+.widget-card h3 {
+  margin: 0 0 8px;
+  font: 600 17px "Lexend", sans-serif;
+}
+.widget-card p {
+  flex: 1;
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.widget-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+@media (max-width: 720px) {
+  .widget-catalog {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

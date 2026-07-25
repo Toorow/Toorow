@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: raw_adjust
+    description: "Immutable raw landing zone for Adjust Report Service data (AD-7: append-only)."
+    schema: main
+    tables:
+      - name: raw_adjust_daily
+        description: "Raw Adjust daily rows (wide, canonical column names). Append-only (AD-7)."
+
+models:
+  - name: stg_adjust_daily
+    description: >
+      Staging: Adjust network_daily rows with canonical names.
+      QUALIFY supersede (AD-7): latest pull per grain wins.
+      Grain: (project_id, date, app_token, network, campaign_id).
+      AD-4: additive metrics only; ratios never stored; adjust revenue is never
+      cross-summed with shopify/stripe (metric_source_priority + cross_source_revenue).
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: app_token
+        tests: [not_null]
+      - name: network
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_adjust_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || app_token || '|' || network || '|' || campaign_id"

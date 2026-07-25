@@ -1,0 +1,36 @@
+[
+  {
+    "pull_id": "pull_test_001",
+    "connector": "thetradedesk",
+    "date": "2026-07-01",
+    "advertiser_id": "adv-123",
+    "campaign_id": "cmp-1",
+    "ad_group_id": "ag-1",
+    "impressions": 12040,
+    "clicks": 640,
+    "bids": 90000,
+    "advertiser_cost_adv_currency": 118.4,
+    "advertiser_cost_usd": 128.1,
+    "ttd_cost_usd": 12.0,
+    "partner_cost_usd": 5.0,
+    "total_click_conversions": 42,
+    "total_view_through_conversions": 15
+  },
+  {
+    "pull_id": "pull_test_001",
+    "connector": "thetradedesk",
+    "date": "2026-07-01",
+    "advertiser_id": "adv-123",
+    "campaign_id": "cmp-2",
+    "ad_group_id": "ag-2",
+    "impressions": 8000,
+    "clicks": 210,
+    "bids": 60000,
+    "advertiser_cost_adv_currency": 74.2,
+    "advertiser_cost_usd": 80.4,
+    "ttd_cost_usd": 7.5,
+    "partner_cost_usd": 3.1,
+    "total_click_conversions": 12,
+    "total_view_through_conversions": 6
+  }
+]

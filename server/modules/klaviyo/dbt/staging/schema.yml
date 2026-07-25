@@ -1,0 +1,140 @@
+version: 2
+
+sources:
+  - name: raw_klaviyo
+    description: >
+      Zone de landing raw immutable pour les metriques Klaviyo email/SMS (AD-7:
+      append-only). Une ligne par (campaign_id OU flow_id) x date x pull_id.
+      Les champs attributed_conversions et attributed_revenue sont des metriques
+      REVENDIQUEES par le canal Klaviyo (fenetres last-touch 5j clic/ouverture email
+      par defaut -- AI-53 verifie le 2026-07-19). Ils ne sont JAMAIS sommes avec
+      les conversions des regies ni le revenue Shopify/Stripe (AD-4, Story 15.8).
+    schema: main  # DuckDB default schema ; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_klaviyo_daily
+        description: >
+          Raw Klaviyo daily -- une ligne par (campaign_id ou flow_id) x date x pull_id.
+          Append-only (AD-7): chaque pull ajoute un batch identifie par pull_id.
+          campaign_id et flow_id sont mutuellement exclusifs (l'un est NULL).
+          NULL honnete (AD-9): une metrique absente dans la reponse API reste NULL.
+        columns:
+          - name: date
+            description: "Date ISO-8601 (YYYY-MM-DD). Grain journalier."
+          - name: campaign_id
+            description: "ID de la campagne Klaviyo. NULL pour les lignes de type flow."
+          - name: campaign_name
+            description: "Nom de la campagne. NULL pour les lignes de type flow."
+          - name: flow_id
+            description: "ID du flow Klaviyo. NULL pour les lignes de type campagne."
+          - name: flow_name
+            description: "Nom du flow. NULL pour les lignes de type campagne."
+          - name: sends
+            description: "Nombre d'envois email/SMS (additif, AD-4). Peut etre NULL (AD-9)."
+          - name: opens
+            description: "Nombre d'ouvertures email (additif, AD-4). Peut etre NULL (AD-9)."
+          - name: clicks
+            description: "Nombre de clics (additif, AD-4). Peut etre NULL (AD-9)."
+          - name: attributed_conversions
+            description: >
+              Conversions REVENDIQUEES par le canal Klaviyo (fenetre last-touch 5j
+              clic/ouverture email par defaut, configurable par compte -- AI-53
+              verifie le 2026-07-19). JAMAIS sommees avec les conversions des regies
+              (Meta/TikTok/Google) ni GA4 sans la regle AD-4. Additif (AD-4).
+              Peut etre NULL (AD-9).
+          - name: attributed_revenue
+            description: >
+              Revenue ATTRIBUE par le canal Klaviyo (meme fenetre d'attribution que
+              attributed_conversions). JAMAIS additionne au revenue Shopify/Stripe dans
+              un total croise (regle de non-agregation, AD-4, Story 15.8). Additif (AD-4).
+              Peut etre NULL (AD-9).
+          - name: pull_id
+            description: "ULID prefixe (pull_<ULID>) identifiant le batch de chargement. AD-7."
+          - name: loaded_at
+            description: "Timestamp UTC ISO-8601 du chargement du batch."
+          - name: project_id
+            description: "Binding projet. 'default' pour les donnees seedees (AD-14)."
+
+models:
+  - name: stg_klaviyo_campaigns_daily
+    description: >
+      Staging Klaviyo campagnes : mappe les champs raw sur les noms canoniques.
+      AD-4: metriques additives uniquement. Supersede (AD-7): QUALIFY garde le
+      pull le plus recent par (project_id, date, campaign_id). NULL honnete (AD-9).
+      REGLE CRITIQUE : attributed_conversions et attributed_revenue sont des metriques
+      revendiquees par le canal -- JAMAIS sommees avec les regies ni Shopify/Stripe.
+    tests:
+      # Unicite grain (AI-05) : une ligne par projet x date x campagne.
+      - unique:
+          name: stg_klaviyo_campaigns_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || campaign_id"
+    columns:
+      - name: date
+        description: "Date ISO-8601, grain journalier."
+        tests:
+          - not_null
+      - name: campaign_id
+        description: "ID campagne Klaviyo (grain avec project_id + date)."
+        tests:
+          - not_null
+      - name: sends
+        description: "Envois (additif, AD-4). NULL = donnee absente (AD-9)."
+      - name: opens
+        description: "Ouvertures (additif, AD-4). NULL = donnee absente (AD-9)."
+      - name: clicks
+        description: "Clics (additif, AD-4). NULL = donnee absente (AD-9)."
+      - name: attributed_conversions
+        description: >
+          Conversions revendiquees par le canal Klaviyo (fenetre last-touch 5j).
+          JAMAIS sommees avec les regies (AD-4). NULL = donnee absente (AD-9).
+      - name: attributed_revenue
+        description: >
+          Revenue attribue par le canal Klaviyo. JAMAIS additionne a Shopify/Stripe.
+          NULL = donnee absente (AD-9).
+      - name: pull_id
+        description: "Provenance ID du batch (AD-7)."
+        tests:
+          - not_null
+      - name: project_id
+        description: "Binding projet propage depuis raw_klaviyo_daily."
+        tests:
+          - not_null
+
+  - name: stg_klaviyo_flows_daily
+    description: >
+      Staging Klaviyo flows : meme structure et memes regles que
+      stg_klaviyo_campaigns_daily. Grain: (project_id, date, flow_id).
+      REGLE CRITIQUE de non-agregation identique (AD-4, Story 15.8).
+    tests:
+      # Unicite grain (AI-05) : une ligne par projet x date x flow.
+      - unique:
+          name: stg_klaviyo_flows_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || flow_id"
+    columns:
+      - name: date
+        description: "Date ISO-8601, grain journalier."
+        tests:
+          - not_null
+      - name: flow_id
+        description: "ID flow Klaviyo (grain avec project_id + date)."
+        tests:
+          - not_null
+      - name: sends
+        description: "Envois (additif, AD-4). NULL = donnee absente (AD-9)."
+      - name: opens
+        description: "Ouvertures (additif, AD-4). NULL = donnee absente (AD-9)."
+      - name: clicks
+        description: "Clics (additif, AD-4). NULL = donnee absente (AD-9)."
+      - name: attributed_conversions
+        description: "Conversions revendiquees canal Klaviyo. JAMAIS avec regies (AD-4)."
+      - name: attributed_revenue
+        description: "Revenue attribue canal Klaviyo. JAMAIS avec Shopify/Stripe (AD-4)."
+      - name: pull_id
+        description: "Provenance ID du batch (AD-7)."
+        tests:
+          - not_null
+      - name: project_id
+        description: "Binding projet propage depuis raw_klaviyo_daily."
+        tests:
+          - not_null

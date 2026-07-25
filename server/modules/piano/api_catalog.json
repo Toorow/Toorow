@@ -1,0 +1,1514 @@
+{
+  "api_version": "v3",
+  "catalog_version": "1",
+  "connector": "piano",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Piano Analytics standard-tagging property 'av_broadcasting_type' (Data Query API v3 baseline; research dossier Annex B). Audio/video broadcasting type.",
+      "exposure": "exposed",
+      "field_id": "av_broadcasting_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AV INSIGHTS - OVERVIEW",
+      "source_field": "av_broadcasting_type",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'av_channel' (Data Query API v3 baseline; research dossier Annex B). Audio/video channel.",
+      "exposure": "exposed",
+      "field_id": "av_channel",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AV INSIGHTS - CONTENTS",
+      "source_field": "av_channel",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'av_content' (Data Query API v3 baseline; research dossier Annex B). Audio/video content.",
+      "exposure": "exposed",
+      "field_id": "av_content",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AV INSIGHTS - CONTENTS",
+      "source_field": "av_content",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'av_content_genre' (Data Query API v3 baseline; research dossier Annex B). Audio/video content genre.",
+      "exposure": "exposed",
+      "field_id": "av_content_genre",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AV INSIGHTS - CONTENTS",
+      "source_field": "av_content_genre",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'av_content_type' (Data Query API v3 baseline; research dossier Annex B). Audio/video content type.",
+      "exposure": "exposed",
+      "field_id": "av_content_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AV INSIGHTS - OVERVIEW",
+      "source_field": "av_content_type",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'av_player' (Data Query API v3 baseline; research dossier Annex B). Audio/video player.",
+      "exclusion_reason": "QoS delivery metrics require AV (audio/video) tagging that a non-media site does not emit; excluded from default profiles until an AV profile exists (zero rows otherwise, honest degrade).",
+      "exposure": "excluded",
+      "field_id": "av_player",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AV INSIGHTS - QOS DELIVERY",
+      "source_field": "av_player",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'av_session_id' (Data Query API v3 baseline; research dossier Annex B). Audio/video session id.",
+      "exposure": "exposed",
+      "field_id": "av_session_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AV INSIGHTS - COMPLETION FUNNEL",
+      "source_field": "av_session_id",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'av_show' (Data Query API v3 baseline; research dossier Annex B). Audio/video show.",
+      "exposure": "exposed",
+      "field_id": "av_show",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AV INSIGHTS - CONTENTS",
+      "source_field": "av_show",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'browser' (Data Query API v3 baseline; research dossier Annex B). Browser.",
+      "exposure": "exposed",
+      "field_id": "browser",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "browser",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'browser_group' (Data Query API v3 baseline; research dossier Annex B). Browser group.",
+      "exposure": "exposed",
+      "field_id": "browser_group",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "browser_group",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'browser_language' (Data Query API v3 baseline; research dossier Annex B). Browser language.",
+      "exposure": "exposed",
+      "field_id": "browser_language",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - GEOLOCATION",
+      "source_field": "browser_language",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'browser_version' (Data Query API v3 baseline; research dossier Annex B). Browser version.",
+      "exposure": "exposed",
+      "field_id": "browser_version",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "browser_version",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'cart_id' (Data Query API v3 baseline; research dossier Annex B). Cart id.",
+      "exposure": "exposed",
+      "field_id": "cart_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "cart_id",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'click' (Data Query API v3 baseline; research dossier Annex B). Click.",
+      "exposure": "exposed",
+      "field_id": "click",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - CLICKS",
+      "source_field": "click",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'click_chapter1' (Data Query API v3 baseline; research dossier Annex B). Click chapter 1.",
+      "exposure": "exposed",
+      "field_id": "click_chapter1",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - CLICKS",
+      "source_field": "click_chapter1",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'click_chapter2' (Data Query API v3 baseline; research dossier Annex B). Click chapter 2.",
+      "exposure": "exposed",
+      "field_id": "click_chapter2",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - CLICKS",
+      "source_field": "click_chapter2",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'click_chapter3' (Data Query API v3 baseline; research dossier Annex B). Click chapter 3.",
+      "exposure": "exposed",
+      "field_id": "click_chapter3",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - CLICKS",
+      "source_field": "click_chapter3",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'click_full_name' (Data Query API v3 baseline; research dossier Annex B). Click full name.",
+      "exposure": "exposed",
+      "field_id": "click_full_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - CLICKS",
+      "source_field": "click_full_name",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'connection_type' (Data Query API v3 baseline; research dossier Annex B). Connection type.",
+      "exposure": "exposed",
+      "field_id": "connection_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "connection_type",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'date' (Data Query API v3 baseline; research dossier Annex B). Reporting day (Piano DATE property at granularity D, site timezone).",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'day' (Data Query API v3 baseline; research dossier Annex B). Day.",
+      "exposure": "exposed",
+      "field_id": "day",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "day",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'day_of_week' (Data Query API v3 baseline; research dossier Annex B). Day of week.",
+      "exposure": "exposed",
+      "field_id": "day_of_week",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "day_of_week",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'device_brand' (Data Query API v3 baseline; research dossier Annex B). Device brand.",
+      "exposure": "exposed",
+      "field_id": "device_brand",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "device_brand",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'device_name' (Data Query API v3 baseline; research dossier Annex B). Device name.",
+      "exposure": "exposed",
+      "field_id": "device_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "device_name",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'device_type' (Data Query API v3 baseline; research dossier Annex B). Device type (desktop / mobile / tablet).",
+      "exposure": "exposed",
+      "field_id": "device_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "device_type",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_collection_platform' (Data Query API v3 baseline; research dossier Annex B). Event collection platform.",
+      "exposure": "exposed",
+      "field_id": "event_collection_platform",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - EVENTS",
+      "source_field": "event_collection_platform",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_collection_version' (Data Query API v3 baseline; research dossier Annex B). Event collection version.",
+      "exposure": "exposed",
+      "field_id": "event_collection_version",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - EVENTS",
+      "source_field": "event_collection_version",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_hour' (Data Query API v3 baseline; research dossier Annex B). Event hour.",
+      "exposure": "exposed",
+      "field_id": "event_hour",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "event_hour",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_id' (Data Query API v3 baseline; research dossier Annex B). Event id.",
+      "exposure": "exposed",
+      "field_id": "event_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - EVENTS",
+      "source_field": "event_id",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_minute' (Data Query API v3 baseline; research dossier Annex B). Event minute.",
+      "exposure": "exposed",
+      "field_id": "event_minute",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "event_minute",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_name' (Data Query API v3 baseline; research dossier Annex B). Event name.",
+      "exposure": "exposed",
+      "field_id": "event_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - EVENTS",
+      "source_field": "event_name",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_position' (Data Query API v3 baseline; research dossier Annex B). Event position.",
+      "exposure": "exposed",
+      "field_id": "event_position",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - EVENTS",
+      "source_field": "event_position",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_second' (Data Query API v3 baseline; research dossier Annex B). Event second.",
+      "exposure": "exposed",
+      "field_id": "event_second",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "event_second",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_time' (Data Query API v3 baseline; research dossier Annex B). Event time (site timezone).",
+      "exposure": "exposed",
+      "field_id": "event_time",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "event_time",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_time_utc' (Data Query API v3 baseline; research dossier Annex B). Event time (UTC).",
+      "exposure": "exposed",
+      "field_id": "event_time_utc",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "event_time_utc",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'event_url' (Data Query API v3 baseline; research dossier Annex B). Event URL.",
+      "exposure": "exposed",
+      "field_id": "event_url",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - EVENTS",
+      "source_field": "event_url",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'geo_city' (Data Query API v3 baseline; research dossier Annex B). Visitor city.",
+      "exposure": "exposed",
+      "field_id": "geo_city",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - GEOLOCATION",
+      "source_field": "geo_city",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'geo_continent' (Data Query API v3 baseline; research dossier Annex B). Visitor continent.",
+      "exposure": "exposed",
+      "field_id": "geo_continent",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - GEOLOCATION",
+      "source_field": "geo_continent",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'geo_country' (Data Query API v3 baseline; research dossier Annex B). Visitor country.",
+      "exposure": "exposed",
+      "field_id": "geo_country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - GEOLOCATION",
+      "source_field": "geo_country",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'geo_metro' (Data Query API v3 baseline; research dossier Annex B). Visitor metro area.",
+      "exposure": "exposed",
+      "field_id": "geo_metro",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - GEOLOCATION",
+      "source_field": "geo_metro",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'geo_region' (Data Query API v3 baseline; research dossier Annex B). Visitor region.",
+      "exposure": "exposed",
+      "field_id": "geo_region",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - GEOLOCATION",
+      "source_field": "geo_region",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'hit_time_utc' (Data Query API v3 baseline; research dossier Annex B). Hit time (UTC).",
+      "exposure": "exposed",
+      "field_id": "hit_time_utc",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "hit_time_utc",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'hour' (Data Query API v3 baseline; research dossier Annex B). Hour.",
+      "exposure": "exposed",
+      "field_id": "hour",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "hour",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'ise_click_rank' (Data Query API v3 baseline; research dossier Annex B). Internal search click rank.",
+      "exposure": "exposed",
+      "field_id": "ise_click_rank",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - INTERNAL SEARCH ENGINE",
+      "source_field": "ise_click_rank",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'ise_keyword' (Data Query API v3 baseline; research dossier Annex B). Internal search keyword.",
+      "exposure": "exposed",
+      "field_id": "ise_keyword",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - INTERNAL SEARCH ENGINE",
+      "source_field": "ise_keyword",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'ise_page' (Data Query API v3 baseline; research dossier Annex B). Internal search page.",
+      "exposure": "exposed",
+      "field_id": "ise_page",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - INTERNAL SEARCH ENGINE",
+      "source_field": "ise_page",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'ise_result' (Data Query API v3 baseline; research dossier Annex B). Internal search result.",
+      "exposure": "exposed",
+      "field_id": "ise_result",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - INTERNAL SEARCH ENGINE",
+      "source_field": "ise_result",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_average_content_time_consumed' (Data Query API v3 baseline; research dossier Annex A). Average content time consumed.",
+      "exposure": "exposed",
+      "field_id": "m_av_average_content_time_consumed",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_average_content_time_consumed",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_average_global_time_buffering' (Data Query API v3 baseline; research dossier Annex A). Average global buffering time.",
+      "exclusion_reason": "QoS delivery metrics require AV (audio/video) tagging that a non-media site does not emit; excluded from default profiles until an AV profile exists (zero rows otherwise, honest degrade).",
+      "exposure": "excluded",
+      "field_id": "m_av_average_global_time_buffering",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AV INSIGHTS - QOS DELIVERY",
+      "source_field": "m_av_average_global_time_buffering",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_average_playback_completion_rate' (Data Query API v3 baseline; research dossier Annex A). Avg playback completion rate.",
+      "exposure": "exposed",
+      "field_id": "m_av_average_playback_completion_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AV INSIGHTS - COMPLETION FUNNEL",
+      "source_field": "m_av_average_playback_completion_rate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_average_time_playback' (Data Query API v3 baseline; research dossier Annex A). Average playback time.",
+      "exposure": "exposed",
+      "field_id": "m_av_average_time_playback",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_average_time_playback",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_average_time_rebuffering' (Data Query API v3 baseline; research dossier Annex A). Average rebuffering time.",
+      "exclusion_reason": "QoS delivery metrics require AV (audio/video) tagging that a non-media site does not emit; excluded from default profiles until an AV profile exists (zero rows otherwise, honest degrade).",
+      "exposure": "excluded",
+      "field_id": "m_av_average_time_rebuffering",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AV INSIGHTS - QOS DELIVERY",
+      "source_field": "m_av_average_time_rebuffering",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_average_time_spent' (Data Query API v3 baseline; research dossier Annex A). Average time spent on audio/video.",
+      "exposure": "exposed",
+      "field_id": "m_av_average_time_spent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_average_time_spent",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_playbacks' (Data Query API v3 baseline; research dossier Annex A). Audio/video playbacks.",
+      "exposure": "exposed",
+      "field_id": "m_av_playbacks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_playbacks",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_plays' (Data Query API v3 baseline; research dossier Annex A). Audio/video plays.",
+      "exposure": "exposed",
+      "field_id": "m_av_plays",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_plays",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_resumes' (Data Query API v3 baseline; research dossier Annex A). Audio/video resumes.",
+      "exposure": "exposed",
+      "field_id": "m_av_resumes",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_resumes",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_sessions' (Data Query API v3 baseline; research dossier Annex A). Audio/video sessions.",
+      "exposure": "exposed",
+      "field_id": "m_av_sessions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_sessions",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_shares' (Data Query API v3 baseline; research dossier Annex A). Audio/video shares.",
+      "exposure": "exposed",
+      "field_id": "m_av_shares",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_shares",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_starts' (Data Query API v3 baseline; research dossier Annex A). Audio/video starts.",
+      "exposure": "exposed",
+      "field_id": "m_av_starts",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_starts",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_stops' (Data Query API v3 baseline; research dossier Annex A). Audio/video stops.",
+      "exposure": "exposed",
+      "field_id": "m_av_stops",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_stops",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_time_playback' (Data Query API v3 baseline; research dossier Annex A). Total playback time.",
+      "exposure": "exposed",
+      "field_id": "m_av_time_playback",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_time_playback",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_av_time_spent' (Data Query API v3 baseline; research dossier Annex A). Total time spent on audio/video.",
+      "exposure": "exposed",
+      "field_id": "m_av_time_spent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AV INSIGHTS",
+      "source_field": "m_av_time_spent",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_avg_order_value' (Data Query API v3 baseline; research dossier Annex A). Average order value (site currency).",
+      "exposure": "exposed",
+      "field_id": "m_avg_order_value",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "m_avg_order_value",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_avg_pages_per_visit' (Data Query API v3 baseline; research dossier Annex A). Average pages per visit (ratio). NON-ADDITIVE (AD-4): visit/visitor-scoped, does NOT sum across property breakdowns (use getTotal for site totals); landed raw.",
+      "exposure": "exposed",
+      "field_id": "m_avg_pages_per_visit",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "m_avg_pages_per_visit",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_bounce_rate' (Data Query API v3 baseline; research dossier Annex A). Bounce rate (ratio; recompute at the semantic layer). NON-ADDITIVE (AD-4): visit/visitor-scoped, does NOT sum across property breakdowns (use getTotal for site totals); landed raw.",
+      "exposure": "exposed",
+      "field_id": "m_bounce_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "m_bounce_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_cart_additions' (Data Query API v3 baseline; research dossier Annex A). Number of cart additions.",
+      "exposure": "exposed",
+      "field_id": "m_cart_additions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "m_cart_additions",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_clicks' (Data Query API v3 baseline; research dossier Annex A). Number of clicks.",
+      "exposure": "exposed",
+      "field_id": "m_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONTENT - CLICKS",
+      "source_field": "m_clicks",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_consent_exempt' (Data Query API v3 baseline; research dossier Annex A). Consent-exempt events.",
+      "exclusion_reason": "Consent-mode metrics depend on the client's consent tagging; excluded from the core profile (present as advanced).",
+      "exposure": "excluded",
+      "field_id": "m_consent_exempt",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUDIENCE - PRIVACY",
+      "source_field": "m_consent_exempt",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_consent_optin' (Data Query API v3 baseline; research dossier Annex A). Consent opt-in events.",
+      "exclusion_reason": "Consent-mode metrics depend on the client's consent tagging; excluded from the core profile (present as advanced).",
+      "exposure": "excluded",
+      "field_id": "m_consent_optin",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUDIENCE - PRIVACY",
+      "source_field": "m_consent_optin",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_consent_optout' (Data Query API v3 baseline; research dossier Annex A). Consent opt-out events.",
+      "exclusion_reason": "Consent-mode metrics depend on the client's consent tagging; excluded from the core profile (present as advanced).",
+      "exposure": "excluded",
+      "field_id": "m_consent_optout",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUDIENCE - PRIVACY",
+      "source_field": "m_consent_optout",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_conversion_rate' (Data Query API v3 baseline; research dossier Annex A). Conversion rate (ratio).",
+      "exposure": "exposed",
+      "field_id": "m_conversion_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "m_conversion_rate",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_conversions' (Data Query API v3 baseline; research dossier Annex A). Number of conversions.",
+      "exposure": "exposed",
+      "field_id": "m_conversions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "m_conversions",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_entrances' (Data Query API v3 baseline; research dossier Annex A). Number of entrances.",
+      "exposure": "exposed",
+      "field_id": "m_entrances",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "m_entrances",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_entry_page_visits' (Data Query API v3 baseline; research dossier Annex A). Entry-page visits.",
+      "exposure": "exposed",
+      "field_id": "m_entry_page_visits",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "m_entry_page_visits",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_events' (Data Query API v3 baseline; research dossier Annex A). Number of onsite events.",
+      "exposure": "exposed",
+      "field_id": "m_events",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONTENT - EVENTS",
+      "source_field": "m_events",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_exit_rate' (Data Query API v3 baseline; research dossier Annex A). Exit rate (ratio). NON-ADDITIVE (AD-4): visit/visitor-scoped, does NOT sum across property breakdowns (use getTotal for site totals); landed raw.",
+      "exposure": "exposed",
+      "field_id": "m_exit_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "m_exit_rate",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_internal_searches' (Data Query API v3 baseline; research dossier Annex A). Number of internal searches.",
+      "exposure": "exposed",
+      "field_id": "m_internal_searches",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONTENT - INTERNAL SEARCH ENGINE",
+      "source_field": "m_internal_searches",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_mvtesting_clicks' (Data Query API v3 baseline; research dossier Annex A). Multivariate testing clicks.",
+      "exclusion_reason": "Multivariate-testing dimensions only populated on sites running Piano MV tests; excluded from default profiles.",
+      "exposure": "excluded",
+      "field_id": "m_mvtesting_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONTENT - MV TESTING",
+      "source_field": "m_mvtesting_clicks",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_mvtesting_impressions' (Data Query API v3 baseline; research dossier Annex A). Multivariate testing impressions.",
+      "exclusion_reason": "Multivariate-testing dimensions only populated on sites running Piano MV tests; excluded from default profiles.",
+      "exposure": "excluded",
+      "field_id": "m_mvtesting_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONTENT - MV TESTING",
+      "source_field": "m_mvtesting_impressions",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_new_visitors' (Data Query API v3 baseline; research dossier Annex A). Number of new visitors. NON-ADDITIVE (AD-4): visit/visitor-scoped, does NOT sum across property breakdowns (use getTotal for site totals); landed raw.",
+      "exposure": "exposed",
+      "field_id": "m_new_visitors",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "m_new_visitors",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_onsitead_click_rate' (Data Query API v3 baseline; research dossier Annex A). Onsite ad click rate (ratio).",
+      "exposure": "exposed",
+      "field_id": "m_onsitead_click_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "m_onsitead_click_rate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_onsitead_clicks' (Data Query API v3 baseline; research dossier Annex A). Onsite ad clicks.",
+      "exposure": "exposed",
+      "field_id": "m_onsitead_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "m_onsitead_clicks",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_onsitead_impressions' (Data Query API v3 baseline; research dossier Annex A). Onsite ad impressions.",
+      "exposure": "exposed",
+      "field_id": "m_onsitead_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "m_onsitead_impressions",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_page_loads' (Data Query API v3 baseline; research dossier Annex A). Page displays (page views / page loads).",
+      "exposure": "exposed",
+      "field_id": "m_page_loads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "m_page_loads",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_revenue' (Data Query API v3 baseline; research dossier Annex A). Revenue (site currency).",
+      "exposure": "exposed",
+      "field_id": "m_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "m_revenue",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_search_result_clicks' (Data Query API v3 baseline; research dossier Annex A). Number of internal search result clicks.",
+      "exposure": "exposed",
+      "field_id": "m_search_result_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONTENT - INTERNAL SEARCH ENGINE",
+      "source_field": "m_search_result_clicks",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_transactions' (Data Query API v3 baseline; research dossier Annex A). Number of transactions.",
+      "exposure": "exposed",
+      "field_id": "m_transactions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "m_transactions",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_unique_visitors' (Data Query API v3 baseline; research dossier Annex A). Number of unique visitors. NON-ADDITIVE (AD-4): visit/visitor-scoped, does NOT sum across property breakdowns (use getTotal for site totals); landed raw.",
+      "exposure": "exposed",
+      "field_id": "m_unique_visitors",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "m_unique_visitors",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_users' (Data Query API v3 baseline; research dossier Annex A). Number of users.",
+      "exposure": "exposed",
+      "field_id": "m_users",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "m_users",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_visit_duration' (Data Query API v3 baseline; research dossier Annex A). Average visit duration (seconds). NON-ADDITIVE (AD-4): visit/visitor-scoped, does NOT sum across property breakdowns (use getTotal for site totals); landed raw.",
+      "exposure": "exposed",
+      "field_id": "m_visit_duration",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "m_visit_duration",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_visits' (Data Query API v3 baseline; research dossier Annex A). Number of visits (sessions). NON-ADDITIVE (AD-4): visit/visitor-scoped, does NOT sum across property breakdowns (use getTotal for site totals); landed raw.",
+      "exposure": "exposed",
+      "field_id": "m_visits",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "m_visits",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging metric 'm_visits_from_source' (Data Query API v3 baseline; research dossier Annex A). Visits attributed to the source.",
+      "exposure": "exposed",
+      "field_id": "m_visits_from_source",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "m_visits_from_source",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'month' (Data Query API v3 baseline; research dossier Annex B). Month.",
+      "exposure": "exposed",
+      "field_id": "month",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "month",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'mv_creation' (Data Query API v3 baseline; research dossier Annex B). Multivariate creation.",
+      "exclusion_reason": "Multivariate-testing dimensions only populated on sites running Piano MV tests; excluded from default profiles.",
+      "exposure": "excluded",
+      "field_id": "mv_creation",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - MV TESTING",
+      "source_field": "mv_creation",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'mv_test' (Data Query API v3 baseline; research dossier Annex B). Multivariate test.",
+      "exclusion_reason": "Multivariate-testing dimensions only populated on sites running Piano MV tests; excluded from default profiles.",
+      "exposure": "excluded",
+      "field_id": "mv_test",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - MV TESTING",
+      "source_field": "mv_test",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'mv_wave' (Data Query API v3 baseline; research dossier Annex B). Multivariate wave.",
+      "exclusion_reason": "Multivariate-testing dimensions only populated on sites running Piano MV tests; excluded from default profiles.",
+      "exposure": "excluded",
+      "field_id": "mv_wave",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - MV TESTING",
+      "source_field": "mv_wave",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'onsitead_advertiser' (Data Query API v3 baseline; research dossier Annex B). Onsite ad advertiser.",
+      "exposure": "exposed",
+      "field_id": "onsitead_advertiser",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "onsitead_advertiser",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'onsitead_campaign' (Data Query API v3 baseline; research dossier Annex B). Onsite ad campaign.",
+      "exposure": "exposed",
+      "field_id": "onsitead_campaign",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "onsitead_campaign",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'onsitead_category' (Data Query API v3 baseline; research dossier Annex B). Onsite ad category.",
+      "exposure": "exposed",
+      "field_id": "onsitead_category",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "onsitead_category",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'onsitead_creation' (Data Query API v3 baseline; research dossier Annex B). Onsite ad creation.",
+      "exposure": "exposed",
+      "field_id": "onsitead_creation",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "onsitead_creation",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'onsitead_detailed_placement' (Data Query API v3 baseline; research dossier Annex B). Onsite ad detailed placement.",
+      "exposure": "exposed",
+      "field_id": "onsitead_detailed_placement",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "onsitead_detailed_placement",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'onsitead_format' (Data Query API v3 baseline; research dossier Annex B). Onsite ad format.",
+      "exposure": "exposed",
+      "field_id": "onsitead_format",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "onsitead_format",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'onsitead_general_placement' (Data Query API v3 baseline; research dossier Annex B). Onsite ad general placement.",
+      "exposure": "exposed",
+      "field_id": "onsitead_general_placement",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "onsitead_general_placement",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'onsitead_type' (Data Query API v3 baseline; research dossier Annex B). Onsite ad type.",
+      "exposure": "exposed",
+      "field_id": "onsitead_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "onsitead_type",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'onsitead_url' (Data Query API v3 baseline; research dossier Annex B). Onsite ad URL.",
+      "exposure": "exposed",
+      "field_id": "onsitead_url",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "onsitead_url",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'onsitead_variant' (Data Query API v3 baseline; research dossier Annex B). Onsite ad variant.",
+      "exposure": "exposed",
+      "field_id": "onsitead_variant",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - ONSITE ADS",
+      "source_field": "onsitead_variant",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'os' (Data Query API v3 baseline; research dossier Annex B). Operating system.",
+      "exposure": "exposed",
+      "field_id": "os",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "os",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'os_group' (Data Query API v3 baseline; research dossier Annex B). Operating system group.",
+      "exposure": "exposed",
+      "field_id": "os_group",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "os_group",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'os_version' (Data Query API v3 baseline; research dossier Annex B). Operating system version.",
+      "exposure": "exposed",
+      "field_id": "os_version",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "os_version",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'page' (Data Query API v3 baseline; research dossier Annex B). Page.",
+      "exposure": "exposed",
+      "field_id": "page",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "page",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'page_chapter1' (Data Query API v3 baseline; research dossier Annex B). Page chapter 1.",
+      "exposure": "exposed",
+      "field_id": "page_chapter1",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "page_chapter1",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'page_chapter2' (Data Query API v3 baseline; research dossier Annex B). Page chapter 2.",
+      "exposure": "exposed",
+      "field_id": "page_chapter2",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "page_chapter2",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'page_chapter3' (Data Query API v3 baseline; research dossier Annex B). Page chapter 3.",
+      "exposure": "exposed",
+      "field_id": "page_chapter3",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "page_chapter3",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'page_content_type' (Data Query API v3 baseline; research dossier Annex B). Page content type.",
+      "exposure": "exposed",
+      "field_id": "page_content_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "page_content_type",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'page_duration' (Data Query API v3 baseline; research dossier Annex B). Page duration.",
+      "exposure": "exposed",
+      "field_id": "page_duration",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "page_duration",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'page_full_name' (Data Query API v3 baseline; research dossier Annex B). Page full name.",
+      "exposure": "exposed",
+      "field_id": "page_full_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "page_full_name",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'page_title_html' (Data Query API v3 baseline; research dossier Annex B). Page HTML title.",
+      "exposure": "exposed",
+      "field_id": "page_title_html",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "page_title_html",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'pageview_id' (Data Query API v3 baseline; research dossier Annex B). Page view id.",
+      "exposure": "exposed",
+      "field_id": "pageview_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "pageview_id",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'product_category' (Data Query API v3 baseline; research dossier Annex B). Product category.",
+      "exposure": "exposed",
+      "field_id": "product_category",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "product_category",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'product_id' (Data Query API v3 baseline; research dossier Annex B). Product id.",
+      "exposure": "exposed",
+      "field_id": "product_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "product_id",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'product_name' (Data Query API v3 baseline; research dossier Annex B). Product name.",
+      "exposure": "exposed",
+      "field_id": "product_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "product_name",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'promotion' (Data Query API v3 baseline; research dossier Annex B). Promotion.",
+      "exposure": "exposed",
+      "field_id": "promotion",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "promotion",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'quarter' (Data Query API v3 baseline; research dossier Annex B). Quarter.",
+      "exposure": "exposed",
+      "field_id": "quarter",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "quarter",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'screen_resolution' (Data Query API v3 baseline; research dossier Annex B). Screen resolution.",
+      "exposure": "exposed",
+      "field_id": "screen_resolution",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TECHNICAL - DEVICE",
+      "source_field": "screen_resolution",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'site' (Data Query API v3 baseline; research dossier Annex B). Site name.",
+      "exposure": "exposed",
+      "field_id": "site",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "site",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'site_id' (Data Query API v3 baseline; research dossier Annex B). Site id (measurement perimeter).",
+      "exposure": "exposed",
+      "field_id": "site_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "site_id",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'site_level2' (Data Query API v3 baseline; research dossier Annex B). Site level 2.",
+      "exposure": "exposed",
+      "field_id": "site_level2",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "site_level2",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_campaign' (Data Query API v3 baseline; research dossier Annex B). Acquisition campaign.",
+      "exposure": "exposed",
+      "field_id": "src_campaign",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "src_campaign",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_direct_access' (Data Query API v3 baseline; research dossier Annex B). Direct access marker.",
+      "exposure": "exposed",
+      "field_id": "src_direct_access",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "src_direct_access",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_medium' (Data Query API v3 baseline; research dossier Annex B). Acquisition medium.",
+      "exposure": "exposed",
+      "field_id": "src_medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "src_medium",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_organic_keyword' (Data Query API v3 baseline; research dossier Annex B). Organic keyword.",
+      "exposure": "exposed",
+      "field_id": "src_organic_keyword",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "src_organic_keyword",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_portal_domain' (Data Query API v3 baseline; research dossier Annex B). Portal domain.",
+      "exposure": "exposed",
+      "field_id": "src_portal_domain",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "src_portal_domain",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_portal_url' (Data Query API v3 baseline; research dossier Annex B). Portal URL.",
+      "exposure": "exposed",
+      "field_id": "src_portal_url",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - OVERALL TRAFFIC",
+      "source_field": "src_portal_url",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_referrer_site_url' (Data Query API v3 baseline; research dossier Annex B). Referrer site URL.",
+      "exposure": "exposed",
+      "field_id": "src_referrer_site_url",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "src_referrer_site_url",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_se' (Data Query API v3 baseline; research dossier Annex B). Search engine.",
+      "exposure": "exposed",
+      "field_id": "src_se",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "src_se",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_source' (Data Query API v3 baseline; research dossier Annex B). Acquisition source.",
+      "exposure": "exposed",
+      "field_id": "src_source",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "src_source",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_source_detail' (Data Query API v3 baseline; research dossier Annex B). Acquisition source detail.",
+      "exposure": "exposed",
+      "field_id": "src_source_detail",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "src_source_detail",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'src_type' (Data Query API v3 baseline; research dossier Annex B). Source type.",
+      "exposure": "exposed",
+      "field_id": "src_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SOURCE - ACQUISITION",
+      "source_field": "src_type",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'transaction_id' (Data Query API v3 baseline; research dossier Annex B). Transaction id.",
+      "exposure": "exposed",
+      "field_id": "transaction_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "transaction_id",
+      "tier": "standard"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'user_category' (Data Query API v3 baseline; research dossier Annex B). User category.",
+      "exposure": "exposed",
+      "field_id": "user_category",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - USERS",
+      "source_field": "user_category",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'user_days' (Data Query API v3 baseline; research dossier Annex B). User days.",
+      "exposure": "exposed",
+      "field_id": "user_days",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - USERS",
+      "source_field": "user_days",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'user_id' (Data Query API v3 baseline; research dossier Annex B). User id.",
+      "exposure": "exposed",
+      "field_id": "user_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - USERS",
+      "source_field": "user_id",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'visit_page_views' (Data Query API v3 baseline; research dossier Annex B). Visit page views.",
+      "exposure": "exposed",
+      "field_id": "visit_page_views",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT - PAGES",
+      "source_field": "visit_page_views",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'visitor_id' (Data Query API v3 baseline; research dossier Annex B). Visitor id.",
+      "exposure": "exposed",
+      "field_id": "visitor_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - USERS",
+      "source_field": "visitor_id",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'visitor_privacy_consent' (Data Query API v3 baseline; research dossier Annex B). Visitor privacy consent status.",
+      "exclusion_reason": "Consent-mode metrics depend on the client's consent tagging; excluded from the core profile (present as advanced).",
+      "exposure": "excluded",
+      "field_id": "visitor_privacy_consent",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - PRIVACY",
+      "source_field": "visitor_privacy_consent",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'visitor_privacy_mode' (Data Query API v3 baseline; research dossier Annex B). Visitor privacy mode.",
+      "exclusion_reason": "Consent-mode metrics depend on the client's consent tagging; excluded from the core profile (present as advanced).",
+      "exposure": "excluded",
+      "field_id": "visitor_privacy_mode",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE - PRIVACY",
+      "source_field": "visitor_privacy_mode",
+      "tier": "advanced"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'week' (Data Query API v3 baseline; research dossier Annex B). Week.",
+      "exposure": "exposed",
+      "field_id": "week",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "week",
+      "tier": "core"
+    },
+    {
+      "description": "Piano Analytics standard-tagging property 'year' (Data Query API v3 baseline; research dossier Annex B). Year.",
+      "exposure": "exposed",
+      "field_id": "year",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "year",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://developers.piano.io/analytics/data-api/parameters/properties-metrics/"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://docs.supermetrics.com/docs/piano-analytics-at-internet-fields.md"
+    }
+  ]
+}

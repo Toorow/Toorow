@@ -1,0 +1,18 @@
+[
+  {
+    "connector": "google-analytics",
+    "total_conversions": 47322.0
+  },
+  {
+    "connector": "linkedin-ads",
+    "total_conversions": 718.0
+  },
+  {
+    "connector": "meta-ads",
+    "total_conversions": 10776.0
+  },
+  {
+    "connector": "tiktok-ads",
+    "total_conversions": 9267.0
+  }
+]

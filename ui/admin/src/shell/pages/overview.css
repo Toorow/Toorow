@@ -1,0 +1,187 @@
+/**
+ * overview.css — page-specific styles for Overview.
+ *
+ * Faithful port of the inline <style> block in
+ * _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/mockups/project-overview.html
+ *
+ * Shell/layout classes (frame, sidebar, topbar, main, panel, metric-strip,
+ * attention-row, section-header, signal, etc.) live in application.css and are
+ * global. This file only adds the Overview widgets: widget-grid, chart-card,
+ * chart, chart-summary, chart-legend, side-stack, mini-widget, bar, source-line.
+ *
+ * Tokenized: colors reference the application.css CSS variables only. The
+ * neutral progress-bar track (mockup #eeeef3) uses var(--track); the mini-widget
+ * surface uses var(--surface). No neutral hex literals remain.
+ */
+
+.widget-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.8fr);
+  gap: 18px;
+}
+
+.chart-card { min-height: 390px; }
+.chart-body { padding: 22px; }
+.chart-summary {
+  display: flex;
+  align-items: flex-end;
+  gap: 30px;
+  margin-bottom: 18px;
+}
+.chart-summary span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.chart-summary strong {
+  font: 600 30px "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.chart-legend {
+  display: flex;
+  gap: 18px;
+  margin-left: auto;
+}
+.chart-legend span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.chart-legend i {
+  width: 14px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--rose);
+}
+.chart-legend span:nth-child(2) i { background: var(--info); }
+
+.chart {
+  width: 100%;
+  height: 245px;
+  display: block;
+}
+.chart text {
+  fill: var(--muted);
+  font: 12px "Geist", "Plus Jakarta Sans", sans-serif;
+}
+.chart .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.chart .spend {
+  fill: none;
+  stroke: var(--rose);
+  stroke-width: 3;
+}
+.chart .revenue {
+  fill: none;
+  stroke: var(--info);
+  stroke-width: 3;
+}
+
+.side-stack {
+  display: grid;
+  gap: 18px;
+}
+.mini-widget {
+  min-height: 186px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.mini-widget h3 {
+  margin: 0 0 18px;
+  font: 600 16px "Lexend";
+}
+.mini-value {
+  font: 600 32px "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.mini-meta {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.bar {
+  height: 8px;
+  margin: 22px 0 12px;
+  border-radius: 8px;
+  background: var(--track);
+  overflow: hidden;
+}
+.bar i {
+  display: block;
+  width: 76%;
+  height: 100%;
+  background: var(--success);
+  border-radius: 8px;
+}
+.source-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  font-size: 13px;
+}
+.source-line b {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Daily insights pillar --------------------------------------------- */
+.insights-panel { margin-top: 20px; padding: 22px 24px; }
+.insight-list { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; }
+.insight-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.insight-item:first-child { border-top: 0; }
+.insight-item strong { display: block; font-size: 0.9375rem; }
+.insight-item .copy { color: var(--muted); font-size: 0.875rem; }
+.insight-age { color: var(--muted); font-size: 0.8125rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.insight-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.insight-dot.up { background: var(--success); }
+.insight-dot.flat { background: var(--warning); }
+
+/* ---- Recent renders strip ---------------------------------------------- */
+.renders-panel { margin-top: 20px; padding: 22px 24px; }
+.recent-renders {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+@media (max-width: 900px) { .recent-renders { grid-template-columns: 1fr; } }
+.render-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.render-tile:hover { border-color: color-mix(in srgb, var(--ink) 24%, var(--line)); }
+.render-tile .render-kind {
+  align-self: flex-start;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.render-tile strong { font-size: 0.9375rem; }
+.render-tile .render-age { color: var(--muted); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }

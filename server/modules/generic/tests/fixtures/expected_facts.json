@@ -1,0 +1,56 @@
+[
+  {
+    "project_id": "conformance-test",
+    "date": "2026-07-01",
+    "metric": "cost",
+    "value": 120.5,
+    "breakdown_dimension": "campaign",
+    "breakdown_value": "summer_sale",
+    "pull_id": "pull_GENERIC_TRANSFORM"
+  },
+  {
+    "project_id": "conformance-test",
+    "date": "2026-07-01",
+    "metric": "revenue",
+    "value": 350.0,
+    "breakdown_dimension": "campaign",
+    "breakdown_value": "summer_sale",
+    "pull_id": "pull_GENERIC_TRANSFORM"
+  },
+  {
+    "project_id": "conformance-test",
+    "date": "2026-07-02",
+    "metric": "cost",
+    "value": 98.0,
+    "breakdown_dimension": "campaign",
+    "breakdown_value": "summer_sale",
+    "pull_id": "pull_GENERIC_TRANSFORM"
+  },
+  {
+    "project_id": "conformance-test",
+    "date": "2026-07-02",
+    "metric": "revenue",
+    "value": 280.0,
+    "breakdown_dimension": "campaign",
+    "breakdown_value": "summer_sale",
+    "pull_id": "pull_GENERIC_TRANSFORM"
+  },
+  {
+    "project_id": "conformance-test",
+    "date": "2026-07-03",
+    "metric": "cost",
+    "value": 145.0,
+    "breakdown_dimension": "campaign",
+    "breakdown_value": "retargeting",
+    "pull_id": "pull_GENERIC_TRANSFORM"
+  },
+  {
+    "project_id": "conformance-test",
+    "date": "2026-07-03",
+    "metric": "revenue",
+    "value": 410.0,
+    "breakdown_dimension": "campaign",
+    "breakdown_value": "retargeting",
+    "pull_id": "pull_GENERIC_TRANSFORM"
+  }
+]

@@ -1,0 +1,4 @@
+# ui/tokens/ — MD3 design tokens (W3C DTCG), single source of visual truth (AD-11).
+# Populated in Story 1.2 (compiled to the MUI theme via Style Dictionary).
+# Intentionally kept OUTSIDE the pnpm workspace: it is a JSON token file, not a
+# Node package.

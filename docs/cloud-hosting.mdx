@@ -1,0 +1,82 @@
+---
+title: Cloud Hosting Architecture
+description: Overview of the maintainers' production deployment layout on Google Cloud Platform, Cloud Run, and Firebase Hosting.
+---
+
+This guide describes how **toorow**'s official surfaces are hosted and deployed by the core maintainers on Google Cloud Platform (GCP).
+
+<Note>
+If you are deploying your own private instance of toorow, refer to the [Self-Hosting Guide](/self-hosting) for infrastructure setup and configuration instructions.
+</Note>
+
+## 1. Hosting Topology & Surface Separation
+
+The showcase marketing site, application server, and technical documentation operate as separate surfaces with distinct runtimes, pipelines, and cost profiles:
+
+| Surface | Hostname | Technology / Runtime | Scaling & Idle Cost Model |
+|---|---|---|---|
+| **Vitrine / Marketing** | `toorow.com` | `web/` Astro Static Site on **Firebase Hosting** | **€0 / month** — Serverless CDN with no running instances. |
+| **App / Server API** | `app.toorow.com` | `mcp-server` (FastMCP) on **GCP Cloud Run** (`europe-west1`) | **€0 when idle** — Scale-to-zero (`--min-instances=0`, `--max-instances=4`). |
+| **Documentation** | `docs.toorow.com` | **Mintlify Hosting** | Managed documentation platform. |
+
+All three surfaces operate under subdomains of `toorow.com`, enabling shared analytics consent (`toorow_consent`, `Domain=.toorow.com`) across the platform.
+
+---
+
+## 2. Scale-to-Zero Cloud Run Configuration
+
+To minimize idle costs, the `mcp-server` Cloud Run service is explicitly configured to scale to zero instances during inactivity, while capping concurrency to prevent runaway billings:
+
+```bash
+gcloud run deploy mcp-server \
+  --image "europe-west1-docker.pkg.dev/${GCP_PROJECT_PROD}/connector/mcp-server:${COMMIT_SHA}" \
+  --project "${GCP_PROJECT_PROD}" \
+  --region europe-west1 \
+  --platform managed \
+  --min-instances=0 \
+  --max-instances=4 \
+  --set-secrets "NANGO_ENCRYPTION_KEY=nango-encryption-key:latest" \
+  --set-env-vars "HOST_HEADER_VALIDATION=strict,ALLOWED_HOST=${CLOUD_RUN_HOSTNAME_PROD},PORT=8080,TOOROW_AUTH_MODE=oauth"
+```
+
+### Cold Start Trade-Off
+Setting `--min-instances=0` introduces a minor cold-start latency penalty on initial requests following idle periods. This is acceptable for agent-driven MCP workloads and guarantees €0 compute cost when unused.
+
+---
+
+## 3. Deployment Pipelines & GitHub Actions
+
+### Server Deployment (`.github/workflows/deploy.yml`)
+The backend FastMCP server deployment is governed by GitHub Actions using **Workload Identity Federation (WIF)** for keyless GCP authentication:
+
+1. **Build & Push**: Triggers on push to `main` (after CI workflow passes). Builds `infra/docker/mcp-server/Dockerfile` and pushes to GCP Artifact Registry (`europe-west1-docker.pkg.dev`).
+2. **Dev Deployment (`deploy-dev`)**: Automatically deploys the built image to the `dev` Cloud Run environment.
+3. **Production Deployment (`deploy-prod`)**: Gated by GitHub Environment `production`. Requires manual approval by an authorized maintainer (**Human Gate**) before executing production deployment.
+
+### Vitrine Deployment (`web/deploy.sh`)
+The showcase marketing site uses a developer-driven deployment script to build the Astro static site into `web/dist` and deploy directly to Firebase Hosting:
+
+```bash
+cd web
+firebase login
+./deploy.sh
+```
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Self-Hosting Guide" icon="server" href="/self-hosting">
+    Learn how to deploy toorow on your own cloud or container infrastructure.
+  </Card>
+  <Card title="Security & Constraints" icon="shield-check" href="/constraints">
+    Review host header guards, OAuth verification, and security invariants.
+  </Card>
+  <Card title="Environment Reference" icon="sliders" href="/self-hosting#environment-variable-reference">
+    Inspect required environment variables for Cloud Run deployment.
+  </Card>
+  <Card title="Prerequisites" icon="list-check" href="/prerequisites">
+    Check GCP service permissions and IAM requirements.
+  </Card>
+</CardGroup>

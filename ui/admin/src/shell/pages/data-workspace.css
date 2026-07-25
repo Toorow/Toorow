@@ -1,0 +1,22 @@
+/**
+ * data-workspace.css — page-specific styles for DataWorkspaceV3.
+ *
+ * Faithful port of the validated Data-workspace mockup:
+ *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
+ *     mockups/data-workspace.html
+ *
+ * INTENTIONALLY (almost) EMPTY. Every class the page body uses already lives in
+ * application.css (global, loaded via the shell): data-summary, summary-card,
+ * fleet, fleet-head, fleet-tools, fleet-table, .type-row, .name, .number,
+ * signal-label, signal-mark, provider-logo, page-header, header-actions,
+ * .selector, .secondary-button, .action-link/.primary.
+ *
+ * The mockup's own inline <style> block only declares health-chart / health-
+ * legend / lower-grid / detail-panel / detail-row — NONE of which appear in this
+ * page's <main> body (they belong to other mockups). So there is nothing page-
+ * specific left to add here. This file exists to mirror the Overview +
+ * overview.css pairing convention and to give the port a home for any future
+ * data-workspace-only rule. Colors, when added, must reference the application.css
+ * CSS variables only (--rose/--ink/--line/--muted/--success/--warning/--error/
+ * --info/--page/--surface); numbers use the Geist tabular .number class.
+ */

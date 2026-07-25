@@ -1,0 +1,205 @@
+/*
+ * toorow — fondations de marque (2026-07-19).
+ *
+ * Typo   : Lexend (titres & logo) · Plus Jakarta Sans (corps & tableaux)
+ *          · JetBrains Mono (logs MCP & code dbt)
+ * Palette: #FF99C8 #FBB2CC #F7CAD0 #D1C4E9 #F8F9FA #111111
+ *          + sémantiques (erreur/warning/succès/info) en rouges/verts accessibles
+ *          avec conteneurs pastel complémentaires.
+ * Style : éditorial semibold,
+ *          boutons pill, surfaces plates séparées par contraste de fond.
+ */
+
+:root {
+  /* ── Marque ─────────────────────────────────────────────── */
+  --toorow-rose:        #FF99C8; /* accent principal — interactif */
+  --toorow-rose-hover:  #F77FB4;
+  --toorow-rose-2:      #FBB2CC; /* rose intermédiaire — fonds d'accent doux */
+  --toorow-rose-3:      #F7CAD0; /* rose pâle — surfaces teintées, hovers */
+  --toorow-lavande:     #D1C4E9; /* décoratif — jamais interactif */
+  --toorow-gris:        #F8F9FA; /* fond de page */
+  --toorow-noir:        #111111; /* texte & logo — jamais #000 pur */
+
+  /* ── Neutres ────────────────────────────────────────────── */
+  --toorow-surface:          #FFFFFF;
+  --toorow-texte:            var(--toorow-noir);
+  --toorow-texte-secondaire: #6B6A74;
+  --toorow-divider:          #EBEBF3;
+  --toorow-surface-sombre:   #121212;
+  --toorow-surface-sombre-elevee: #1E1E1E;
+  --toorow-texte-sur-sombre: #FAFAFA;
+
+  /* ── Sémantiques (main accessible + conteneur pastel) ───── */
+  --toorow-erreur:            #D64550;
+  --toorow-erreur-conteneur:  #FFD6DB;
+  --toorow-warning:           #E8A13D;
+  --toorow-warning-conteneur: #FCE8CD;
+  --toorow-succes:            #3E9B6E;
+  --toorow-succes-conteneur:  #CDEBDD;
+  --toorow-info:              #7E6BC4;
+  --toorow-info-conteneur:    #D1C4E9;
+
+  /* ── Dataviz (catégorielle pastel) ──────────────────────── */
+  --toorow-viz-1: #FF99C8; /* rose (accent) */
+  --toorow-viz-2: #7E6BC4; /* lavande profonde */
+  --toorow-viz-3: #67C2A5; /* menthe */
+  --toorow-viz-4: #F6BD60; /* abricot */
+  --toorow-viz-5: #5CA8D8; /* bleu doux */
+  --toorow-viz-6: #E88C7D; /* corail */
+  --toorow-viz-track: #EBEBF3;
+
+  /* ── Typographie ────────────────────────────────────────── */
+  --toorow-font-display: "Lexend Variable", "Lexend", sans-serif;
+  --toorow-font-texte:   "Plus Jakarta Sans Variable", "Plus Jakarta Sans", sans-serif;
+  --toorow-font-mono:    "JetBrains Mono Variable", "JetBrains Mono", monospace;
+
+  /* ── Forme & profondeur (réf. : plat, pill, contraste) ──── */
+  --toorow-radius-s:    6px;
+  --toorow-radius:      12px;
+  --toorow-radius-l:    16px;
+  --toorow-radius-pill: 999px;
+  --toorow-ombre-carte: 0 1px 4px rgba(17,17,17,0.04), 0 1px 2px rgba(17,17,17,0.03);
+
+  /* ── Espacement ─────────────────────────────────────────── */
+  --toorow-padding-carte: 24px;
+  --toorow-gap-section:   32px;
+  --toorow-ligne-tableau: 52px;
+
+  /* ── Alias DS (ToorowDesignSystem_cdac01 — tokens normalisés) ── */
+  /* Neutres */
+  --neutral-0:    #FFFFFF;
+  --neutral-50:   #F8F9FA;
+  --neutral-100:  #F1F2F4;
+  --neutral-200:  #E7E9ED;
+  --neutral-300:  #D7DAE0;
+  --neutral-400:  #AEB3BD;
+  --neutral-500:  #7C828E;
+  --neutral-600:  #565C66;
+  --neutral-700:  #34383F;
+  --neutral-900:  #111111;
+
+  /* Sémantiques */
+  --error:        #D64550;  --error-soft:    #FFD6DB;
+  --warning:      #E8A13D;  --warning-soft:  #FCE8CD;
+  --success:      #3E9B6E;  --success-soft:  #CDEBDD;
+  --info:         #7E6BC4;  --info-soft:     #D1C4E9;
+  --text-on-error-soft:   #8A2B33;
+  --text-on-warning-soft: #7A4E10;
+  --text-on-success-soft: #20603F;
+  --text-on-info-soft:    #4A3D7A;
+
+  /* Surfaces & textes */
+  --bg-page:        var(--neutral-50);
+  --surface-card:   var(--neutral-0);
+  --surface-sunken: var(--neutral-100);
+  --surface-tint:   var(--toorow-rose-3);
+  --text-primary:   var(--neutral-900);
+  --text-secondary: var(--neutral-600);
+  --text-tertiary:  var(--neutral-500);
+  --text-on-accent: var(--neutral-900);
+  --border-subtle:  var(--neutral-200);
+  --border-default: var(--neutral-300);
+  --accent:         var(--toorow-rose);
+  --accent-hover:   var(--toorow-rose-hover);
+  --accent-soft:    var(--toorow-rose-3);
+  --focus-ring:     #F77FB4;
+  --viz-positive:   var(--success);
+  --viz-negative:   var(--error);
+
+  /* Typo normalisée */
+  --font-display: var(--toorow-font-display);
+  --font-primary: var(--toorow-font-texte);
+  --font-mono:    var(--toorow-font-mono);
+  --fw-regular:   400;
+  --fw-medium:    500;
+  --fw-semibold:  600;
+  --fs-display:   40px;
+  --fs-h1:        30px;
+  --fs-h2:        24px;
+  --fs-h3:        19px;
+  --fs-h4:        16px;
+  --fs-body:      14px;
+  --fs-body-lg:   15px;
+  --fs-caption:   12.5px;
+  --fs-micro:     11px;
+  --lh-tight:     1.15;
+  --lh-snug:      1.3;
+  --lh-normal:    1.5;
+  --ls-tight:     -0.02em;
+  --ls-normal:    0;
+  --ls-wide:      0.04em;
+
+  /* Espacement 4px-grid */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --space-12: 48px; --space-16: 64px;
+  --pad-card:    20px;
+  --pad-compact: 12px;
+  --gap-grid:    16px;
+
+  /* Rayons normalisés */
+  --radius-xs:   4px;
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   16px;
+  --radius-xl:   20px;
+  --radius-pill: 999px;
+
+  /* Ombres */
+  --shadow-none:  none;
+  --shadow-xs:    0 1px 2px rgba(17, 17, 17, 0.04);
+  --shadow-card:  0 1px 2px rgba(17, 17, 17, 0.04), 0 1px 1px rgba(17, 17, 17, 0.03);
+  --shadow-pop:   0 6px 20px rgba(17, 17, 17, 0.10), 0 2px 6px rgba(17, 17, 17, 0.06);
+  --shadow-focus: 0 0 0 3px rgba(247, 127, 180, 0.35);
+  --border-card:  1px solid var(--border-subtle);
+  --ease-out:     cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur-fast:     120ms;
+  --dur-base:     180ms;
+
+  /* Dégradés */
+  --toorow-lavande-2:     #B79CE8;
+  --toorow-gradient:      linear-gradient(105deg, #FF99C8 0%, #E29BD6 52%, #B79CE8 100%);
+  --toorow-gradient-soft: linear-gradient(105deg, #FFE4EF 0%, #F1E6F7 100%);
+}
+
+/* ── Base ─────────────────────────────────────────────────── */
+body {
+  font-family: var(--toorow-font-texte);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--toorow-texte);
+  background: var(--toorow-gris);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--toorow-font-display);
+  color: var(--toorow-texte);
+}
+
+/* Éditorial semibold (réf.) — jamais extra-bold */
+h1 { font-size: 44px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+h2 { font-size: 32px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+h3 { font-size: 24px; font-weight: 500; line-height: 1.3; }
+h4 { font-size: 20px; font-weight: 500; line-height: 1.4; }
+h5 { font-size: 18px; font-weight: 500; line-height: 1.4; }
+h6 { font-size: 16px; font-weight: 500; line-height: 1.4; }
+
+code, pre, kbd, samp {
+  font-family: var(--toorow-font-mono);
+  font-size: 0.875em;
+}
+
+/* Chiffres tabulaires sur toute donnée numérique */
+td, th, [data-numeric], .num { font-variant-numeric: lining-nums tabular-nums; font-feature-settings: "tnum" 1; }
+
+a { color: var(--toorow-texte); text-decoration-color: var(--toorow-rose); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--toorow-rose-hover); }
+
+::selection { background: var(--toorow-rose-3); }
+
+:focus-visible {
+  outline: 2px solid var(--toorow-rose);
+  outline-offset: 2px;
+  border-radius: var(--toorow-radius-s);
+}

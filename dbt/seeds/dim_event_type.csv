@@ -1,0 +1,12 @@
+event_type,category,default_marker,description
+video_upload,content,triangle,Publication d'une video (YouTube ...)
+blog_post,content,triangle,Publication d'un article de blog
+social_post,content,triangle,Publication d'un post social
+release,engineering,diamond,Livraison logicielle / version
+deployment,engineering,diamond,Deploiement en production
+campaign_launch,marketing,flag,Lancement d'une campagne media
+product_launch,commerce,star,Lancement / mise en vente d'un produit
+price_change,commerce,line,Changement de prix
+promotion,marketing,flag,Debut/fin d'une promotion
+milestone,business,pin,Jalon metier / annotation manuelle
+incident,operations,cross,Incident / anomalie declaree

@@ -1,0 +1,23 @@
+{
+  "schemas": {
+    "ReportDefinition": {
+      "properties": {
+        "Dimension": {
+          "enum": ["DATE", "ADVERTISER_ID", "ORDER_ID"],
+          "enumDescriptions": [
+            "Breaks down reporting data by date.",
+            "The ID of the advertiser.",
+            ""
+          ]
+        },
+        "Metric": {
+          "enum": ["AD_SERVER_IMPRESSIONS", "AD_SERVER_CLICKS"],
+          "enumDescriptions": [
+            "Total impressions delivered by the ad server.",
+            "Total clicks on the ad server."
+          ]
+        }
+      }
+    }
+  }
+}

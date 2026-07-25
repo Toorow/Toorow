@@ -1,0 +1,28 @@
+[
+  {
+    "pull_id": "pull_youtube_001",
+    "connector": "youtube-analytics",
+    "date": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "views": 1200,
+    "estimated_minutes_watched": 3400,
+    "likes": 88,
+    "comments": 12,
+    "shares": 5,
+    "subscribers_gained": 20,
+    "subscribers_lost": 3
+  },
+  {
+    "pull_id": "pull_youtube_001",
+    "connector": "youtube-analytics",
+    "date": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "views": 1455,
+    "estimated_minutes_watched": 4102,
+    "likes": 101,
+    "comments": 19,
+    "shares": 8,
+    "subscribers_gained": 27,
+    "subscribers_lost": 2
+  }
+]

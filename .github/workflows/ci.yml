@@ -1,0 +1,531 @@
+name: CI
+
+# PR-scoped CI: a `changes` job (path filter) gates every downstream job so a
+# backend-only PR does not rebuild widgets, a UI-only PR does not run pytest,
+# and conformance/dbt run only for the connector(s) actually touched.
+# On push to `main`, every gate opens (full run post-merge).
+# The exhaustive "all connectors + whole suite" matrix runs in nightly.yml
+# (schedule / release), NOT on every PR.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Path filter — decides which downstream jobs are relevant for this change.
+  # ---------------------------------------------------------------------------
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      connectors: ${{ steps.filter.outputs.connectors }}
+      ui: ${{ steps.filter.outputs.ui }}
+      vitrine: ${{ steps.filter.outputs.vitrine }}
+      dbt: ${{ steps.filter.outputs.dbt }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'server/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'dbt/**'
+              - 'infra/nango/migrations/**'
+            connectors:
+              - 'server/modules/**'
+            ui:
+              - 'ui/**'
+            vitrine:
+              - 'web/**'
+              - 'studio/**'
+              - 'docs/**'
+            dbt:
+              - 'dbt/**'
+              - 'server/modules/**/seeds/**'
+            infra:
+              - 'infra/**'
+
+  # ---------------------------------------------------------------------------
+  # Always-on cheap guards: source-agnostic core (AD-2), secrets, narrative.
+  # These are fast and protect invariants regardless of what changed.
+  # ---------------------------------------------------------------------------
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint — assert core/ is source-agnostic (AC5 / AD-2 / T8.2)
+        run: |
+          if grep -rE "google-analytics|meta-ads|ga4|gsc|google_analytics" server/core/; then
+            echo "FAIL: server/core/ contains module-specific strings (violates AD-2 source-agnostic invariant)"
+            exit 1
+          fi
+          echo "OK: server/core/ is source-agnostic"
+
+      - name: AD-1 guard — narrative.py must not import warehouse or read raw rows (Story 6.4, AC8)
+        run: make check-narrative-no-raw
+
+      - name: Secret grep gate — assert no secret assignments in source (Story 2.1 T5.1)
+        run: |
+          if grep -rE "(SECRET|PASSWORD|TOKEN|KEY)\s*=" server/ infra/ .github/ \
+            --include="*.py" --include="*.tf" --include="*.yml" --include="*.yaml" \
+            --include="*.json" \
+            | grep -vE ":\s*#" \
+            | grep -v "description\s*=" \
+            | grep -v "\-\-set-secrets"; then
+            echo "FAIL: possible secret assignment found in tracked files"
+            exit 1
+          fi
+          echo "OK: no secret assignments detected"
+
+  # ---------------------------------------------------------------------------
+  # Python: version assertion, lint, tests. Backend-scoped.
+  # ---------------------------------------------------------------------------
+  python:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Assert Python 3.12
+        run: |
+          uv run python --version
+          uv run python --version | grep -q "3.12" || (echo "Python 3.12 required" && exit 1)
+
+      - name: Sync deps (resolves uv.lock — asserts fastmcp 3.4.x, dbt-core 1.11.x)
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check server
+
+      # NOTE: the pytest suites (core, modules, evals, integration, P1 gate) are
+      # intentionally NOT run in CI. They need the Docker platform services
+      # (Postgres/Nango) and are too heavy for the hosted runners on a project
+      # this size. Run them locally with the stack up:
+      #   docker compose --env-file infra/nango/.env -f infra/nango/docker-compose.yml up -d
+      #   uv run pytest server/tests -q
+      # CI keeps only the fast, service-free static checks above.
+
+  # ---------------------------------------------------------------------------
+  # Tokens + Shell: design token build and TypeScript type-check (Story 1.2).
+  # UI-scoped (needed as a peer for every UI job below).
+  # ---------------------------------------------------------------------------
+  tokens-and-shell:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Install UI deps
+        run: pnpm -C ui install --frozen-lockfile
+
+      - name: Build design tokens (Style Dictionary → dist/theme.ts)
+        run: pnpm -C ui build:tokens
+
+      - name: TypeScript type-check @toorow/shell
+        run: pnpm --filter @toorow/shell run typecheck
+        working-directory: ui
+
+  # ---------------------------------------------------------------------------
+  # GA4 widget unit tests — Vitest + React Testing Library (Story 1.7, T8.4).
+  # ---------------------------------------------------------------------------
+  widget-tests:
+    needs: [changes, tokens-and-shell]
+    if: needs.changes.outputs.ui == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Install UI deps
+        run: pnpm -C ui install --frozen-lockfile
+
+      - name: Build design tokens (required by @toorow/shell peer)
+        run: pnpm -C ui build:tokens
+
+      - name: Run GA4 widget tests (Vitest)
+        run: pnpm --filter @toorow/widget-google-analytics test
+        working-directory: ui
+
+  # ---------------------------------------------------------------------------
+  # Card library tests — shell primitives + the card widgets (Epic 9).
+  # ---------------------------------------------------------------------------
+  card-tests:
+    needs: [changes, tokens-and-shell]
+    if: needs.changes.outputs.ui == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Install UI deps
+        run: pnpm -C ui install --frozen-lockfile
+
+      - name: Build design tokens (required by @toorow/card-shell)
+        run: pnpm -C ui build:tokens
+
+      - name: Run card package tests (Vitest)
+        run: |
+          for pkg in card-shell card-kpi card-keywords card-conversions card-usertypes card-journey card-connectors; do
+            pnpm --filter @toorow/$pkg test
+          done
+        working-directory: ui
+
+  # ---------------------------------------------------------------------------
+  # Widget build + AD-11 / NFR4 bundle gate (T5). UI-scoped.
+  # ---------------------------------------------------------------------------
+  bundle-check:
+    needs: [changes, tokens-and-shell]
+    if: needs.changes.outputs.ui == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Assert pinned JS stack (react/mui/vite/singlefile)
+        run: |
+          node -e "const p=require('path'); \
+            const d=require(p.join(process.env.GITHUB_WORKSPACE, 'ui/widgets/sample/package.json')); \
+            const all={...d.dependencies,...d.devDependencies}; \
+            const need={react:'^19.2.0','@mui/material':'^9.0.0',vite:'^8.0.0','vite-plugin-singlefile':'2.3.3'}; \
+            for (const [k,v] of Object.entries(need)) { \
+              if (all[k]!==v) { console.error('Pin mismatch',k,all[k],'expected',v); process.exit(1);} } \
+            console.log('JS stack pins OK');"
+
+      - name: Install UI deps
+        run: pnpm -C ui install --frozen-lockfile
+
+      - name: Build design tokens (Style Dictionary → dist/theme.ts)
+        run: pnpm -C ui build:tokens
+
+      - name: Build sample widget (single-file)
+        run: pnpm -C ui --filter @toorow/widget-sample build
+
+      - name: Bundle gate — sample widget (regression guard, Story 1.6 AC10)
+        run: node ui/scripts/bundle-check.mjs ui/widgets/sample/dist/index.html
+
+      - name: Build google-analytics widget — signature heatmap (Story 1.6)
+        run: pnpm -C ui --filter @toorow/widget-google-analytics build
+
+      - name: Bundle gate — google-analytics widget (NFR4 / AD-11 / Story 1.6 AC6)
+        run: node ui/scripts/bundle-check.mjs ui/widgets/google-analytics/dist/index.html
+
+      - name: Assert google-analytics widget bundle < 1.5 MB uncompressed (Story 1.6 AC7)
+        run: |
+          SIZE=$(wc -c < ui/widgets/google-analytics/dist/index.html)
+          echo "google-analytics widget bundle: ${SIZE} bytes uncompressed"
+          if [ "$SIZE" -ge 1572864 ]; then
+            echo "FAIL: bundle ${SIZE} bytes >= 1.5 MB (1572864) — font subsetting regression (AC7)"
+            exit 1
+          fi
+
+      - name: Build + bundle gate — card widgets (Epic 9, AD-11; review-9-2b F-2)
+        run: |
+          for pkg in kpi keywords conversions usertypes journey connectors; do
+            pnpm -C ui --filter @toorow/card-$pkg build
+            node ui/scripts/bundle-check.mjs ui/cards/$pkg/dist/index.html --max-bytes 1500000
+          done
+          echo "OK: under the 1.5 MB AC7 budget"
+
+  # ---------------------------------------------------------------------------
+  # Admin console: build + bundle-check + Vitest (Story 2.4). UI-scoped.
+  # ---------------------------------------------------------------------------
+  admin-console:
+    needs: [changes, tokens-and-shell]
+    if: needs.changes.outputs.ui == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Install UI deps
+        run: pnpm -C ui install --frozen-lockfile
+
+      - name: Build design tokens (required by @toorow/shell peer)
+        run: pnpm -C ui build:tokens
+
+      - name: Build admin console (Story 2.4, AC1, AC6)
+        run: pnpm --filter @toorow/admin build
+        working-directory: ui
+
+      - name: Bundle gate -- admin console external URL check (Story 2.4, AC7)
+        run: node ui/scripts/bundle-check.mjs ui/admin/dist/index.html --max-bytes 3000000
+
+      - name: Admin console Vitest tests (Story 2.4, AC8)
+        run: pnpm --filter @toorow/admin test
+        working-directory: ui
+
+  # ---------------------------------------------------------------------------
+  # dbt seed loop: generate → load (DuckDB) → dbt run → dbt test (Story 1.4).
+  # dbt/connector/backend-scoped.
+  # ---------------------------------------------------------------------------
+  dbt-test:
+    needs: changes
+    if: needs.changes.outputs.dbt == 'true' || needs.changes.outputs.backend == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync Python deps (dbt-core 1.11, dbt-duckdb, duckdb, python-ulid)
+        run: uv sync --frozen --all-packages
+
+      - name: Generate GA4 seed CSV (90 days × 1350 rows)
+        run: uv run python server/modules/google-analytics/seeds/generate_seed.py
+
+      - name: Load seed into local DuckDB (mints pull_id)
+        run: |
+          uv run python server/modules/google-analytics/seeds/load_seed.py \
+            --mode duckdb \
+            --duckdb-path /tmp/ci_test.duckdb
+
+      - name: Write dbt profiles.yml for DuckDB (local target)
+        run: |
+          mkdir -p dbt/profiles
+          cat > dbt/profiles/profiles.yml <<'PROFILES'
+          connector:
+            target: local
+            outputs:
+              local:
+                type: duckdb
+                path: /tmp/ci_test.duckdb
+                threads: 1
+          PROFILES
+
+      - name: dbt run — staging + mart (google_analytics selector)
+        run: |
+          cd dbt
+          uv run dbt run --profiles-dir profiles
+        env:
+          TOOROW_DUCKDB_PATH: /tmp/ci_test.duckdb
+
+      - name: dbt test — data quality gates (AC6)
+        run: |
+          cd dbt
+          uv run dbt test --profiles-dir profiles
+        env:
+          TOOROW_DUCKDB_PATH: /tmp/ci_test.duckdb
+
+  # ---------------------------------------------------------------------------
+  # Module conformance suite (Story 1.8, AC8) — SCOPED to the connector(s)
+  # touched by this PR. The exhaustive all-connectors run lives in nightly.yml.
+  # ---------------------------------------------------------------------------
+  conformance:
+    needs: [changes, bundle-check]
+    # bundle-check may be skipped when UI is untouched; run conformance whenever
+    # connectors changed (or on push to main), regardless of the UI gate.
+    if: |
+      always() &&
+      (needs.changes.outputs.connectors == 'true' || github.event_name == 'push') &&
+      needs.bundle-check.result != 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Source capability contract -- all built-in modules (cheap, always)
+        run: uv run pytest server/tests/conformance/test_all_module_capabilities.py -q
+
+      - name: Module conformance suite — changed connector(s) only
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE" ]; then BASE="$(git rev-parse HEAD~1)"; fi
+          CHANGED=$(git diff --name-only "$BASE"...HEAD -- 'server/modules/*' | cut -d/ -f3 | sort -u)
+          if [ -z "$CHANGED" ]; then
+            echo "No specific connector changed; running google-analytics as the canonical smoke."
+            CHANGED="google-analytics"
+          fi
+          echo "Connectors to check: $CHANGED"
+          for m in $CHANGED; do
+            if [ -d "server/modules/$m" ]; then
+              echo "==== conformance: $m ===="
+              uv run pytest server/tests/conformance/ --module-path "server/modules/$m/" -q || exit 1
+            fi
+          done
+
+  # ---------------------------------------------------------------------------
+  # Cross-project isolation suite (Story 7.4 — permanent gate, FR12/AD-5).
+  # Backend/migration-scoped.
+  # ---------------------------------------------------------------------------
+  isolation:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: connector
+          POSTGRES_PASSWORD: connector_dev_only
+          POSTGRES_DB: connector
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_POSTGRES_DSN: postgresql://connector:connector_dev_only@localhost:5432/connector
+      PLATFORM_DB_URL: postgresql://connector:connector_dev_only@localhost:5432/connector
+      HEALTH_POLLER_ENABLED: "false"
+      QUEUE_WORKER_ENABLED: "false"
+      SCHEDULER_ENABLED: "false"
+      TOOROW_AUTH_MODE: disabled
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply app-schema migrations in order
+        env:
+          PGPASSWORD: connector_dev_only
+        run: |
+          for f in $(ls infra/nango/migrations/*.sql | sort -V); do
+            echo "applying $f"
+            psql -h localhost -U connector -d connector -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Run isolation suite (HARD GATE — a failure blocks merge)
+        run: uv run pytest server/tests/isolation/ -v -m isolation
+
+  # ---------------------------------------------------------------------------
+  # Vitrine (marketing site) — build gate, only when web/ changes.
+  # The marketing site is owned by a separate track; a full extraction to its
+  # own repo is Phase 2. Until then this keeps its build honest without
+  # coupling to the product jobs.
+  # ---------------------------------------------------------------------------
+  vitrine:
+    needs: changes
+    if: needs.changes.outputs.vitrine == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Fast, service-free gate only: type-check + JS unit tests (`npm run check`).
+      # The full `astro build` is intentionally NOT run here — its prebuild needs
+      # uv/Python (connector registry) and its postbuild needs live Sanity
+      # content. Build + content tests are run locally / at deploy time.
+      - name: Install + type-check + unit-test marketing site
+        working-directory: web
+        run: |
+          if [ -f package.json ]; then
+            corepack enable || true
+            (pnpm install --frozen-lockfile || npm ci || npm install)
+            if npm run | grep -qE '^\s*check'; then
+              (pnpm run check || npm run check)
+            else
+              echo "No check script in web/package.json; skipping."
+            fi
+          else
+            echo "No web/package.json; nothing to check."
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Terraform validate only — apply is human-gated. Infra-scoped.
+  # ---------------------------------------------------------------------------
+  terraform:
+    needs: changes
+    if: needs.changes.outputs.infra == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform fmt check
+        run: terraform -chdir=infra/terraform fmt -check
+
+      - name: Terraform init (no backend) + validate
+        run: |
+          terraform -chdir=infra/terraform init -backend=false
+          terraform -chdir=infra/terraform validate

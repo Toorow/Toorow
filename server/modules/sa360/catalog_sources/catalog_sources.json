@@ -1,0 +1,7 @@
+{
+  "connector": "sa360", "api_version": "search-ads-360-reporting-v0",
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [{"kind": "official", "file": "official_fields.json", "parser": "official_fields_json", "url": "https://developers.google.com/search-ads/reporting/api/reference/fields/v0/overview", "fetched_at": "2026-07-22"}],
+  "section_tier_map": {"segments": "core", "customer": "core", "campaign": "core", "adGroup": "standard", "adGroupCriterion": "standard", "metrics": "core"},
+  "default_tier": "standard", "exposure_policy": "catalog_driven", "excluded_sections": {}
+}

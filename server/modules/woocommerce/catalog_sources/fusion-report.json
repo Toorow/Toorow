@@ -1,0 +1,18 @@
+{
+  "drift_ids": [],
+  "enrichment_only": 0,
+  "enrichment_only_ids": [],
+  "enrichment_total": 0,
+  "exposure_counts": {
+    "exposed": 58
+  },
+  "matched": 0,
+  "official_duplicate_ids": [],
+  "official_only": 58,
+  "official_total": 58,
+  "tier_counts": {
+    "advanced": 10,
+    "core": 31,
+    "standard": 17
+  }
+}

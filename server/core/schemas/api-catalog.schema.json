@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toorow.dev/schemas/api-catalog.schema.json",
+  "title": "Toorow API Catalog",
+  "description": "Versioned, exhaustive contract for a connector module's provider API field catalog.",
+  "$defs": {
+    "source_entry": {
+      "type": "object",
+      "required": [
+        "url",
+        "kind",
+        "fetched_at"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "official",
+            "enrichment"
+          ]
+        },
+        "fetched_at": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "catalog_field": {
+      "type": "object",
+      "required": [
+        "field_id",
+        "source_field",
+        "kind",
+        "physical_type",
+        "description",
+        "section",
+        "tier",
+        "exposure"
+      ],
+      "properties": {
+        "field_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "metric",
+            "dimension",
+            "event"
+          ]
+        },
+        "physical_type": {
+          "type": "string",
+          "enum": [
+            "string",
+            "integer",
+            "decimal",
+            "boolean",
+            "date",
+            "datetime",
+            "json"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "section": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tier": {
+          "type": "string",
+          "enum": [
+            "core",
+            "standard",
+            "advanced"
+          ]
+        },
+        "exposure": {
+          "type": "string",
+          "enum": [
+            "exposed",
+            "excluded",
+            "planned"
+          ]
+        },
+        "exclusion_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "semantic_hints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "canonical_target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "aggregation": {
+          "type": "string",
+          "enum": [
+            "sum",
+            "average",
+            "impression_weighted",
+            "max",
+            "latest",
+            "none"
+          ]
+        },
+        "non_additive": {
+          "type": "boolean"
+        },
+        "deprecated": {
+          "type": "boolean"
+        },
+        "sensitive": {
+          "type": "boolean",
+          "description": "PII / sensitive-data field (e.g. contact email, phone). Machine-readable governance flag for downstream audits; source of truth is catalog_sources.json sensitive_dimensions."
+        }
+      },
+      "if": {
+        "properties": {
+          "exposure": {
+            "const": "excluded"
+          }
+        },
+        "required": [
+          "exposure"
+        ]
+      },
+      "then": {
+        "required": [
+          "exclusion_reason"
+        ]
+      },
+      "additionalProperties": false
+    },
+    "catalog": {
+      "type": "object",
+      "required": [
+        "catalog_version",
+        "connector",
+        "api_version",
+        "sources",
+        "generated_at",
+        "fields"
+      ],
+      "properties": {
+        "catalog_version": {
+          "const": "1"
+        },
+        "connector": {
+          "type": "string",
+          "minLength": 1
+        },
+        "api_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_entry"
+          },
+          "minItems": 1,
+          "contains": {
+            "properties": {
+              "kind": {
+                "const": "official"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        },
+        "generated_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/catalog_field"
+          }
+        },
+        "exposure_policy": {
+          "type": "string",
+          "enum": [
+            "manifest",
+            "catalog_driven"
+          ],
+          "description": "Story 25.9: how exposure was derived. catalog_driven means the whole catalog is extractable at execution (dynamic projection) -- exposed fields need not be enumerated in the manifest."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$ref": "#/$defs/catalog"
+}

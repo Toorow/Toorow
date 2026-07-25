@@ -1,0 +1,14 @@
+[
+  {
+    "_fixture_note": "expected_facts.json = transform(golden_pull.json) pour Klaviyo.",
+    "_fixture_note_2": "Pour Klaviyo, transform() est un pass-through (le manifest ne renomme",
+    "_fixture_note_3": "pas les champs attributed_* -- ils sont deja canoniques). Donc",
+    "_fixture_note_4": "expected_facts == golden_pull au grain de donnees.",
+    "_fixture_note_5": "Le test de conformance (test_golden_fixture_matches_generator) valide",
+    "_fixture_note_6": "transform(generate_rows(end_date=FIXTURE_END_DATE)) directement.",
+    "_fixture_format": "GOLDEN_SNAPSHOT_V2",
+    "_end_date": "2026-07-10",
+    "_days": 40,
+    "_rng_seed": 1582026
+  }
+]

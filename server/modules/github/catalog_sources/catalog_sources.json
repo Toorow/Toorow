@@ -1,0 +1,59 @@
+{
+  "connector": "github",
+  "api_version": "2022-11-28",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "MINIMAL-CATALOG case: no Supermetrics enrichment exists for GitHub (context module, not a marketing analytics connector). official_fields.json was hand-curated from the GitHub REST API reference (releases: GET /repos/{owner}/{repo}/releases; deployments: GET /repos/{owner}/{repo}/deployments) pinned to api-version 2022-11-28, cross-checked against the connector.py extraction paths (published_at->date for releases, created_at->date for deployments, ref+environment->label). Field count is intentionally small and honest for a context module that writes context_events, not fact_daily_kpi rows.",
+    "expansion_rule": "none — context module; no metric families to expand",
+    "count_divergence": "25 fields total: 1 currently extracted (date, exposed), 24 planned. repo_owner and repo_name are derived from connection_config, not the API payload — included for catalog completeness as they scope every event row."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "releases_endpoint_reference",
+          "url": "https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "deployments_endpoint_reference",
+          "url": "https://docs.github.com/en/rest/deployments/deployments?apiVersion=2022-11-28",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "error_codes_reference",
+          "url": "https://docs.github.com/en/rest/overview/troubleshooting?apiVersion=2022-11-28",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    }
+  ],
+  "section_tier_map": {
+    "TIME": "core",
+    "RELEASE": "core",
+    "DEPLOYMENT": "core",
+    "REPOSITORY": "standard"
+  },
+  "field_tier_overrides": {
+    "date": "core",
+    "tag_name": "core",
+    "release_name": "core",
+    "deployment_ref": "core",
+    "environment": "core",
+    "production_environment": "core"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "none",
+    "batch_size": 0,
+    "structural_note": "GitHub REST returns whole release/deployment objects; fields are object properties, not per-request-selectable columns. ratify_connector.py records a structural ratification (catalog==contract by construction) rather than issuing a field-by-field probe."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {},
+  "_exposure_note": "Context module: every cataloged field is extracted from the landed event payloads by construction."
+}

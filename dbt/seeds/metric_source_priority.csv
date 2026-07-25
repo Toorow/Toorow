@@ -1,0 +1,10 @@
+metric,connector,priority
+conversions,google-analytics,1
+conversions,meta-ads,2
+conversions,tiktok-ads,3
+conversions,linkedin-ads,4
+revenue,shopify,1
+revenue,woocommerce,2
+revenue,stripe,3
+revenue,adjust,4
+revenue,square,5

@@ -1,0 +1,230 @@
+{
+    "schema_version":  "1.2",
+    "name":  "google-sheets",
+    "display_name":  "Google Sheets",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "files_warehouses",
+        "onboarding_modes": ["managed_feed"],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "module_kind":  "kpi",
+    "auth_type":  "google_direct",
+    "report_profiles":  [
+                            {
+                                "id":  "sheet_daily",
+                                "display_name":  "Sheet Data (daily)",
+                                "metrics":  [
+                                                "budget_declared",
+                                                "target_revenue",
+                                                "target_conversions"
+                                            ],
+                                "dimensions":  [
+                                                   "date",
+                                                   "sheet_row_id"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  false,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull",
+                                "verification_expected_rows_per_day":  null,
+                                "_ai_53_notes":  "AI-53 VERIFIE le 2026-07-19 : Google Sheets API v4. Endpoint GET https://sheets.googleapis.com/v4/spreadsheets/{spreadsheetId}/values/{range} (values.get) pour une plage unique ; batchGet pour plusieurs plages. Le scope OAuth requis est \u0027https://www.googleapis.com/auth/spreadsheets.readonly\u0027 -- il fait partie du GOOGLE_STACK_SCOPES de l\u0027Epic 18 (AD-21). Quota : 300 requetes par minute par projet, 60 requetes par minute par utilisateur (doc officielle Google Sheets API v4, https://developers.google.com/sheets/api/limits, verifiee le 2026-07-19). Une extraction de feuille typique = 1 requete API (batchGet de toute la plage) -- la limite de quota est tres confortable. HTTP 429 -\u003e RateLimitError(\u0027google-sheets\u0027, retry_after). A CONFIRMER en passe live (Phase B, AI-13/AI-08)."
+                            }
+                        ],
+    "canonical_metric_mapping":  {
+                                     "budget_declared":  "budget_declared",
+                                     "target_revenue":  "target_revenue",
+                                     "target_conversions":  "target_conversions"
+                                 },
+    "canonical_dimension_mapping":  {
+                                        "date":  "date",
+                                        "sheet_row_id":  "sheet_row_id"
+                                    },
+    "column_mapping_schema":  {
+                                  "_doc":  "Le column_mapping est DECLARE PAR DATASTREAM (config), pas en dur dans le code. Chaque connexion Google Sheets declare quelles colonnes de sa feuille correspondent a quelles metriques/dimensions. Ce schema documente la structure attendue du mapping.",
+                                  "_structure":  {
+                                                     "date_column":  "Nom de la colonne contenant la date (ex: \u0027Date\u0027, \u0027Periode\u0027). Obligatoire.",
+                                                     "row_id_column":  "Nom de la colonne servant d\u0027identifiant de ligne (ex: \u0027Campagne\u0027, \u0027Canal\u0027). Optionnel -- si absent, l\u0027index de la ligne est utilise.",
+                                                     "metric_columns":  {
+                                                                            "_doc":  "Dictionnaire {nom_colonne_sheet: nom_metrique_canonique}. Ex: {\u0027Budget\u0027: \u0027budget_declared\u0027, \u0027Objectif CA\u0027: \u0027target_revenue\u0027}.",
+                                                                            "_canonical_metrics":  [
+                                                                                                       "budget_declared",
+                                                                                                       "target_revenue",
+                                                                                                       "target_conversions"
+                                                                                                   ],
+                                                                            "_note":  "Seules les metriques listees dans canonical_metric_mapping sont acceptees comme valeurs."
+                                                                        }
+                                                 },
+                                  "_validation":  "Une colonne manquante dans la feuille = erreur explicite (AD-9 : jamais 0 invente). Les lignes non parsables (valeur non numerique dans une colonne metrique) sont comptees et loggees -- jamais silencieuses.",
+                                  "_number_format":  "Format numerique accepte dans les cellules metriques. Heuristique : le DERNIER separateur (point ou virgule) est le separateur decimal. Exemples : \u00271.234,56\u0027 -\u003e 1234.56 (FR : derniere sep = \u0027,\u0027) ; \u00271,234.56\u0027 -\u003e 1234.56 (EN : derniere sep = \u0027.\u0027) ; \u00275 000,50\u0027 -\u003e 5000.50 (FR : seule virgule = decimal) ; \u00271234.56\u0027 -\u003e 1234.56 (EN direct). Les espaces normaux et insecables sont toujours retires avant le parsing (ex: \u00275 000,50\u0027 -\u003e \u00275000,50\u0027 -\u003e 5000.50)."
+                              },
+    "auth":  {
+                 "type":  "google_direct",
+                 "auth_path":  "google_direct",
+                 "scope":  "https://www.googleapis.com/auth/spreadsheets.readonly",
+                 "_note":  "AD-21 : le scope spreadsheets.readonly fait partie du GOOGLE_STACK_SCOPES de l\u0027Epic 18. La connexion Google Sheets utilise auth_path=\u0027google_direct\u0027 dans app.connection_ref. get_fresh_token(connection_id) route automatiquement sur le token_service de l\u0027Epic 18.3 -- le module n\u0027a pas a s\u0027en preoccuper. PAS de Nango pour les connecteurs du stack Google (directive Jean 2026-07-18).",
+                 "_ai_53_notes":  "AI-53 : le scope \u0027spreadsheets.readonly\u0027 est documente dans la documentation officielle Google Sheets API v4 (https://developers.google.com/sheets/api/guides/authorizing). Il est inclus dans GOOGLE_STACK_SCOPES (server/core/google_oauth.py). A CONFIRMER que le consentement unique Epic 18 couvre bien ce scope en passe live (Phase B)."
+             },
+    "quota":  {
+                  "window_seconds":  60,
+                  "budget_points":  60,
+                  "read_cost":  1,
+                  "write_cost":  1,
+                  "_write_cost_note":  "Module lecture seule (readonly scope) -- write_cost jamais depense; le schema manifest exige une valeur strictement positive (exclusiveMinimum 0), valeur formelle alignee sur google-analytics/gsc.",
+                  "_ai_53_notes":  "AI-53 VERIFIE le 2026-07-19 : Google Sheets API v4 applique des limites en nombre de requetes : 300 requetes/min par projet (global), 60 requetes/min par utilisateur. Une extraction typique d\u0027une feuille = 1 appel batchGet. Profil retenu : window 60s / 60pts / read_cost=1 (1 requete par pull = 1 point). La limite est tres confortable pour l\u0027usage de saisie d\u0027objectifs. HTTP 429 -\u003e RateLimitError(\u0027google-sheets\u0027, retry_after) comme les autres connecteurs. Source officielle : https://developers.google.com/sheets/api/limits. A CONFIRMER en passe live."
+              },
+    "widget_ref":  "ui://core/daily-report",
+    "_error_map_note":  "Google Sheets is pure HTTP (no provider-specific error codes or subcodes). HTTP 429 is handled by raising core.quota.RateLimitError directly in _fetch_sheet_values (breaker path -- never goes through error_map). HTTP 403 raises Python PermissionError (missing scope or revoked consent, documented in connector.py). HTTP 404 raises Python FileNotFoundError (spreadsheet not found or no access). All other non-2xx statuses are raised via httpx resp.raise_for_status(). A formal error_map dict is intentionally omitted: the classify_http_error pattern applies to providers with documented error-code registries (Meta subcodes, Google reason strings, etc.); Sheets has no such registry -- the three dedicated raise paths (429/403/404) plus raise_for_status cover the full error surface without a lookup table.",
+    "_account_topology_note":  "No account_topology declared. Spreadsheet selection is datastream-level configuration (spreadsheet_id + sheet_range are pull parameters), not a connection-level account hierarchy. A Google Sheets connection authenticates a Google account via google_direct OAuth; there is no sub-account or property to discover or select -- any spreadsheet accessible to the authenticated user can be addressed by its ID at pull time.",
+    "_ai_53_notes":  {
+                         "verified_on":  "2026-07-19",
+                         "endpoint":  "Google Sheets API v4 -- https://sheets.googleapis.com/v4/spreadsheets/{spreadsheetId}/values/{range} (GET values.get) ou /values:batchGet (GET batchGet). Champ \u0027values\u0027 de la reponse = tableau de lignes (tableau de tableaux de strings). La premiere ligne est supposee etre l\u0027en-tete des colonnes. Source : https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values",
+                         "scope":  "spreadsheets.readonly fait partie du GOOGLE_STACK_SCOPES (AD-21). Verifie dans server/core/google_oauth.py GOOGLE_STACK_SCOPES.",
+                         "mapping_declaratif":  "Le mapping colonnes -\u003e metriques est DECLARE dans la config du datastream, pas encode dans le module. Le module lit le mapping depuis les params du pull et valide que les colonnes existent dans la feuille. Une colonne absente = erreur explicite (AD-9). Une valeur non numerique dans une colonne metrique = ligne loggee comme non parsable et exclue (jamais silencieuse).",
+                         "no_formulas":  "Les formules Google Sheets ne sont PAS evaluees : l\u0027API values.get retourne les valeurs calculees (FORMATTED_VALUE ou UNFORMATTED_VALUE) -- ce qui est dans la cellule, pas la formule. La synchronisation bidirectionnelle (ecriture vers Sheets) est HORS SCOPE."
+                     },
+    "source_capabilities":  {
+                                "contract_version":  "1",
+                                "field_discovery":  {
+                                                        "mode":  "runtime",
+                                                        "allowed_targets":  [
+                                                                                "budget_declared",
+                                                                                "target_revenue",
+                                                                                "target_conversions",
+                                                                                "date",
+                                                                                "sheet_row_id"
+                                                                            ]
+                                                    },
+                                "fields":  [
+                                               {
+                                                   "field_id":  "budget_declared",
+                                                   "source_field":  "budget_declared",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "budget declared exposed by Google Sheets.",
+                                                   "semantic_hints":  [
+                                                                          "spend",
+                                                                          "currency"
+                                                                      ],
+                                                   "canonical_target":  "budget_declared",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "target_revenue",
+                                                   "source_field":  "target_revenue",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "decimal",
+                                                   "description":  "target revenue exposed by Google Sheets.",
+                                                   "semantic_hints":  [
+                                                                          "revenue",
+                                                                          "currency"
+                                                                      ],
+                                                   "canonical_target":  "target_revenue",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "target_conversions",
+                                                   "source_field":  "target_conversions",
+                                                   "kind":  "metric",
+                                                   "physical_type":  "integer",
+                                                   "description":  "target conversions exposed by Google Sheets.",
+                                                   "semantic_hints":  [
+                                                                          "conversion",
+                                                                          "count"
+                                                                      ],
+                                                   "canonical_target":  "target_conversions",
+                                                   "aggregation":  "sum",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "date",
+                                                   "source_field":  "date",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "date",
+                                                   "description":  "date exposed by Google Sheets.",
+                                                   "semantic_hints":  [
+                                                                          "date"
+                                                                      ],
+                                                   "canonical_target":  "date",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               },
+                                               {
+                                                   "field_id":  "sheet_row_id",
+                                                   "source_field":  "sheet_row_id",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "string",
+                                                   "description":  "sheet row id exposed by Google Sheets.",
+                                                   "semantic_hints":  [
+                                                                          "identifier"
+                                                                      ],
+                                                   "canonical_target":  "sheet_row_id",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               }
+                                           ],
+                                "reports":  [
+                                                {
+                                                    "id":  "sheet_daily",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "unavailable",
+                                                                         "reason_code":  "managed_sheet_configuration_required",
+                                                                         "follow_up":  "Complete recurring Google Sheets synchronization."
+                                                                     },
+                                                    "metrics":  [
+                                                                    "budget_declared",
+                                                                    "target_revenue",
+                                                                    "target_conversions"
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date",
+                                                                       "sheet_row_id"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date",
+                                                                                 "sheet_row_id"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "none",
+                                                                       "completeness":  "complete",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "none"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  1,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  60,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "hourly",
+                                                                                            "daily"
+                                                                                        ]
+                                                                }
+                                                }
+                                            ]
+                            }
+}

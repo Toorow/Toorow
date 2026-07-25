@@ -1,0 +1,154 @@
+[
+  {
+    "field_id": "date",
+    "source_field": "FILTER_DATE",
+    "kind": "dimension",
+    "data_type": "date",
+    "section": "FILTER",
+    "description": "Advertiser reporting date."
+  },
+  {
+    "field_id": "advertiser_id",
+    "source_field": "FILTER_ADVERTISER",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FILTER",
+    "description": "Selected advertiser identifier."
+  },
+  {
+    "field_id": "campaign_id",
+    "source_field": "FILTER_MEDIA_PLAN",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FILTER",
+    "description": "Campaign identifier."
+  },
+  {
+    "field_id": "insertion_order_id",
+    "source_field": "FILTER_INSERTION_ORDER",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FILTER",
+    "description": "Insertion order identifier."
+  },
+  {
+    "field_id": "line_item_id",
+    "source_field": "FILTER_LINE_ITEM",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FILTER",
+    "description": "Line item identifier."
+  },
+  {
+    "field_id": "creative_id",
+    "source_field": "FILTER_CREATIVE",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FILTER",
+    "description": "Creative identifier."
+  },
+  {
+    "field_id": "conversion_type",
+    "source_field": "FILTER_FLOODLIGHT_ACTIVITY",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FILTER",
+    "description": "Conversion activity."
+  },
+  {
+    "field_id": "country",
+    "source_field": "FILTER_COUNTRY",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FILTER",
+    "description": "Provider country value."
+  },
+  {
+    "field_id": "currency",
+    "source_field": "FILTER_ADVERTISER_CURRENCY",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FILTER",
+    "description": "Advertiser currency code."
+  },
+  {
+    "field_id": "timezone",
+    "source_field": "FILTER_ADVERTISER_TIMEZONE",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FILTER",
+    "description": "Advertiser reporting timezone."
+  },
+  {
+    "field_id": "youtube_ad_group_id",
+    "source_field": "FILTER_YOUTUBE_AD_GROUP",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "FILTER",
+    "description": "YouTube ad group identifier."
+  },
+  {
+    "field_id": "impressions",
+    "source_field": "METRIC_IMPRESSIONS",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Recorded impressions."
+  },
+  {
+    "field_id": "clicks",
+    "source_field": "METRIC_CLICKS",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Recorded clicks."
+  },
+  {
+    "field_id": "media_cost_micros",
+    "source_field": "METRIC_MEDIA_COST_ADVERTISER",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Media cost in advertiser-currency micros."
+  },
+  {
+    "field_id": "conversions",
+    "source_field": "METRIC_TOTAL_CONVERSIONS",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Attributed conversions."
+  },
+  {
+    "field_id": "conversion_value_micros",
+    "source_field": "METRIC_TOTAL_CONVERSIONS_REVENUE_ADVERTISER",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Conversion value in advertiser-currency micros."
+  },
+  {
+    "field_id": "unique_reach",
+    "source_field": "METRIC_UNIQUE_REACH_IMPRESSION_REACH",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Unique reach at exact provider grain."
+  },
+  {
+    "field_id": "average_frequency",
+    "source_field": "METRIC_UNIQUE_REACH_AVERAGE_IMPRESSION_FREQUENCY",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Average impression frequency."
+  },
+  {
+    "field_id": "viewability_rate",
+    "source_field": "METRIC_ACTIVE_VIEW_VIEWABLE_PERCENT",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Viewable impression percentage."
+  }
+]

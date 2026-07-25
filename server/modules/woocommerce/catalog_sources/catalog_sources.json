@@ -1,0 +1,74 @@
+{
+  "connector": "woocommerce",
+  "api_version": "wc/v3",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "exposure_policy": "catalog_driven",
+  "note": "official_fields.json is curated from the WooCommerce REST API v3 Order object reference (https://woocommerce.github.io/woocommerce-rest-api-docs/, verified 2026-07-21). Fields cover Order root properties, line_items sub-object, billing/shipping sub-objects, refunds sub-object, coupon_lines / fee_lines / tax_lines sub-objects -- all carried by a single GET /wc/v3/orders payload. WooCommerce is store-scoped (one consumer key/secret = one store) and self-hosted (base URL per connection). No provider-side rate limit. Supermetrics has no dedicated WooCommerce catalog; the Order object reference is exhaustive and is the sole authority.",
+  "manifest_fields_check": "All 5 manifest source_capabilities.fields appear in official_fields.json (as PLATFORM CONTRACT rows) with matching kind and source_field: revenue(metric/total), refund_amount(metric/total_refunded), orders_count(metric/order), date(dimension/date_created), transaction_id(dimension/transaction_id).",
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://woocommerce.github.io/woocommerce-rest-api-docs/",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "order_object_reference",
+          "url": "https://woocommerce.github.io/woocommerce-rest-api-docs/#order-properties",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "refund_object_reference",
+          "url": "https://woocommerce.github.io/woocommerce-rest-api-docs/#refunds",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "authentication",
+          "url": "https://woocommerce.github.io/woocommerce-rest-api-docs/#authentication",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "pagination_and_errors",
+          "url": "https://woocommerce.github.io/woocommerce-rest-api-docs/#pagination",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    }
+  ],
+  "section_tier_map": {
+    "ORDER": "core",
+    "REFUND": "core",
+    "BILLING ADDRESS": "standard",
+    "SHIPPING ADDRESS": "advanced",
+    "LINE ITEM": "standard",
+    "PRODUCT": "standard",
+    "COUPON": "advanced",
+    "FEE": "advanced",
+    "TAX": "advanced",
+    "PLATFORM CONTRACT": "core"
+  },
+  "field_tier_overrides": {
+    "total": "core",
+    "total_refunded": "core",
+    "order": "core",
+    "date_created": "core",
+    "transaction_id": "core",
+    "currency": "core",
+    "status": "core",
+    "id": "core",
+    "customer_id": "standard",
+    "payment_method": "standard",
+    "product_id": "standard",
+    "variant_id": "standard"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "fields_param",
+    "batch_size": 20,
+    "structural_note": "WooCommerce REST takes a _fields= list selecting order properties over a date_created window (per_page=1). The probe batches up to 20 fields per request; a field absent from the returned object is recorded empty (WooCommerce omits unset fields rather than rejecting), so unsupported/empty are distinguished by presence. A local WordPress + WooCommerce install with demo data is a valid ratification target (no client required)."
+  },
+  "excluded_sections": {
+    "_note": "All sections declared in this catalog (ORDER, REFUND, BILLING ADDRESS, SHIPPING ADDRESS, LINE ITEM, PRODUCT, COUPON, FEE, TAX, PLATFORM CONTRACT) are present in the WooCommerce REST v3 order payload fetched by pull_catalog_daily. GET /wc/v3/orders returns the full order object including all nested sub-objects (line_items, billing, shipping, refunds, coupon_lines, fee_lines, tax_lines) without additional endpoints. Product-catalog enrichment (cost of goods, stock) would require the separate /products endpoint and is out of scope. No catalog section is excluded."
+  }
+}

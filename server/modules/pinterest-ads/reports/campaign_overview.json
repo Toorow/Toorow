@@ -1,0 +1,15 @@
+{
+  "id": "campaign_overview",
+  "display_name": "Campaign performance",
+  "metrics": ["cost", "impressions", "clicks", "conversions"],
+  "dimensions": ["date", "campaign_id"],
+  "layout": {
+    "chart_type": "bar",
+    "order_by": "cost DESC",
+    "top_n": 10
+  },
+  "narrative_prompt": "Analyze Pinterest Ads campaigns: cost vs conversions, flag rising cost with stalling conversions. Recent conversion figures are provisional.",
+  "date_window": {
+    "default_days": 30
+  }
+}

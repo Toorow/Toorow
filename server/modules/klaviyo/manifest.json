@@ -1,0 +1,467 @@
+{
+    "schema_version": "1.2",
+    "name": "klaviyo",
+    "display_name": "Klaviyo",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "email_sms",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "module_kind": "kpi",
+    "auth_type": "api_key",
+    "report_profiles": [
+        {
+            "id": "campaign_daily",
+            "display_name": "Campaign Performance (daily)",
+            "metrics": [
+                "sends",
+                "opens",
+                "clicks",
+                "attributed_conversions",
+                "attributed_revenue"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id",
+                "campaign_name"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null,
+            "_ai_53_notes": "AI-53 VERIFIE le 2026-07-19 : endpoint POST /api/campaign-values-reports/ (Reporting API). Granularite daily via interval='daily'. Statistiques disponibles : sends, opens, clicks, conversions, revenue. Profondeur d'historique : non documentee explicitement -- a confirmer en passe live (Phase B) via test de fenetre historique. Source : https://developers.klaviyo.com/en/reference/reporting_api_overview"
+        },
+        {
+            "id": "flow_daily",
+            "display_name": "Flow Performance (daily)",
+            "metrics": [
+                "sends",
+                "opens",
+                "clicks",
+                "attributed_conversions",
+                "attributed_revenue"
+            ],
+            "dimensions": [
+                "date",
+                "flow_id",
+                "flow_name"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null,
+            "_ai_53_notes": "AI-53 VERIFIE le 2026-07-19 : endpoint POST /api/flow-series-reports/ (Reporting API, serie temporelle daily). Statistiques identiques. Source : https://developers.klaviyo.com/en/reference/reporting_api_overview"
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven daily (any selected field)",
+            "metrics": [
+                "sends",
+                "opens",
+                "clicks",
+                "attributed_conversions",
+                "attributed_revenue"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id",
+                "campaign_name",
+                "flow_id",
+                "flow_name"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        }
+    ],
+    "canonical_metric_mapping": {
+        "sends": "sends",
+        "opens": "opens",
+        "clicks": "clicks",
+        "conversions": "attributed_conversions",
+        "revenue": "attributed_revenue"
+    },
+    "canonical_dimension_mapping": {
+        "campaign_id": "campaign_id",
+        "campaign_name": "campaign_name",
+        "flow_id": "flow_id",
+        "flow_name": "flow_name"
+    },
+    "error_map": {
+        "401": "auth_expired",
+        "403": "permission_denied",
+        "400": "invalid_request",
+        "422": "invalid_request",
+        "500": "provider_transient",
+        "503": "provider_transient",
+        "_error_map_note": "Klaviyo uses JSON:API error format (errors[].code, errors[].status, errors[].detail). The provider does NOT publish a finite set of numeric sub-codes beyond HTTP status — the 'code' field is a free-text string (e.g. 'invalid', 'not_found') rather than an enumerated integer. Therefore this map is keyed on HTTP status only (no ':provider_code' refinement). The pure-HTTP classification in core.pull_errors._base_class_for_status already handles 401->auth_expired, 403->permission_denied, 400->invalid_request, 5xx->provider_transient correctly without per-code overrides. A story-25.N refinement can add JSON:API code-string keying if Klaviyo introduces stable sub-codes."
+    },
+    "_account_topology_note": "Klaviyo is scoped to a single account per Private API Key — there is no account hierarchy to discover. The key grants access to exactly one Klaviyo account. No account_topology block is required: discovery is implicit (the key IS the account selector). No *_ACCOUNT_ID env var is used.",
+    "quota": {
+        "window_seconds": 60,
+        "budget_points": 60,
+        "read_cost": 1,
+        "write_cost": 3,
+        "_ai_53_notes": "AI-53 VERIFIE le 2026-07-19 : le endpoint /api/metric-aggregates (et par extension les Reporting API endpoints) a un rate limit de Tier S : burst 3 req/s, steady 60 req/min. Source : https://developers.klaviyo.com/en/reference/query_metric_aggregates. Le profil retenu (window 60s / 60pts / read_cost=1) modelise la limite steady de 60 req/min de facon conservative. Le backstop reste le handler 429 -> RateLimitError. A recalibrer avec les headers RateLimit-Remaining / RateLimit-Reset en passe live (Phase B)."
+    },
+    "attribution_window": {
+        "default_email_click_days": 5,
+        "default_email_open_days": 5,
+        "default_sms_click_days": 5,
+        "default_sms_delivered_days": 1,
+        "model": "last_touch",
+        "configurable_by_account": true,
+        "_rule_non_aggregation": "REGLE CRITIQUE (AD-4, Epic 15 Story 15.8) : les metriques attributed_conversions et attributed_revenue sont des CONVERSIONS ET REVENUS REVENDIQUES par le canal Klaviyo (fenetre d'attribution last-touch 5j clic/ouverture email par defaut). ILS NE DOIVENT JAMAIS ETRE SOMMES avec les conversions des regies (Meta, TikTok, Google) ni avec le revenue reel Shopify/Stripe dans un total croise. Ce sont des vues d'attribution canal independantes, utilisees pour la deduplication (Epic 17) et non pour calculer un total marketing absolu. Toute agregation croisee requiert la regle AD-4 / cross_source_conversions.",
+        "_ai_53_notes": "AI-53 VERIFIE le 2026-07-19 : fenetres d'attribution par defaut pour les nouveaux comptes (post-10/09/2024) : email click 5j, email open 5j, SMS click 5j, SMS delivered 1j, push 24h. Modele last-touch. Configurable par le compte. Sources : https://help.klaviyo.com/hc/en-us/articles/1260804504250 et https://www.klaviyo.com/blog/introducing-attribution-model-updates-to-reporting"
+    },
+    "widget_ref": "ui://core/daily-report",
+    "_ai_53_auth": "AI-53 VERIFIE le 2026-07-19 : Klaviyo utilise une cle API privee (Private API Key) pour l'authentification. La cle est transmise dans le header Authorization: Klaviyo-API-Key <key>. Les secrets transitent UNIQUEMENT via Nango (AD-3) -- jamais hardcodes dans notre code. Source : https://developers.klaviyo.com/en/reference/api_overview",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "sends",
+                "source_field": "sends",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "sends exposed by Klaviyo.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "sends",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "opens",
+                "source_field": "opens",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "opens exposed by Klaviyo.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "opens",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "clicks",
+                "source_field": "clicks",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "clicks exposed by Klaviyo.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "attributed_conversions",
+                "source_field": "conversions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "attributed conversions exposed by Klaviyo.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "attributed_conversions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "attributed_revenue",
+                "source_field": "revenue",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "attributed revenue exposed by Klaviyo.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "attributed_revenue",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "date",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "date exposed by Klaviyo.",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_id",
+                "source_field": "campaign_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "campaign id exposed by Klaviyo.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_name",
+                "source_field": "campaign_name",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "campaign name exposed by Klaviyo.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "flow_id",
+                "source_field": "flow_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "flow id exposed by Klaviyo.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "flow_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "flow_name",
+                "source_field": "flow_name",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "flow name exposed by Klaviyo.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "flow_name",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "campaign_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "unavailable",
+                    "reason_code": "profile_behavior_unproven",
+                    "follow_up": "Complete profile-isolated Klaviyo report dispatch."
+                },
+                "metrics": [
+                    "sends",
+                    "opens",
+                    "clicks",
+                    "attributed_conversions",
+                    "attributed_revenue"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id",
+                    "campaign_name"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id",
+                        "campaign_name"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "link",
+                    "completeness": "bounded",
+                    "max_pages": 10,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "flow_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "unavailable",
+                    "reason_code": "profile_behavior_unproven",
+                    "follow_up": "Complete profile-isolated Klaviyo report dispatch."
+                },
+                "metrics": [
+                    "sends",
+                    "opens",
+                    "clicks",
+                    "attributed_conversions",
+                    "attributed_revenue"
+                ],
+                "dimensions": [
+                    "date",
+                    "flow_id",
+                    "flow_name"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "flow_id",
+                        "flow_name"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "link",
+                    "completeness": "bounded",
+                    "max_pages": 10,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "sends",
+                    "opens",
+                    "clicks",
+                    "attributed_conversions",
+                    "attributed_revenue"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id",
+                    "campaign_name",
+                    "flow_id",
+                    "flow_name"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id",
+                        "campaign_name",
+                        "flow_id",
+                        "flow_name"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "link",
+                    "completeness": "bounded",
+                    "max_pages": 10,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 2,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                }
+            }
+        ]
+    }
+}

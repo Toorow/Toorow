@@ -1,0 +1,16 @@
+[
+  {
+    "record_id": "hist_001",
+    "change_time": "2026-07-01T09:15:00Z",
+    "change_type": "CAMPAIGN_STATUS_CHANGED",
+    "entity_id": "campaign_42",
+    "account_id": "acct"
+  },
+  {
+    "record_id": "hist_002",
+    "change_time": "2026-07-10T14:30:00Z",
+    "change_type": "CAMPAIGN_BUDGET_CHANGED",
+    "entity_id": "campaign_17",
+    "account_id": "acct"
+  }
+]

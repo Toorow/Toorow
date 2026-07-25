@@ -1,0 +1,76 @@
+{
+  "connector": "gsc",
+  "api_version": "v1 (searchanalytics)",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "The GSC searchanalytics.query API is small and fully enumerable: 4 response metrics (clicks, impressions, ctr, position/average_position) + 7 grouping dimensions (query, page, country, device, date, searchAppearance, hour) + 1 request-param surface dimension (type/search_type). All are declared in official_fields.json. The Supermetrics catalog (10 metrics / 73 dimensions) adds computed enrichments not available from the raw API: branded/non-branded classification, landing page tag extraction, URL parsing, SERP-position rounding, and system metadata — all enrichment_only. CTR is excluded from raw storage (AD-4 ratio rule; computed at the semantic layer from clicks/impressions).",
+    "official_field_count": 12,
+    "official_metrics": 4,
+    "official_dimensions": 8,
+    "supermetrics_total_metrics": 10,
+    "supermetrics_total_dimensions": 73,
+    "enrichment_only_estimate": "Most of the 73 Supermetrics dimensions are computed (landing page HTML analysis, URL parsing, branded/non-branded, SERP grouping). Raw GSC dimensions are 8 (this catalog)."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.google.com/webmaster-tools/v1/searchanalytics/query",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "sites_list_endpoint",
+          "url": "https://www.googleapis.com/webmasters/v3/sites",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "file": "supermetrics.md",
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/google-search-console-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/google-search-console-fields.md -o server/modules/gsc/catalog_sources/supermetrics.md   # DO NOT COMMIT this file (enrichment snapshot only)"
+    }
+  ],
+  "section_tier_map": {
+    "QUERY": "core",
+    "LANDING PAGE": "standard",
+    "GEO": "standard",
+    "DEVICE": "standard",
+    "TIME": "core",
+    "SEARCH APPEARANCE": "standard"
+  },
+  "field_tier_overrides": {
+    "clicks": "core",
+    "impressions": "core",
+    "average_position": "core",
+    "date": "core",
+    "query": "core",
+    "page": "core",
+    "country": "standard",
+    "device": "standard",
+    "search_type": "core",
+    "search_appearance": "standard",
+    "hour": "advanced",
+    "ctr": "core"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "dimensions_only",
+    "batch_size": 1,
+    "structural_note": "GSC searchAnalytics.query selects only DIMENSIONS in the request body (the four metrics -- clicks, impressions, ctr, position -- always come back together). The probe issues one 1-row window per dimension field; metric fields are ratified as a group by presence in the response rows."
+  },
+  "excluded_fields": {
+    "ctr": "Ratio metric computed at the semantic layer (AD-4); never stored raw.",
+    "hour": "Requires dataState=hourly_all which changes the data contract; ad-hoc only, excluded from catalog_daily."
+  },
+  "excluded_sections": {},
+  "exposure_policy": "catalog_driven",
+  "dimension_compatibility": {
+    "standalone_only": ["search_appearance"],
+    "excluded_from_catalog_daily": ["hour"]
+  }
+}

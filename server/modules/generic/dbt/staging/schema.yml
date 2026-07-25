@@ -1,0 +1,67 @@
+version: 2
+
+sources:
+  - name: raw_generic
+    description: >
+      Immutable raw landing zone for generic tabular daily data (AD-7: append-only).
+      Written by server/modules/generic/connector.py pull().
+      Long-format: one row per (date x metric x dimension combo).
+    schema: main
+    tables:
+      - name: raw_generic_daily
+        description: >
+          Raw generic daily data -- long-format landing.
+          project_id, date, metric, value DOUBLE, breakdown_dimension,
+          breakdown_value, pull_id, loaded_at.
+          AD-7: append-only; each pull batch identified by pull_id.
+          R3: date is canonical ISO 'YYYY-MM-DD' (normalized at landing by connector.py).
+        columns:
+          - name: project_id
+            description: "Project binding. Propagated from pull() caller."
+          - name: date
+            description: "Canonical ISO-8601 date (YYYY-MM-DD). Normalized at landing (R3)."
+          - name: metric
+            description: "Canonical metric name. Resolved via datastream_mappings (target_field)."
+          - name: value
+            description: "Numeric value for this (date, metric, dimension) combination (DOUBLE)."
+          - name: breakdown_dimension
+            description: "Dimension column name (nullable when no dimension columns present)."
+          - name: breakdown_value
+            description: "Dimension value (nullable when breakdown_dimension is null)."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+
+models:
+  - name: stg_generic_daily
+    description: >
+      Staging layer for generic daily data.
+      Passes through all long-format columns unchanged (date normalization already
+      applied at landing, R3). QUALIFY supersede semantics (AD-7): latest pull wins
+      per grain (project_id, date, metric, breakdown_dimension, breakdown_value).
+    columns:
+      - name: project_id
+        description: "Project binding."
+        tests:
+          - not_null
+      - name: date
+        description: "Canonical ISO-8601 date (YYYY-MM-DD). Already normalized at landing."
+        tests:
+          - not_null
+      - name: metric
+        description: "Canonical metric name."
+        tests:
+          - not_null
+      - name: value
+        description: "Numeric metric value (DOUBLE, AD-4)."
+      - name: breakdown_dimension
+        description: "Dimension column name (nullable)."
+      - name: breakdown_value
+        description: "Dimension value (nullable)."
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."

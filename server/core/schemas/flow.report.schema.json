@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "flow.report.schema.json",
+  "title": "FlowReport",
+  "description": "Declarative report-override flow document (Story 8.7, Epic 8 Part D + Refinement R6). Overrides/extends a module report pack (base_report_id). Includes R6 fields metric_definitions + llm_commentary_guidelines NOW so Stories 8.8 (widget affordances) and 8.9 (LLM commentary grounding) consume them. GUARDRAIL: additionalProperties:false everywhere — no secret field can appear.",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "base_report_id"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1" },
+    "kind": { "const": "report" },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Override id. For a report flow the id equals base_report_id (one override per (project, base_report_id))."
+    },
+    "project_id": { "type": ["string", "null"] },
+    "base_report_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The module report pack this override extends, as '<module_name>/<report_def_id>'."
+    },
+    "display_name": { "type": ["string", "null"] },
+    "metrics": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "dimensions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Chart/layout hints (chart_type, order_by, top_n, ...). Free-form; merged over the base pack layout."
+    },
+    "date_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default_days": { "type": "integer", "minimum": 1, "maximum": 365 },
+        "min_days": { "type": "integer", "minimum": 1, "maximum": 365 },
+        "max_days": { "type": "integer", "minimum": 1, "maximum": 365 }
+      }
+    },
+    "narrative_prompt": { "type": ["string", "null"] },
+    "metric_definitions": {
+      "type": "object",
+      "description": "R6: per-metric semantic grounding, keyed by metric name. Used as UI affordances (8.8) AND LLM commentary grounding (8.9).",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["definition"],
+        "additionalProperties": false,
+        "properties": {
+          "definition": { "type": "string", "minLength": 1 },
+          "unit": { "type": ["string", "null"] },
+          "direction": {
+            "type": "string",
+            "enum": ["up_good", "down_good", "neutral"]
+          },
+          "caveats": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "llm_commentary_guidelines": {
+      "type": ["string", "null"],
+      "description": "R6: report-level guidance for the LLM narrative (tone, focus, what to avoid)."
+    },
+    "card_template": {
+      "type": ["string", "null"],
+      "description": "Story 9.8: preferred card template id for this report (e.g. 'kpi', 'conversions', 'connectors'). get_report / get_card serve this template's widget when set; an explicit LLM template argument still overrides. An unknown id is ignored at render time with a structured warning (never breaks the report). Pattern-guarded to card-id charset.",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    }
+  }
+}

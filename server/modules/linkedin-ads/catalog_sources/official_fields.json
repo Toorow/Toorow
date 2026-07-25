@@ -1,0 +1,1101 @@
+[
+  {
+    "data_type": "integer",
+    "description": "actionClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "actionClicks",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "adUnitClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "adUnitClicks",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "appointmentsScheduled metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "appointmentsScheduled",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "approximateMemberReach metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "approximateMemberReach",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "audiencePenetration metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "audiencePenetration",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "averageDaysToClose revenue-attribution metric (attributedRevenueMetrics finder).",
+    "field_id": "averageDaysToClose",
+    "kind": "metric",
+    "section": "REVENUE ATTRIBUTION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "averageDealSizeInUsd revenue-attribution metric (attributedRevenueMetrics finder).",
+    "field_id": "averageDealSizeInUsd",
+    "kind": "metric",
+    "section": "REVENUE ATTRIBUTION"
+  },
+  {
+    "data_type": "integer",
+    "description": "averageDwellTime metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "averageDwellTime",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "averageEventWatchTime metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "averageEventWatchTime",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "decimal",
+    "description": "averageEventWatchTimeOver15Seconds metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "averageEventWatchTimeOver15Seconds",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "decimal",
+    "description": "averageEventWatchTimeOver2Minutes metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "averageEventWatchTimeOver2Minutes",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "decimal",
+    "description": "averageEventWatchTimeOver30Seconds metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "averageEventWatchTimeOver30Seconds",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "decimal",
+    "description": "averageVideoWatchTime metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "averageVideoWatchTime",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "string",
+    "description": "Campaign Group id, extracted from the CAMPAIGN_GROUP pivot URN.",
+    "field_id": "campaign_group_id",
+    "kind": "dimension",
+    "section": "STRUCTURE"
+  },
+  {
+    "data_type": "string",
+    "description": "Sponsored Campaign id, extracted from the CAMPAIGN pivot URN.",
+    "field_id": "campaign_id",
+    "kind": "dimension",
+    "section": "STRUCTURE"
+  },
+  {
+    "data_type": "integer",
+    "description": "cardClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "cardClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "cardImpressions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "cardImpressions",
+    "kind": "metric",
+    "section": "IMPRESSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "clicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "clicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "closedWonOpportunities revenue-attribution metric (attributedRevenueMetrics finder).",
+    "field_id": "closedWonOpportunities",
+    "kind": "metric",
+    "section": "REVENUE ATTRIBUTION"
+  },
+  {
+    "data_type": "integer",
+    "description": "commentLikes metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "commentLikes",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "comments metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "comments",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "companyPageClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "companyPageClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "conversionValueInLocalCurrency metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "conversionValueInLocalCurrency",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "conversions (externalWebsiteConversions) metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "conversions",
+    "kind": "metric",
+    "section": "CONVERSION",
+    "source_field": "externalWebsiteConversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "cost (costInLocalCurrency) metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "cost",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "costInLocalCurrency"
+  },
+  {
+    "data_type": "decimal",
+    "description": "costInUsd metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "costInUsd",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "decimal",
+    "description": "costPerEventView metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "costPerEventView",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "decimal",
+    "description": "costPerEventViewOver15Seconds metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "costPerEventViewOver15Seconds",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "decimal",
+    "description": "costPerEventViewOver2Minutes metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "costPerEventViewOver2Minutes",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "decimal",
+    "description": "costPerEventViewOver30Seconds metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "costPerEventViewOver30Seconds",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "decimal",
+    "description": "costPerQualifiedLead metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "costPerQualifiedLead",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "date",
+    "description": "Date range covered by the report data point (LinkedIn dateRange object).",
+    "field_id": "date",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "dateRange"
+  },
+  {
+    "data_type": "integer",
+    "description": "documentCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "documentCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "documentFirstQuartileCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "documentFirstQuartileCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "documentMidpointCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "documentMidpointCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "documentThirdQuartileCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "documentThirdQuartileCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "downloadClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "downloadClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "eventViews metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "eventViews",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "eventViewsOver15Seconds metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "eventViewsOver15Seconds",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "eventViewsOver2Minutes metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "eventViewsOver2Minutes",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "eventViewsOver30Seconds metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "eventViewsOver30Seconds",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "eventWatchTime metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "eventWatchTime",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "externalWebsitePostClickConversions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "externalWebsitePostClickConversions",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "externalWebsitePostViewConversions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "externalWebsitePostViewConversions",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "follows metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "follows",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "fullScreenPlays metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "fullScreenPlays",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "headlineClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "headlineClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "headlineImpressions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "headlineImpressions",
+    "kind": "metric",
+    "section": "IMPRESSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "impressions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "impressions",
+    "kind": "metric",
+    "section": "IMPRESSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "jobApplications metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "jobApplications",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "jobApplyClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "jobApplyClicks",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "landingPageClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "landingPageClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "leadGenerationMailInterestedClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "leadGenerationMailInterestedClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "leads (leadGenerationMailContactInfoShares) metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "leads",
+    "kind": "metric",
+    "section": "CONVERSION",
+    "source_field": "leadGenerationMailContactInfoShares"
+  },
+  {
+    "data_type": "integer",
+    "description": "likes metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "likes",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "oneClickLeadFormOpens metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "oneClickLeadFormOpens",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "oneClickLeads metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "oneClickLeads",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "openOpportunities revenue-attribution metric (attributedRevenueMetrics finder).",
+    "field_id": "openOpportunities",
+    "kind": "metric",
+    "section": "REVENUE ATTRIBUTION"
+  },
+  {
+    "data_type": "integer",
+    "description": "opens metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "opens",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "opportunityAmountInUsd revenue-attribution metric (attributedRevenueMetrics finder).",
+    "field_id": "opportunityAmountInUsd",
+    "kind": "metric",
+    "section": "REVENUE ATTRIBUTION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "opportunityWinRate revenue-attribution metric (attributedRevenueMetrics finder).",
+    "field_id": "opportunityWinRate",
+    "kind": "metric",
+    "section": "REVENUE ATTRIBUTION"
+  },
+  {
+    "data_type": "integer",
+    "description": "otherEngagements metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "otherEngagements",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "json",
+    "description": "Serialized pivot URNs for the record (one entry per requested pivot).",
+    "field_id": "pivotValues",
+    "kind": "dimension",
+    "section": "STRUCTURE"
+  },
+  {
+    "data_type": "string",
+    "description": "ACCOUNT pivot -- Group results by ad account.",
+    "field_id": "pivot_ACCOUNT",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:ACCOUNT"
+  },
+  {
+    "data_type": "string",
+    "description": "CAMPAIGN pivot -- Group results by campaign.",
+    "field_id": "pivot_CAMPAIGN",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:CAMPAIGN"
+  },
+  {
+    "data_type": "string",
+    "description": "CAMPAIGN_GROUP pivot -- Group results by campaign group.",
+    "field_id": "pivot_CAMPAIGN_GROUP",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:CAMPAIGN_GROUP"
+  },
+  {
+    "data_type": "string",
+    "description": "CARD_INDEX pivot -- Group results by carousel card index.",
+    "field_id": "pivot_CARD_INDEX",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:CARD_INDEX"
+  },
+  {
+    "data_type": "string",
+    "description": "COMPANY pivot -- Group results by advertiser's company.",
+    "field_id": "pivot_COMPANY",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:COMPANY"
+  },
+  {
+    "data_type": "string",
+    "description": "CONVERSATION_NODE pivot -- Information for each node of the conversation tree.",
+    "field_id": "pivot_CONVERSATION_NODE",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:CONVERSATION_NODE"
+  },
+  {
+    "data_type": "string",
+    "description": "CONVERSATION_NODE_OPTION_INDEX pivot -- Conversation node button index.",
+    "field_id": "pivot_CONVERSATION_NODE_OPTION_INDEX",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:CONVERSATION_NODE_OPTION_INDEX"
+  },
+  {
+    "data_type": "string",
+    "description": "CONVERSION pivot -- Group results by conversion.",
+    "field_id": "pivot_CONVERSION",
+    "kind": "dimension",
+    "section": "CONVERSION",
+    "source_field": "pivot:CONVERSION"
+  },
+  {
+    "data_type": "string",
+    "description": "CREATIVE pivot -- Group results by creative.",
+    "field_id": "pivot_CREATIVE",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:CREATIVE"
+  },
+  {
+    "data_type": "string",
+    "description": "EVENT_STAGE pivot -- Group results by live event stage (PRE_LIVE/LIVE/POST_LIVE).",
+    "field_id": "pivot_EVENT_STAGE",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:EVENT_STAGE"
+  },
+  {
+    "data_type": "string",
+    "description": "IMPRESSION_DEVICE_TYPE pivot -- Group results by impression device type.",
+    "field_id": "pivot_IMPRESSION_DEVICE_TYPE",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:IMPRESSION_DEVICE_TYPE"
+  },
+  {
+    "data_type": "string",
+    "description": "MEMBER_COMPANY pivot -- Group results by member company.",
+    "field_id": "pivot_MEMBER_COMPANY",
+    "kind": "dimension",
+    "section": "DEMOGRAPHICS",
+    "source_field": "pivot:MEMBER_COMPANY"
+  },
+  {
+    "data_type": "string",
+    "description": "MEMBER_COMPANY_SIZE pivot -- Group results by member company size.",
+    "field_id": "pivot_MEMBER_COMPANY_SIZE",
+    "kind": "dimension",
+    "section": "DEMOGRAPHICS",
+    "source_field": "pivot:MEMBER_COMPANY_SIZE"
+  },
+  {
+    "data_type": "string",
+    "description": "MEMBER_COUNTRY_V2 pivot -- Group results by member country (Bing geo).",
+    "field_id": "pivot_MEMBER_COUNTRY_V2",
+    "kind": "dimension",
+    "section": "DEMOGRAPHICS",
+    "source_field": "pivot:MEMBER_COUNTRY_V2"
+  },
+  {
+    "data_type": "string",
+    "description": "MEMBER_COUNTY pivot -- Group results by member county (Bing geo).",
+    "field_id": "pivot_MEMBER_COUNTY",
+    "kind": "dimension",
+    "section": "DEMOGRAPHICS",
+    "source_field": "pivot:MEMBER_COUNTY"
+  },
+  {
+    "data_type": "string",
+    "description": "MEMBER_INDUSTRY pivot -- Group results by member industry.",
+    "field_id": "pivot_MEMBER_INDUSTRY",
+    "kind": "dimension",
+    "section": "DEMOGRAPHICS",
+    "source_field": "pivot:MEMBER_INDUSTRY"
+  },
+  {
+    "data_type": "string",
+    "description": "MEMBER_JOB_FUNCTION pivot -- Group results by member job function.",
+    "field_id": "pivot_MEMBER_JOB_FUNCTION",
+    "kind": "dimension",
+    "section": "DEMOGRAPHICS",
+    "source_field": "pivot:MEMBER_JOB_FUNCTION"
+  },
+  {
+    "data_type": "string",
+    "description": "MEMBER_JOB_TITLE pivot -- Group results by member job title.",
+    "field_id": "pivot_MEMBER_JOB_TITLE",
+    "kind": "dimension",
+    "section": "DEMOGRAPHICS",
+    "source_field": "pivot:MEMBER_JOB_TITLE"
+  },
+  {
+    "data_type": "string",
+    "description": "MEMBER_REGION_V2 pivot -- Group results by member region (Bing geo).",
+    "field_id": "pivot_MEMBER_REGION_V2",
+    "kind": "dimension",
+    "section": "DEMOGRAPHICS",
+    "source_field": "pivot:MEMBER_REGION_V2"
+  },
+  {
+    "data_type": "string",
+    "description": "MEMBER_SENIORITY pivot -- Group results by member seniority.",
+    "field_id": "pivot_MEMBER_SENIORITY",
+    "kind": "dimension",
+    "section": "DEMOGRAPHICS",
+    "source_field": "pivot:MEMBER_SENIORITY"
+  },
+  {
+    "data_type": "string",
+    "description": "OBJECTIVE_TYPE pivot -- Group results by campaign objective type (statistics finder).",
+    "field_id": "pivot_OBJECTIVE_TYPE",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:OBJECTIVE_TYPE"
+  },
+  {
+    "data_type": "string",
+    "description": "PLACEMENT_NAME pivot -- Group results by placement.",
+    "field_id": "pivot_PLACEMENT_NAME",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:PLACEMENT_NAME"
+  },
+  {
+    "data_type": "string",
+    "description": "SERVING_LOCATION pivot -- Group results by serving location (onsite/offsite).",
+    "field_id": "pivot_SERVING_LOCATION",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:SERVING_LOCATION"
+  },
+  {
+    "data_type": "string",
+    "description": "SHARE pivot -- Group results by sponsored share.",
+    "field_id": "pivot_SHARE",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "pivot:SHARE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "postClickJobApplications metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "postClickJobApplications",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "postClickJobApplyClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "postClickJobApplyClicks",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "postClickRegistrations metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "postClickRegistrations",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "postViewJobApplications metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "postViewJobApplications",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "postViewJobApplyClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "postViewJobApplyClicks",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "postViewRegistrations metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "postViewRegistrations",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "qualifiedLeads metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "qualifiedLeads",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "reactions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "reactions",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "registrations metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "registrations",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "returnOnAdSpend revenue-attribution metric (attributedRevenueMetrics finder).",
+    "field_id": "returnOnAdSpend",
+    "kind": "metric",
+    "section": "REVENUE ATTRIBUTION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "revenueWonInUsd revenue-attribution metric (attributedRevenueMetrics finder).",
+    "field_id": "revenueWonInUsd",
+    "kind": "metric",
+    "section": "REVENUE ATTRIBUTION"
+  },
+  {
+    "data_type": "integer",
+    "description": "sends metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "sends",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "shares metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "shares",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "subscriptionClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "subscriptionClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "talentLeads metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "talentLeads",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "textUrlClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "textUrlClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "totalEngagements metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "totalEngagements",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "validWorkEmailLeads metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "validWorkEmailLeads",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "videoCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "videoCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "videoFirstQuartileCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "videoFirstQuartileCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "videoMidpointCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "videoMidpointCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "videoStarts metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "videoStarts",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "videoThirdQuartileCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "videoThirdQuartileCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "videoViews metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "videoViews",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "videoWatchTime metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "videoWatchTime",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralCardClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralCardClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralCardImpressions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralCardImpressions",
+    "kind": "metric",
+    "section": "IMPRESSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralCommentLikes metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralCommentLikes",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralComments metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralComments",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralCompanyPageClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralCompanyPageClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralDocumentCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralDocumentCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralDocumentFirstQuartileCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralDocumentFirstQuartileCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralDocumentMidpointCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralDocumentMidpointCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralDocumentThirdQuartileCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralDocumentThirdQuartileCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralDownloadClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralDownloadClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralExternalWebsiteConversions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralExternalWebsiteConversions",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralExternalWebsitePostClickConversions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralExternalWebsitePostClickConversions",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralExternalWebsitePostViewConversions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralExternalWebsitePostViewConversions",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralFollows metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralFollows",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralFullScreenPlays metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralFullScreenPlays",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralImpressions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralImpressions",
+    "kind": "metric",
+    "section": "IMPRESSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "viralJobApplications metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralJobApplications",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "viralJobApplyClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralJobApplyClicks",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralLandingPageClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralLandingPageClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralLikes metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralLikes",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralOneClickLeadFormOpens metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralOneClickLeadFormOpens",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralOneClickLeads metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralOneClickLeads",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralOtherEngagements metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralOtherEngagements",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "viralPostClickJobApplications metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralPostClickJobApplications",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "viralPostClickJobApplyClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralPostClickJobApplyClicks",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "viralPostClickRegistrations metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralPostClickRegistrations",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "viralPostViewJobApplications metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralPostViewJobApplications",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "viralPostViewJobApplyClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralPostViewJobApplyClicks",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "viralPostViewRegistrations metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralPostViewRegistrations",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralReactions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralReactions",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "viralRegistrations metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralRegistrations",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralShares metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralShares",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralSubscriptionClicks metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralSubscriptionClicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralTotalEngagements metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralTotalEngagements",
+    "kind": "metric",
+    "section": "SOCIAL ACTIONS"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralVideoCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralVideoCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralVideoFirstQuartileCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralVideoFirstQuartileCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralVideoMidpointCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralVideoMidpointCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralVideoStarts metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralVideoStarts",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralVideoThirdQuartileCompletions metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralVideoThirdQuartileCompletions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "integer",
+    "description": "viralVideoViews metric from the LinkedIn Marketing adAnalytics endpoint.",
+    "field_id": "viralVideoViews",
+    "kind": "metric",
+    "section": "VIDEO"
+  }
+]

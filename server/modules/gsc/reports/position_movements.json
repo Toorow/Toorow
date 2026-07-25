@@ -1,0 +1,17 @@
+{
+  "id": "position_movements",
+  "display_name": "Mouvements de position & visibilité",
+  "metrics": ["average_position", "impressions", "clicks"],
+  "dimensions": ["date", "page"],
+  "layout": {
+    "chart_type": "line",
+    "order_by": "date",
+    "top_n": 50
+  },
+  "narrative_prompt": "Analyse SEO: identifie les mouvements de position hebdomadaires (hausse ≥2 rangs = opportunité, baisse ≥2 rangs = alerte). Corrèle avec la visibilité (impressions). Limite à 150 chars.",
+  "date_window": {
+    "default_days": 90,
+    "min_days": 21,
+    "max_days": 365
+  }
+}

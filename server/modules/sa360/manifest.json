@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.2",
+  "name": "sa360",
+  "display_name": "Search Ads 360",
+  "public_catalog": {
+    "visibility": "public",
+    "category": "paid_media",
+    "onboarding_modes": ["connector_pull"],
+    "verification": {
+      "status": "blocked",
+      "reason_code": "live_evidence_not_ratified",
+      "follow_up": "Probe an authorized SA360 direct or manager-routed client across discovery, Search, SearchStream, compatibility, physical types and errors."
+    }
+  },
+  "auth_type": "google_direct",
+  "module_kind": "kpi",
+  "provider_api_version": "search-ads-360-reporting-v0",
+  "provider_api_base": "https://searchads360.googleapis.com/v0",
+  "_provider_api_note": "Read-only Search Ads 360 Reporting API v0. Search handles bounded pages and SearchStream handles expected result sets above 10000 rows.",
+  "auth": {"type": "google_direct", "auth_path": "google_direct", "scope": "https://www.googleapis.com/auth/doubleclicksearch"},
+  "account_topology": {
+    "levels": ["accessible_customer", "manager_login_customer", "client_customer"],
+    "selection_level": "client_customer",
+    "discovery": {"callable": "discover_accounts"},
+    "selection": {"required": true, "opaque": true},
+    "backfill_window_days": 30,
+    "_backfill_window_note": "SA360 default conversion attribution window is 30 days; pulling less than 30 days back risks under-counting late-attributed conversions. The Reporting API v0 has no hard backfill ceiling, so 30 days is a policy floor, not a technical limit."
+  },
+  "report_profiles": [
+    {"id": "campaign_daily", "display_name": "Campaign performance (daily)", "metrics": ["metrics.impressions", "metrics.clicks", "metrics.cost_micros", "metrics.conversions"], "dimensions": ["segments.date", "customer.id", "campaign.id", "segments.device"], "extraction_capabilities": {"row_limit": null, "filters_supported": true, "realtime": false}, "extraction_path": "custom_pull"},
+    {"id": "ad_group_daily", "display_name": "Ad group performance (daily)", "metrics": ["metrics.impressions", "metrics.clicks", "metrics.cost_micros", "metrics.conversions"], "dimensions": ["segments.date", "customer.id", "campaign.id", "adGroup.id", "segments.device"], "extraction_capabilities": {"row_limit": null, "filters_supported": true, "realtime": false}, "extraction_path": "custom_pull"},
+    {"id": "keyword_daily", "display_name": "Keyword performance (daily)", "metrics": ["metrics.impressions", "metrics.clicks", "metrics.cost_micros", "metrics.conversions", "metrics.search_impression_share"], "dimensions": ["segments.date", "customer.id", "campaign.id", "adGroup.id", "adGroupCriterion.criterionId", "segments.device"], "extraction_capabilities": {"row_limit": null, "filters_supported": true, "realtime": false}, "extraction_path": "custom_pull"},
+    {"id": "catalog_daily", "display_name": "Explicit compatible SA360 fields", "metrics": ["metrics.impressions", "metrics.clicks"], "dimensions": ["segments.date", "customer.id", "campaign.id"], "extraction_capabilities": {"row_limit": 10000, "filters_supported": true, "realtime": false}, "extraction_path": "custom_pull"}
+  ],
+  "canonical_metric_mapping": {
+    "metrics.impressions": "impressions",
+    "metrics.clicks": "clicks",
+    "metrics.cost_micros": "cost",
+    "metrics.conversions": "conversions",
+    "metrics.conversions_value": "conversions_value",
+    "metrics.average_cpc_micros": {"canonical": "average_cpc", "aggregation_rule": "impression_weighted", "non_additive": true},
+    "metrics.search_impression_share": {"canonical": "search_impression_share", "aggregation_rule": "impression_weighted", "non_additive": true},
+    "metrics.click_through_rate": {"canonical": "click_through_rate", "aggregation_rule": "impression_weighted", "non_additive": true}
+  },
+  "canonical_dimension_mapping": {
+    "segments.date": "date", "customer.id": "customer_id", "campaign.id": "campaign_id", "adGroup.id": "ad_group_id", "adGroupCriterion.criterionId": "criterion_id", "segments.device": "device", "customer.currencyCode": "currency_code"
+  },
+  "error_map": {
+    "401:UNAUTHENTICATED": "auth_expired", "403:PERMISSION_DENIED": "permission_denied", "400:INVALID_ARGUMENT": "invalid_request", "400:INVALID_PAGE_SIZE": "invalid_request", "400:FILTER_HAS_TOO_MANY_VALUES": "invalid_request", "404:NOT_FOUND": "invalid_request", "500:INTERNAL": "provider_transient", "503:UNAVAILABLE": "provider_transient"
+  },
+  "quota": {"window_seconds": 60, "budget_points": 3000, "read_cost": 1, "write_cost": 1,
+    "_validation_required": "message_too_large_429_shape: the Sa360MessageTooLargeError heuristic matches substrings ('message larger', '4 mb', 'received message larger') in the JSON-serialized 429 body. The exact gRPC 4 MB transport-limit error shape is unconfirmed against a live response; if the provider encodes it differently (grpc-message header or another key) it would fall through to RateLimitError. Confirm during the live probe."},
+  "_quota_note": "3000 queries/minute/project/user, 3000/minute/project and 150000/day/project. Follow-up Search pages are not recharged; maximum page size 10000 and IN list 20000.",
+  "source_capabilities": {
+    "contract_version": "1",
+    "field_discovery": {"mode": "static", "allowed_targets": []},
+    "fields": [
+      {"field_id": "segments.date", "source_field": "segments.date", "kind": "dimension", "physical_type": "date", "description": "Reporting date segment.", "semantic_hints": ["date"], "canonical_target": "date", "aggregation": "none", "non_additive": false},
+      {"field_id": "customer.id", "source_field": "customer.id", "kind": "dimension", "physical_type": "string", "description": "Client customer identifier.", "semantic_hints": ["customer", "identifier"], "canonical_target": "customer_id", "aggregation": "none", "non_additive": false},
+      {"field_id": "campaign.id", "source_field": "campaign.id", "kind": "dimension", "physical_type": "string", "description": "Campaign resource identifier.", "semantic_hints": ["campaign", "identifier"], "canonical_target": "campaign_id", "aggregation": "none", "non_additive": false},
+      {"field_id": "adGroup.id", "source_field": "adGroup.id", "kind": "dimension", "physical_type": "string", "description": "Ad group resource identifier.", "semantic_hints": ["ad_group", "identifier"], "canonical_target": "ad_group_id", "aggregation": "none", "non_additive": false},
+      {"field_id": "adGroupCriterion.criterionId", "source_field": "adGroupCriterion.criterionId", "kind": "dimension", "physical_type": "string", "description": "Keyword criterion identifier.", "semantic_hints": ["keyword", "identifier"], "canonical_target": "criterion_id", "aggregation": "none", "non_additive": false},
+      {"field_id": "segments.device", "source_field": "segments.device", "kind": "dimension", "physical_type": "string", "description": "Device segment.", "semantic_hints": ["device"], "canonical_target": "device", "aggregation": "none", "non_additive": false},
+      {"field_id": "customer.currencyCode", "source_field": "customer.currencyCode", "kind": "dimension", "physical_type": "string", "description": "Customer currency code.", "semantic_hints": ["currency"], "canonical_target": "currency_code", "aggregation": "none", "non_additive": false},
+      {"field_id": "metrics.impressions", "source_field": "metrics.impressions", "kind": "metric", "physical_type": "integer", "description": "Recorded impressions.", "semantic_hints": ["delivery"], "canonical_target": "impressions", "aggregation": "sum", "non_additive": false},
+      {"field_id": "metrics.clicks", "source_field": "metrics.clicks", "kind": "metric", "physical_type": "integer", "description": "Recorded clicks.", "semantic_hints": ["delivery"], "canonical_target": "clicks", "aggregation": "sum", "non_additive": false},
+      {"field_id": "metrics.cost_micros", "source_field": "metrics.costMicros", "kind": "metric", "physical_type": "integer", "description": "Cost in customer-currency micros.", "semantic_hints": ["cost", "currency", "micros"], "canonical_target": "cost", "aggregation": "sum", "non_additive": false},
+      {"field_id": "metrics.conversions", "source_field": "metrics.conversions", "kind": "metric", "physical_type": "decimal", "description": "Attributed conversions.", "semantic_hints": ["conversion"], "canonical_target": "conversions", "aggregation": "sum", "non_additive": false},
+      {"field_id": "metrics.conversions_value", "source_field": "metrics.conversionsValue", "kind": "metric", "physical_type": "decimal", "description": "Attributed conversion value.", "semantic_hints": ["conversion", "currency"], "canonical_target": "conversions_value", "aggregation": "sum", "non_additive": false},
+      {"field_id": "metrics.average_cpc_micros", "source_field": "metrics.averageCpcMicros", "kind": "metric", "physical_type": "integer", "description": "Average CPC in micros.", "semantic_hints": ["average", "non_additive", "micros"], "canonical_target": "average_cpc", "aggregation": "impression_weighted", "non_additive": true},
+      {"field_id": "metrics.search_impression_share", "source_field": "metrics.searchImpressionShare", "kind": "metric", "physical_type": "decimal", "description": "Search impression share.", "semantic_hints": ["share", "ratio", "non_additive"], "canonical_target": "search_impression_share", "aggregation": "impression_weighted", "non_additive": true},
+      {"field_id": "metrics.click_through_rate", "source_field": "metrics.clickThroughRate", "kind": "metric", "physical_type": "decimal", "description": "Click-through rate.", "semantic_hints": ["rate", "ratio", "non_additive"], "canonical_target": "click_through_rate", "aggregation": "impression_weighted", "non_additive": true}
+    ],
+    "reports": [
+      {"id": "campaign_daily", "selection_mode": "exact_bundle", "availability": {"status": "selectable"}, "metrics": ["metrics.impressions", "metrics.clicks", "metrics.cost_micros", "metrics.conversions"], "dimensions": ["segments.date", "customer.id", "campaign.id", "segments.device"], "supported_grains": [["segments.date", "customer.id", "campaign.id", "segments.device"]], "compatibility": [], "filters": [{"field_id": "segments.date", "operators": ["gte", "lte"]}], "pagination": {"mode": "cursor", "completeness": "complete", "max_pages": null, "row_limit": null, "truncation_signal": "none"}, "quota_cost": {"read_points": 1, "unit": "request"}, "incremental": {"mode": "date_window", "cursor_field": null}, "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}, "dispatch": {"callable": "pull_campaign_daily"}},
+      {"id": "ad_group_daily", "selection_mode": "exact_bundle", "availability": {"status": "selectable"}, "metrics": ["metrics.impressions", "metrics.clicks", "metrics.cost_micros", "metrics.conversions"], "dimensions": ["segments.date", "customer.id", "campaign.id", "adGroup.id", "segments.device"], "supported_grains": [["segments.date", "customer.id", "campaign.id", "adGroup.id", "segments.device"]], "compatibility": [], "filters": [{"field_id": "segments.date", "operators": ["gte", "lte"]}], "pagination": {"mode": "cursor", "completeness": "complete", "max_pages": null, "row_limit": null, "truncation_signal": "none"}, "quota_cost": {"read_points": 1, "unit": "request"}, "incremental": {"mode": "date_window", "cursor_field": null}, "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}, "dispatch": {"callable": "pull_ad_group_daily"}},
+      {"id": "keyword_daily", "selection_mode": "exact_bundle", "availability": {"status": "selectable"}, "metrics": ["metrics.impressions", "metrics.clicks", "metrics.cost_micros", "metrics.conversions", "metrics.search_impression_share"], "dimensions": ["segments.date", "customer.id", "campaign.id", "adGroup.id", "adGroupCriterion.criterionId", "segments.device"], "supported_grains": [["segments.date", "customer.id", "campaign.id", "adGroup.id", "adGroupCriterion.criterionId", "segments.device"]], "compatibility": [], "filters": [{"field_id": "segments.date", "operators": ["gte", "lte"]}], "pagination": {"mode": "cursor", "completeness": "complete", "max_pages": null, "row_limit": null, "truncation_signal": "none"}, "quota_cost": {"read_points": 1, "unit": "request"}, "incremental": {"mode": "date_window", "cursor_field": null}, "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}, "dispatch": {"callable": "pull_keyword_daily"}},
+      {"id": "catalog_daily", "selection_mode": "catalog_driven", "availability": {"status": "selectable"}, "metrics": ["metrics.impressions", "metrics.clicks"], "dimensions": ["segments.date", "customer.id", "campaign.id"], "supported_grains": [["segments.date", "customer.id", "campaign.id"]], "compatibility": [], "filters": [{"field_id": "segments.date", "operators": ["gte", "lte"]}], "pagination": {"mode": "cursor", "completeness": "bounded", "max_pages": 1, "row_limit": 10000, "truncation_signal": "explicit"}, "quota_cost": {"read_points": 1, "unit": "request"}, "incremental": {"mode": "date_window", "cursor_field": null}, "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual"]}, "dispatch": {"callable": "pull_catalog_daily"}}
+    ]
+  }
+}

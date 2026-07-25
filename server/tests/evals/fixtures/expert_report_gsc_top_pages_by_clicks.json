@@ -1,0 +1,22 @@
+[
+  {
+    "clicks": 5451.0,
+    "page": "https://example.com/"
+  },
+  {
+    "clicks": 760.0,
+    "page": "https://example.com/blog/"
+  },
+  {
+    "clicks": 383.0,
+    "page": "https://example.com/docs/"
+  },
+  {
+    "clicks": 221.0,
+    "page": "https://example.com/products/"
+  },
+  {
+    "clicks": 170.0,
+    "page": "https://example.com/pricing/"
+  }
+]

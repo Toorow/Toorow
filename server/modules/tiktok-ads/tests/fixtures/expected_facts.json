@@ -1,0 +1,72 @@
+[
+  {
+    "date": "2026-07-01",
+    "data_level": "AUCTION_CAMPAIGN",
+    "campaign_id": "1770000000000000001",
+    "campaign_name": "Toorow - Notoriete FR",
+    "adgroup_id": null,
+    "adgroup_name": null,
+    "ad_id": null,
+    "cost": "128.50",
+    "impressions": "25700",
+    "clicks": "411",
+    "conversions": "23",
+    "cost_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-01",
+    "data_level": "AUCTION_CAMPAIGN",
+    "campaign_id": "1770000000000000002",
+    "campaign_name": "Toorow - Conversion Web",
+    "adgroup_id": null,
+    "adgroup_name": null,
+    "ad_id": null,
+    "cost": "64.00",
+    "impressions": "9800",
+    "clicks": "176",
+    "conversions": "12",
+    "cost_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-02",
+    "data_level": "AUCTION_CAMPAIGN",
+    "campaign_id": "1770000000000000003",
+    "campaign_name": "Toorow - Retargeting Panier",
+    "adgroup_id": null,
+    "adgroup_name": null,
+    "ad_id": null,
+    "cost": "210.90",
+    "impressions": "31200",
+    "clicks": "624",
+    "conversions": "41",
+    "cost_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-02",
+    "data_level": "AUCTION_CAMPAIGN",
+    "campaign_id": "1770000000000000001",
+    "campaign_name": "Toorow - Notoriete FR",
+    "adgroup_id": null,
+    "adgroup_name": null,
+    "ad_id": null,
+    "cost": "95.40",
+    "impressions": "19100",
+    "clicks": "268",
+    "conversions": "9",
+    "cost_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-03",
+    "data_level": "AUCTION_CAMPAIGN",
+    "campaign_id": "1770000000000000002",
+    "campaign_name": null,
+    "adgroup_id": null,
+    "adgroup_name": null,
+    "ad_id": null,
+    "cost": "40.00",
+    "impressions": "6400",
+    "clicks": "88",
+    "conversions": "4",
+    "cost_source_currency": "EUR"
+  }
+]

@@ -1,0 +1,58 @@
+[
+  {
+    "id": "sqpmt_5000000001",
+    "created_at": "2026-07-01T09:15:00Z",
+    "status": "COMPLETED",
+    "location_id": "L_PARIS",
+    "order_id": "sqord_0000000001",
+    "amount_money": { "amount": 12850, "currency": "EUR" },
+    "processing_fee": [
+      { "type": "INITIAL", "amount_money": { "amount": 398, "currency": "EUR" } }
+    ]
+  },
+  {
+    "id": "sqpmt_5000000002",
+    "created_at": "2026-07-01T18:42:10Z",
+    "status": "COMPLETED",
+    "location_id": "L_PARIS",
+    "order_id": "sqord_0000000002",
+    "amount_money": { "amount": 6400, "currency": "EUR" },
+    "processing_fee": [
+      { "type": "INITIAL", "amount_money": { "amount": 211, "currency": "EUR" } }
+    ]
+  },
+  {
+    "id": "sqpmt_5000000003",
+    "created_at": "2026-07-02T11:05:00Z",
+    "status": "COMPLETED",
+    "location_id": "L_LYON",
+    "order_id": "sqord_0000000003",
+    "amount_money": { "amount": 21090, "currency": "EUR" },
+    "refunded_money": { "amount": 4218, "currency": "EUR" },
+    "processing_fee": [
+      { "type": "INITIAL", "amount_money": { "amount": 500, "currency": "EUR" } },
+      { "type": "ADJUSTMENT", "amount_money": { "amount": 137, "currency": "EUR" } }
+    ]
+  },
+  {
+    "id": "sqpmt_5000000004",
+    "created_at": "2026-07-02T20:30:45Z",
+    "status": "COMPLETED",
+    "location_id": "L_LYON",
+    "amount_money": { "amount": 3999, "currency": "EUR" },
+    "processing_fee": [
+      { "type": "INITIAL", "amount_money": { "amount": 141, "currency": "EUR" } }
+    ]
+  },
+  {
+    "id": "sqpmt_5000000005",
+    "created_at": "2026-07-03T04:00:00Z",
+    "status": "COMPLETED",
+    "location_id": "L_TOKYO",
+    "amount_money": { "amount": 15000, "currency": "JPY" },
+    "refunded_money": { "amount": 15000, "currency": "JPY" },
+    "processing_fee": [
+      { "type": "INITIAL", "amount_money": { "amount": 450, "currency": "JPY" } }
+    ]
+  }
+]

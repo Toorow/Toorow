@@ -1,0 +1,207 @@
+/**
+ * semantic-model.css — page-specific styles for DataModelPage (the semantic /
+ * metric model surface mounted at Governance ▸ Semantic model).
+ *
+ * v3 restyle: mirrors the conventions of the validated governance surfaces
+ *   shell/pages/project-mapping.css  (concept table + summary strip)
+ *   shell/pages/sources.css          (summary cards + panel table)
+ * Shell/layout classes (page-header, header-actions, panel, primary-button,
+ * secondary-button, selector, signal-label, signal-mark, number, event, sr-only)
+ * live in application.css and are global. This file only adds the
+ * semantic-model-specific pieces.
+ *
+ * Tokenized: every color references an application.css CSS variable so the
+ * surface flips correctly in dark mode. Numbers use the Geist tabular treatment
+ * via the .number token and the strong rules below.
+ */
+
+/* --- Summary strip (metrics / dimensions / unmapped) --- */
+.sm-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.sm-summary > div {
+  min-height: 94px;
+  padding: 17px 18px;
+  border-right: 1px solid var(--line);
+}
+.sm-summary > div:last-child { border-right: 0; }
+.sm-summary span { color: var(--muted); font-size: 12px; }
+.sm-summary strong {
+  display: block;
+  margin-top: 8px;
+  font: 600 25px "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.sm-summary small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+
+/* --- Panel + toolbar --- */
+.sm-panel { overflow: hidden; }
+.sm-toolbar {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.sm-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sm-toolbar .sm-count { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+/* --- Scroll wrapper for the fields table --- */
+.sm-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--line) transparent;
+  scrollbar-gutter: stable;
+}
+.sm-table-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.sm-table-scroll .sm-table { min-width: 760px; }
+
+/* --- Fields table --- */
+.sm-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.sm-table th {
+  height: 42px;
+  padding: 0 16px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+.sm-table th.sm-align-right { text-align: right; }
+.sm-table td {
+  height: 64px;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.sm-table th:nth-child(1) { width: 30%; }
+.sm-table th:nth-child(2) { width: 20%; }
+.sm-table th:nth-child(3) { width: 15%; }
+.sm-table th:nth-child(4) { width: 17%; }
+.sm-table th:nth-child(5) { width: 18%; }
+
+.sm-row { cursor: pointer; }
+.sm-row:hover { background: var(--surface-2); }
+.sm-row.selected { background: color-mix(in srgb, var(--rose) 8%, var(--surface)); }
+.sm-row.selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--rose);
+}
+
+/* Field name cell */
+.sm-field strong { display: block; font-size: 13px; }
+.sm-field small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+
+/* Kind pill (metric / dimension) */
+.sm-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sm-kind-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: transparent;
+  border: 1.5px solid var(--muted);
+}
+.sm-kind.metric .sm-kind-dot {
+  background: color-mix(in srgb, var(--rose) 30%, transparent);
+  border-color: var(--rose);
+}
+.sm-kind strong { font-size: 13px; font-weight: 600; }
+.sm-kind.dimension strong { color: var(--muted); font-weight: 500; }
+.sm-datatype { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+
+.sm-measure { color: var(--muted); font-size: 13px; }
+.sm-muted { color: var(--muted); }
+
+/* Used-by number is the hero */
+.sm-usedby { text-align: right; }
+.sm-usedby .sm-usedby-value {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  font-weight: 700;
+}
+.sm-usedby .sm-usedby-unit { margin-left: 5px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.sm-usedby .sm-usedby-zero { color: var(--muted); font-size: 13px; }
+
+/* Status chips */
+.sm-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sm-status-chip .sm-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.sm-status-chip.draft {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 26%, transparent);
+}
+.sm-status-chip.draft .sm-status-dot { background: var(--warning); }
+.sm-status-chip.unmapped {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+.sm-status-chip.unmapped .sm-status-dot { background: var(--muted); }
+
+/* Empty / loading / error states inside the panel */
+.sm-state {
+  padding: 56px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.sm-state p { margin: 0; font-size: 14px; }
+.sm-state .sm-state-hint { margin-top: 8px; font-size: 12px; }
+.sm-state .sm-retry {
+  margin-top: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--rose);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.sm-state.error p { color: var(--error); }
+
+/* Narrow-desktop resilience */
+@media (max-width: 1100px) {
+  .sm-summary { grid-template-columns: 1fr; }
+  .sm-summary > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .sm-summary > div:last-child { border-bottom: 0; }
+  .sm-toolbar { flex-wrap: wrap; align-items: flex-start; }
+  .sm-toolbar .sm-count { margin-left: 0; }
+}

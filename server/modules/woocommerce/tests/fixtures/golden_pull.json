@@ -1,0 +1,47 @@
+[
+  {
+    "date": "2026-07-01",
+    "order_id": "1001",
+    "transaction_id": "ch_3Nabc0010",
+    "total": 128.5,
+    "total_refunded": 0.0,
+    "orders_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-01",
+    "order_id": "1002",
+    "transaction_id": "ch_3Nabc0017",
+    "total": 64.0,
+    "total_refunded": 0.0,
+    "orders_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-02",
+    "order_id": "1003",
+    "transaction_id": "ch_3Nabc0024",
+    "total": 210.9,
+    "total_refunded": 42.18,
+    "orders_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-02",
+    "order_id": "1004",
+    "transaction_id": null,
+    "total": 39.99,
+    "total_refunded": 0.0,
+    "orders_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-03",
+    "order_id": "1005",
+    "transaction_id": "ch_3Nabc0038",
+    "total": 155.0,
+    "total_refunded": 155.0,
+    "orders_count": 1,
+    "revenue_source_currency": "EUR"
+  }
+]

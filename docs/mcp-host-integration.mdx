@@ -1,0 +1,111 @@
+---
+title: MCP Host & Agent Integration Guide
+description: Connecting internal platform agents and external LLM host clients to toorow via FastMCP HTTP.
+---
+
+**toorow** operates as a FastMCP microkernel server (`server/core/main.py`), exposing audited data tools and interactive MCP App UI widgets to artificial intelligence agents.
+
+---
+
+## 1. The Two Agent Paradigms in Toorow
+
+toorow orchestrates two distinct agent paradigms that operate in tandem across the platform:
+
+```
++-------------------------------------------------------------------------------+
+|                               TOOROW PLATFORM                                 |
+|                                                                               |
+|  +---------------------------------+   +-----------------------------------+  |
+|  |  1. INTERNAL PLATFORM AGENTS    |   |  2. EXTERNAL LLM HOST AGENTS      |  |
+|  |  (In-Process Scheduled Threads) |   |  (Claude Desktop, Cursor, LLMs)   |  |
+|  |                                 |   |                                   |  |
+|  |  - Nightly Ingestion Evaluator  |   |  - FastMCP Streamable HTTP        |  |
+|  |  - Anomaly Surveillance Thread  |   |    endpoint (port 8000 / 8080)    |  |
+|  |  - Morning Briefing Synthesizer |   |  - Dual-Channel Response (Text +   |  |
+|  |  - Quality & Provenance Auditor |   |    structuredContent UI Widgets)  |  |
+|  +---------------------------------+   +-----------------------------------+  |
+|                                  \       /                                    |
+|                                   v     v                                     |
+|                       +------------------------+                              |
+|                       |   FASTMCP MICROKERNEL  |                              |
+|                       +------------------------+                              |
++-------------------------------------------------------------------------------+
+```
+
+### Paradigm 1: Internal / Platform Agents (Scheduled In-Process)
+Internal platform agents are autonomous, thread-level evaluators that execute directly inside the backend server runtime when `SCHEDULER_ENABLED=true`:
+- **Nightly Ingestion & dbt Evaluator**: Triggers at 02:00 local time (`SCHEDULER_NIGHTLY_HOUR=2`) to fetch active connector datastreams and run dbt semantic models.
+- **Anomaly Surveillance Thread**: Evaluates trailing rolling baselines (`anomalies_daily`) to detect performance spikes or drops exceeding z-score thresholds.
+- **Morning Briefing Synthesizer**: Compiles KPI deltas, anomaly flags, and active context events into structured briefing records.
+
+### Paradigm 2: External LLM Host Agents (FastMCP HTTP Clients)
+External agents are conversational or autonomous LLM clients (such as **Claude Desktop**, **Cursor**, **Google Antigravity**, or custom Python/TypeScript AI agents) that connect to toorow's FastMCP server over HTTP:
+- **Transport Endpoint**: `http://localhost:8000/mcp` (local dev) or `https://<cloud-run-url>/mcp` (production).
+- **Dual-Channel Protocol**: External hosts receive a short LLM text summary for prompt insertion while rendering embedded **MCP App UI widgets (`ui/widgets/`)** directly inside client chat interfaces.
+
+---
+
+## 2. Configuring External MCP Host Clients
+
+### Claude Desktop Configuration
+
+Add toorow as an HTTP MCP server in your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "toorow": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-fetch",
+        "http://localhost:8000/mcp"
+      ]
+    }
+  }
+}
+```
+
+For production Cloud Run endpoints secured with OAuth (`TOOROW_AUTH_MODE=oauth`), pass the bearer token header:
+
+```json
+{
+  "mcpServers": {
+    "toorow-prod": {
+      "url": "https://app.toorow.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_JWT_BEARER_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+---
+
+## 3. FastMCP Streamable HTTP Transport Protocol
+
+toorow implements the FastMCP HTTP transport protocol:
+
+- **Endpoint**: `/mcp`
+- **Supported Methods**: `POST` (JSON-RPC 2.0 tool execution) and `GET` (SSE stream for real-time tool status).
+- **Host Header Enforcement**: Production containers enforce strict host validation (`HOST_HEADER_VALIDATION=strict`, `ALLOWED_HOST`).
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Agent Tools Reference" icon="wrench" href="/agent-tools">
+    Inspect exhaustive FastMCP tool definitions and parameter schemas.
+  </Card>
+  <Card title="MCP App Use Cases" icon="layer-group" href="/use-cases-library">
+    Discover how agents trigger interactive MCP App UI widgets.
+  </Card>
+  <Card title="Agent Rules & Guidelines" icon="scroll" href="/agent-rules">
+    Review system instructions and invariants for LLM prompts.
+  </Card>
+  <Card title="Agent Context & Metadata" icon="database" href="/agent-context">
+    Explore schema discovery and context event annotations.
+  </Card>
+</CardGroup>

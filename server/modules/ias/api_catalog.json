@@ -1,0 +1,930 @@
+{
+  "api_version": "reportingservice-2026-07-21",
+  "catalog_version": "1",
+  "connector": "ias",
+  "fields": [
+    {
+      "description": "Ad id.",
+      "exposure": "planned",
+      "field_id": "ad_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "adId",
+      "tier": "core"
+    },
+    {
+      "description": "Ad display name.",
+      "exposure": "planned",
+      "field_id": "ad_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "adName",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that failed the Adult Content risk category.",
+      "exposure": "planned",
+      "field_id": "adult_content_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "RISK_CATEGORY",
+      "source_field": "adultImps",
+      "tier": "standard"
+    },
+    {
+      "description": "Advertiser id (agency accounts group campaigns under an advertiser).",
+      "exposure": "planned",
+      "field_id": "advertiser_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "advertiserId",
+      "tier": "core"
+    },
+    {
+      "description": "Advertiser display name.",
+      "exposure": "planned",
+      "field_id": "advertiser_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "advertiserName",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that failed the Alcohol risk category.",
+      "exposure": "planned",
+      "field_id": "alcohol_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "RISK_CATEGORY",
+      "source_field": "alcoholImps",
+      "tier": "standard"
+    },
+    {
+      "description": "IAS composite Attention score. Non-additive index.",
+      "exposure": "planned",
+      "field_id": "attention_score",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ATTENTION",
+      "source_field": "attentionScore",
+      "tier": "advanced"
+    },
+    {
+      "description": "Average in-view duration (seconds). Non-additive average.",
+      "exposure": "planned",
+      "field_id": "average_time_in_view",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY",
+      "source_field": "averageTimeInView",
+      "tier": "core"
+    },
+    {
+      "description": "Invalid-traffic ads blocked by IAS Firewall.",
+      "exposure": "planned",
+      "field_id": "blocked_invalid_traffic_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "INVALID_TRAFFIC",
+      "source_field": "fraudulentBlockedImps",
+      "tier": "core"
+    },
+    {
+      "description": "Blocking status (blocked / monitored).",
+      "exposure": "planned",
+      "field_id": "blocking_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ENVIRONMENT",
+      "source_field": "blockingStatus",
+      "tier": "standard"
+    },
+    {
+      "description": "Blocked ads / failed ads. Ratio -- recomputed downstream.",
+      "exposure": "planned",
+      "field_id": "brand_safety_block_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BRAND_SAFETY",
+      "source_field": "blockedPct",
+      "tier": "core"
+    },
+    {
+      "description": "Ads blocked by IAS Firewall for brand safety.",
+      "exposure": "planned",
+      "field_id": "brand_safety_blocked_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND_SAFETY",
+      "source_field": "blockedImps",
+      "tier": "core"
+    },
+    {
+      "description": "Ads eligible for brand safety and suitability measurement.",
+      "exposure": "planned",
+      "field_id": "brand_safety_eligible_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND_SAFETY",
+      "source_field": "totalEligibleForBrandSafety",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that failed the brand safety and suitability check.",
+      "exposure": "exposed",
+      "field_id": "brand_safety_failed_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND_SAFETY",
+      "source_field": "failedImps",
+      "tier": "core"
+    },
+    {
+      "description": "Failed ads / eligible ads. Ratio -- recomputed downstream.",
+      "exposure": "planned",
+      "field_id": "brand_safety_failed_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BRAND_SAFETY",
+      "source_field": "failedPct",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that passed the brand safety and suitability check.",
+      "exposure": "exposed",
+      "field_id": "brand_safety_passed_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND_SAFETY",
+      "source_field": "passedImps",
+      "tier": "core"
+    },
+    {
+      "description": "Passed ads / eligible ads. Ratio -- recomputed downstream.",
+      "exposure": "planned",
+      "field_id": "brand_safety_passed_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BRAND_SAFETY",
+      "source_field": "passedPct",
+      "tier": "core"
+    },
+    {
+      "description": "Campaign id.",
+      "exposure": "exposed",
+      "field_id": "campaign_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "campaignId",
+      "tier": "core"
+    },
+    {
+      "description": "Campaign display name.",
+      "exposure": "exposed",
+      "field_id": "campaign_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "campaignName",
+      "tier": "core"
+    },
+    {
+      "description": "Estimated media carbon emissions via Good-Loop (eKg CO2).",
+      "exposure": "planned",
+      "field_id": "carbon_emissions_goodloop",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CARBON",
+      "source_field": "goodLoopCo2Ekg",
+      "tier": "advanced"
+    },
+    {
+      "description": "Estimated media carbon emissions via Scope3 (eKg CO2).",
+      "exposure": "planned",
+      "field_id": "carbon_emissions_scope3",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CARBON",
+      "source_field": "scope3Co2Ekg",
+      "tier": "advanced"
+    },
+    {
+      "description": "Creative id.",
+      "exposure": "planned",
+      "field_id": "creative_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "creativeId",
+      "tier": "core"
+    },
+    {
+      "description": "Creative display name.",
+      "exposure": "planned",
+      "field_id": "creative_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "creativeName",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that hit a custom keyword exclusion list.",
+      "exposure": "planned",
+      "field_id": "custom_keyword_exclusion_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "FAILURE_REASON",
+      "source_field": "failedByKeywordImps",
+      "tier": "standard"
+    },
+    {
+      "description": "Ads that hit a custom URL / app exclusion list.",
+      "exposure": "planned",
+      "field_id": "custom_url_exclusion_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "FAILURE_REASON",
+      "source_field": "failedByUrlImps",
+      "tier": "standard"
+    },
+    {
+      "description": "Reporting day (YYYY-MM-DD). IAS aggregates measurement by calendar day (US timezone).",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "Device breakdown.",
+      "exposure": "planned",
+      "field_id": "device",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ENVIRONMENT",
+      "source_field": "device",
+      "tier": "standard"
+    },
+    {
+      "description": "Ads that failed the Drugs risk category.",
+      "exposure": "planned",
+      "field_id": "drugs_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "RISK_CATEGORY",
+      "source_field": "drugsImps",
+      "tier": "standard"
+    },
+    {
+      "description": "DSP campaign id.",
+      "exposure": "planned",
+      "field_id": "dsp_campaign_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "dspCampaignId",
+      "tier": "core"
+    },
+    {
+      "description": "DSP campaign name.",
+      "exposure": "planned",
+      "field_id": "dsp_campaign_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "dspCampaignName",
+      "tier": "core"
+    },
+    {
+      "description": "DSP id (programmatic breakdown).",
+      "exposure": "planned",
+      "field_id": "dsp_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "dspId",
+      "tier": "core"
+    },
+    {
+      "description": "DSP name (programmatic breakdown).",
+      "exposure": "planned",
+      "field_id": "dsp_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "dspName",
+      "tier": "core"
+    },
+    {
+      "description": "DSP publisher id.",
+      "exposure": "planned",
+      "field_id": "dsp_publisher_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "dspPublisherId",
+      "tier": "core"
+    },
+    {
+      "description": "DSP publisher name.",
+      "exposure": "planned",
+      "field_id": "dsp_publisher_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "dspPublisherName",
+      "tier": "core"
+    },
+    {
+      "description": "Ads eligible for invalid-traffic detection.",
+      "exposure": "planned",
+      "field_id": "eligible_ads_for_ivt",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "INVALID_TRAFFIC",
+      "source_field": "totalEligibleForFraud",
+      "tier": "core"
+    },
+    {
+      "description": "Ads eligible to be counted as quality impressions.",
+      "exposure": "planned",
+      "field_id": "eligible_ads_for_quality",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "QUALITY",
+      "source_field": "eligibleForQualifiedAds",
+      "tier": "standard"
+    },
+    {
+      "description": "Impressions eligible for viewability measurement.",
+      "exposure": "exposed",
+      "field_id": "eligible_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY",
+      "source_field": "eligibleImps",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions eligible for attention measurement.",
+      "exposure": "planned",
+      "field_id": "eligible_impressions_for_attention",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ATTENTION",
+      "source_field": "eligibleImpsForAttention",
+      "tier": "advanced"
+    },
+    {
+      "description": "Measurement environment: desktop, mobile web, or mobile app.",
+      "exposure": "planned",
+      "field_id": "environment",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ENVIRONMENT",
+      "source_field": "environment",
+      "tier": "standard"
+    },
+    {
+      "description": "Ads that failed brand safety due to page content.",
+      "exposure": "planned",
+      "field_id": "failed_by_content_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "RISK_CATEGORY",
+      "source_field": "failedByContentImps",
+      "tier": "standard"
+    },
+    {
+      "description": "Ad format / size.",
+      "exposure": "planned",
+      "field_id": "format",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ENVIRONMENT",
+      "source_field": "format",
+      "tier": "standard"
+    },
+    {
+      "description": "Ads passing the GARM brand safety floor.",
+      "exposure": "planned",
+      "field_id": "garm_passed_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND_SAFETY",
+      "source_field": "garmPassedImps",
+      "tier": "core"
+    },
+    {
+      "description": "General Invalid Traffic (GIVT) ads.",
+      "exposure": "planned",
+      "field_id": "general_ivt_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "INVALID_TRAFFIC",
+      "source_field": "givtImps",
+      "tier": "core"
+    },
+    {
+      "description": "GIVT ads / eligible ads. Ratio -- recomputed downstream.",
+      "exposure": "planned",
+      "field_id": "general_ivt_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "INVALID_TRAFFIC",
+      "source_field": "givtPct",
+      "tier": "core"
+    },
+    {
+      "description": "Gross measured impressions (before net filtering).",
+      "exposure": "planned",
+      "field_id": "gross_measured_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY",
+      "source_field": "grossMeasuredImps",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that failed the Hate Speech risk category.",
+      "exposure": "planned",
+      "field_id": "hate_speech_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "RISK_CATEGORY",
+      "source_field": "hateSpeechImps",
+      "tier": "standard"
+    },
+    {
+      "description": "Hidden-ad SIVT impressions.",
+      "exposure": "planned",
+      "field_id": "hidden_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "INVALID_TRAFFIC",
+      "source_field": "hiddenAdsImps",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that failed the Illegal Downloads risk category.",
+      "exposure": "planned",
+      "field_id": "illegal_downloads_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "RISK_CATEGORY",
+      "source_field": "illegalDownloadsImps",
+      "tier": "standard"
+    },
+    {
+      "description": "Total impressions tracked by IAS.",
+      "exposure": "planned",
+      "field_id": "impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY",
+      "source_field": "imps",
+      "tier": "core"
+    },
+    {
+      "description": "Attention sub-score: interaction. Non-additive index.",
+      "exposure": "planned",
+      "field_id": "interaction_score",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ATTENTION",
+      "source_field": "interactionScore",
+      "tier": "advanced"
+    },
+    {
+      "description": "Ads flagged as invalid traffic (IVT).",
+      "exposure": "exposed",
+      "field_id": "invalid_traffic_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "INVALID_TRAFFIC",
+      "source_field": "invalidImps",
+      "tier": "core"
+    },
+    {
+      "description": "Invalid-traffic ads / eligible ads. Ratio -- recomputed downstream.",
+      "exposure": "planned",
+      "field_id": "invalid_traffic_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "INVALID_TRAFFIC",
+      "source_field": "fraudulentPct",
+      "tier": "core"
+    },
+    {
+      "description": "Inventory type.",
+      "exposure": "planned",
+      "field_id": "inventory_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ENVIRONMENT",
+      "source_field": "inventoryType",
+      "tier": "standard"
+    },
+    {
+      "description": "Ads served against an invisible / undisclosed URL.",
+      "exposure": "planned",
+      "field_id": "invisible_url_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "FAILURE_REASON",
+      "source_field": "failedByVisibilityImps",
+      "tier": "standard"
+    },
+    {
+      "description": "Impressions IAS was able to measure for viewability.",
+      "exposure": "exposed",
+      "field_id": "measured_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY",
+      "source_field": "measuredImps",
+      "tier": "core"
+    },
+    {
+      "description": "Measured impressions / eligible impressions. Ratio -- recomputed downstream.",
+      "exposure": "planned",
+      "field_id": "measured_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY",
+      "source_field": "measuredRate",
+      "tier": "core"
+    },
+    {
+      "description": "Media format (display, video, ...).",
+      "exposure": "planned",
+      "field_id": "media_format",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ENVIRONMENT",
+      "source_field": "mediaFormat",
+      "tier": "standard"
+    },
+    {
+      "description": "Media partner name.",
+      "exposure": "planned",
+      "field_id": "media_partner",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "mediaPartner",
+      "tier": "core"
+    },
+    {
+      "description": "Media partner id.",
+      "exposure": "planned",
+      "field_id": "media_partner_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "mediaPartnerId",
+      "tier": "core"
+    },
+    {
+      "description": "Net measured impressions (fraud/geo filtered).",
+      "exposure": "planned",
+      "field_id": "net_measured_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY",
+      "source_field": "netMeasuredImps",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that did not meet the quality-impression bar.",
+      "exposure": "planned",
+      "field_id": "non_quality_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "QUALITY",
+      "source_field": "nonQualifiedAds",
+      "tier": "standard"
+    },
+    {
+      "description": "Measured impressions that did not meet the viewable standard.",
+      "exposure": "planned",
+      "field_id": "not_viewable_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY",
+      "source_field": "notViewableImps",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that failed the Offensive Language and Controversial risk category.",
+      "exposure": "planned",
+      "field_id": "offensive_language_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "RISK_CATEGORY",
+      "source_field": "offensiveLanguageImps",
+      "tier": "standard"
+    },
+    {
+      "description": "Ads that failed geo targeting (served out of the targeted geography).",
+      "exposure": "planned",
+      "field_id": "out_of_geo_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "FAILURE_REASON",
+      "source_field": "failedByGeoImps",
+      "tier": "standard"
+    },
+    {
+      "description": "Placement id.",
+      "exposure": "planned",
+      "field_id": "placement_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "placementId",
+      "tier": "core"
+    },
+    {
+      "description": "Placement display name.",
+      "exposure": "planned",
+      "field_id": "placement_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "placementName",
+      "tier": "core"
+    },
+    {
+      "description": "Publisher id.",
+      "exposure": "planned",
+      "field_id": "publisher_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "publisherId",
+      "tier": "core"
+    },
+    {
+      "description": "Publisher display name.",
+      "exposure": "planned",
+      "field_id": "publisher_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "publisherName",
+      "tier": "core"
+    },
+    {
+      "description": "Quality impressions: viewable, brand-safe, valid-traffic, in-geo ads.",
+      "exposure": "planned",
+      "field_id": "quality_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "QUALITY",
+      "source_field": "qualifiedAds",
+      "tier": "standard"
+    },
+    {
+      "description": "Reduced Value Inventory (RVI) ads.",
+      "exposure": "planned",
+      "field_id": "reduced_value_inventory_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "INVALID_TRAFFIC",
+      "source_field": "rviImps",
+      "tier": "core"
+    },
+    {
+      "description": "Rendered impressions (net).",
+      "exposure": "planned",
+      "field_id": "rendered_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY",
+      "source_field": "netRenderedImps",
+      "tier": "core"
+    },
+    {
+      "description": "See-through ads (served past a monitored risk without blocking).",
+      "exposure": "planned",
+      "field_id": "see_through_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BRAND_SAFETY",
+      "source_field": "seeThroughImps",
+      "tier": "core"
+    },
+    {
+      "description": "Attention sub-score: situation. Non-additive index.",
+      "exposure": "planned",
+      "field_id": "situation_score",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ATTENTION",
+      "source_field": "situationScore",
+      "tier": "advanced"
+    },
+    {
+      "description": "Sophisticated Invalid Traffic (SIVT) ads.",
+      "exposure": "planned",
+      "field_id": "sophisticated_ivt_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "INVALID_TRAFFIC",
+      "source_field": "sivtImps",
+      "tier": "core"
+    },
+    {
+      "description": "Ads served against content in a non-targeted language.",
+      "exposure": "planned",
+      "field_id": "target_language_mismatch_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "FAILURE_REASON",
+      "source_field": "failedByLanguageImps",
+      "tier": "standard"
+    },
+    {
+      "description": "IAS Team id -- the reporting entity selected in the request path (/teams/{teamId}).",
+      "exposure": "planned",
+      "field_id": "team_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "teamId",
+      "tier": "core"
+    },
+    {
+      "description": "IAS Team display name.",
+      "exposure": "planned",
+      "field_id": "team_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "STRUCTURE",
+      "source_field": "teamName",
+      "tier": "core"
+    },
+    {
+      "description": "Total impressions (all measured surfaces).",
+      "exposure": "planned",
+      "field_id": "total_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY",
+      "source_field": "totalImps",
+      "tier": "core"
+    },
+    {
+      "description": "Total in-view duration (seconds).",
+      "exposure": "planned",
+      "field_id": "total_time_in_view",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY",
+      "source_field": "totalTimeInView",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions IAS could not measure for viewability.",
+      "exposure": "planned",
+      "field_id": "unmeasured_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY",
+      "source_field": "unmeasuredImps",
+      "tier": "core"
+    },
+    {
+      "description": "Ads determined to be valid (non-fraudulent) traffic.",
+      "exposure": "planned",
+      "field_id": "valid_traffic_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "INVALID_TRAFFIC",
+      "source_field": "nonFraudulentImps",
+      "tier": "core"
+    },
+    {
+      "description": "Video plays reaching completion (100%).",
+      "exposure": "planned",
+      "field_id": "video_completions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO",
+      "source_field": "videoViews100Pct",
+      "tier": "advanced"
+    },
+    {
+      "description": "Video plays reaching the first quartile (25%).",
+      "exposure": "planned",
+      "field_id": "video_first_quartile_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO",
+      "source_field": "videoViews25Pct",
+      "tier": "advanced"
+    },
+    {
+      "description": "Video plays reaching the midpoint (50%).",
+      "exposure": "planned",
+      "field_id": "video_midpoint_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO",
+      "source_field": "videoViews50Pct",
+      "tier": "advanced"
+    },
+    {
+      "description": "Video plays reaching the third quartile (75%).",
+      "exposure": "planned",
+      "field_id": "video_third_quartile_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO",
+      "source_field": "videoViews75Pct",
+      "tier": "advanced"
+    },
+    {
+      "description": "Video impressions that never started playing.",
+      "exposure": "planned",
+      "field_id": "video_unplayed",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO",
+      "source_field": "videoViewsUnplayed",
+      "tier": "advanced"
+    },
+    {
+      "description": "Viewable impressions / measured impressions. Ratio -- recomputed downstream from counts.",
+      "exposure": "planned",
+      "field_id": "viewability_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIEWABILITY",
+      "source_field": "viewableRate",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions that met the MRC viewable standard (>=50% pixels, 1s display / 2s video).",
+      "exposure": "exposed",
+      "field_id": "viewable_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWABILITY",
+      "source_field": "viewableImps",
+      "tier": "core"
+    },
+    {
+      "description": "Ads that failed the Violence risk category.",
+      "exposure": "planned",
+      "field_id": "violence_ads",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "RISK_CATEGORY",
+      "source_field": "violenceImps",
+      "tier": "standard"
+    },
+    {
+      "description": "Attention sub-score: visibility. Non-additive index.",
+      "exposure": "planned",
+      "field_id": "visibility_score",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ATTENTION",
+      "source_field": "visibilityScore",
+      "tier": "advanced"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://reporting.integralplatform.com/help/rs/home.html"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://help.funnel.io/en/articles/8704186-what-data-can-i-get-from-integral-ad-science-ias"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://docs.adverity.com/reference/connectors/connector-integral-ad-science.html"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://docs.supermetrics.com/docs/integral-ad-science-fields"
+    }
+  ]
+}

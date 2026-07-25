@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toorow.dev/schemas/ossie-0.1.1-profile.schema.json",
+  "title": "Apache Ossie 0.1.1 Profile Schema for toorow",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ossie_spec_version", "semantic_model"],
+  "properties": {
+    "ossie_spec_version": { "const": "0.1.1" },
+    "semantic_model": { "$ref": "#/$defs/semantic_model" }
+  },
+  "$defs": {
+    "semantic_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datasets", "relationships", "metrics"],
+      "properties": {
+        "description": { "type": "string" },
+        "ai_context": { "type": "string" },
+        "datasets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dataset" }
+        },
+        "relationships": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relationship" }
+        },
+        "metrics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/metric" }
+        },
+        "custom_extensions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/custom_extension" }
+        }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "fields"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "ai_context": { "type": "string" },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/field" }
+        },
+        "custom_extensions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/custom_extension" }
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "ai_context": { "type": "string" },
+        "custom_extensions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/custom_extension" }
+        }
+      }
+    },
+    "relationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "from_dataset", "to_dataset", "relationship_type"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "ai_context": { "type": "string" },
+        "from_dataset": { "type": "string", "minLength": 1 },
+        "to_dataset": { "type": "string", "minLength": 1 },
+        "relationship_type": { "enum": ["many_to_one", "one_to_many", "one_to_one", "many_to_many"] },
+        "custom_extensions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/custom_extension" }
+        }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "dataset", "expression"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "ai_context": { "type": "string" },
+        "dataset": { "type": "string", "minLength": 1 },
+        "expression": { "type": "string", "minLength": 1 },
+        "custom_extensions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/custom_extension" }
+        }
+      }
+    },
+    "custom_extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor_name", "data"],
+      "properties": {
+        "vendor_name": { "type": "string", "minLength": 1 },
+        "data": { "type": "string" }
+      }
+    }
+  }
+}

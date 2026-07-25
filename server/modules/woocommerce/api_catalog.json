@@ -1,0 +1,596 @@
+{
+  "api_version": "wc/v3",
+  "catalog_version": "1",
+  "connector": "woocommerce",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "City of the billing address.",
+      "exposure": "exposed",
+      "field_id": "billing_city",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing.city",
+      "tier": "standard"
+    },
+    {
+      "description": "Company name of the billing address.",
+      "exposure": "exposed",
+      "field_id": "billing_company",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing.company",
+      "tier": "standard"
+    },
+    {
+      "description": "Two-letter ISO 3166-1 alpha-2 country code of the billing address.",
+      "exposure": "exposed",
+      "field_id": "billing_country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing.country",
+      "tier": "standard"
+    },
+    {
+      "description": "Email address on the billing details.",
+      "exposure": "exposed",
+      "field_id": "billing_email",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing.email",
+      "tier": "standard"
+    },
+    {
+      "description": "Postal code of the billing address.",
+      "exposure": "exposed",
+      "field_id": "billing_postcode",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing.postcode",
+      "tier": "standard"
+    },
+    {
+      "description": "State/county code of the billing address.",
+      "exposure": "exposed",
+      "field_id": "billing_state",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing.state",
+      "tier": "standard"
+    },
+    {
+      "description": "Sum of line item taxes only (cart-level tax) in the store currency.",
+      "exposure": "exposed",
+      "field_id": "cart_tax",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "cart_tax",
+      "tier": "core"
+    },
+    {
+      "description": "Coupon code applied to the order.",
+      "exposure": "exposed",
+      "field_id": "coupon_code",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "COUPON",
+      "source_field": "coupon_lines[].code",
+      "tier": "advanced"
+    },
+    {
+      "description": "Discount amount from the coupon, in the store currency.",
+      "exposure": "exposed",
+      "field_id": "coupon_discount",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "COUPON",
+      "source_field": "coupon_lines[].discount",
+      "tier": "advanced"
+    },
+    {
+      "description": "How the order was created (e.g. checkout, admin, rest-api, pos).",
+      "exposure": "exposed",
+      "field_id": "created_via",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "created_via",
+      "tier": "core"
+    },
+    {
+      "description": "The three-letter ISO 4217 code for the order currency.",
+      "exposure": "exposed",
+      "field_id": "currency",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "currency",
+      "tier": "core"
+    },
+    {
+      "description": "The customer id who owns the order (0 for guest checkout).",
+      "exposure": "exposed",
+      "field_id": "customer_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "customer_id",
+      "tier": "standard"
+    },
+    {
+      "description": "Note left by the customer during checkout.",
+      "exposure": "exposed",
+      "field_id": "customer_note",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "customer_note",
+      "tier": "core"
+    },
+    {
+      "description": "date exposed by WooCommerce. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "date_created",
+      "tier": "core"
+    },
+    {
+      "description": "The date the order was completed, in the site timezone.",
+      "exposure": "exposed",
+      "field_id": "date_completed",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ORDER",
+      "source_field": "date_completed",
+      "tier": "core"
+    },
+    {
+      "description": "The date the order was created, in the site timezone. Day-grain date extracted for reporting.",
+      "exposure": "exposed",
+      "field_id": "date_created",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ORDER",
+      "source_field": "date_created",
+      "tier": "core"
+    },
+    {
+      "description": "The date the order was created, as GMT.",
+      "exposure": "exposed",
+      "field_id": "date_created_gmt",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ORDER",
+      "source_field": "date_created_gmt",
+      "tier": "core"
+    },
+    {
+      "description": "The date the order was last modified, in the site timezone.",
+      "exposure": "exposed",
+      "field_id": "date_modified",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ORDER",
+      "source_field": "date_modified",
+      "tier": "core"
+    },
+    {
+      "description": "The date the order was paid, in the site timezone.",
+      "exposure": "exposed",
+      "field_id": "date_paid",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ORDER",
+      "source_field": "date_paid",
+      "tier": "core"
+    },
+    {
+      "description": "Total tax on the discount amount in the store currency.",
+      "exposure": "exposed",
+      "field_id": "discount_tax",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "discount_tax",
+      "tier": "core"
+    },
+    {
+      "description": "Total discount amount applied to the order in the store currency.",
+      "exposure": "exposed",
+      "field_id": "discount_total",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "discount_total",
+      "tier": "core"
+    },
+    {
+      "description": "Name of an extra fee line on the order.",
+      "exposure": "exposed",
+      "field_id": "fee_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "FEE",
+      "source_field": "fee_lines[].name",
+      "tier": "advanced"
+    },
+    {
+      "description": "Amount of an extra fee line, in the store currency.",
+      "exposure": "exposed",
+      "field_id": "fee_total",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "FEE",
+      "source_field": "fee_lines[].total",
+      "tier": "advanced"
+    },
+    {
+      "description": "Unique identifier for the order (order ID).",
+      "exposure": "exposed",
+      "field_id": "id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "id",
+      "tier": "core"
+    },
+    {
+      "description": "Unique identifier for a line item in the order.",
+      "exposure": "exposed",
+      "field_id": "line_item_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].id",
+      "tier": "standard"
+    },
+    {
+      "description": "Product name at the time of sale.",
+      "exposure": "exposed",
+      "field_id": "line_item_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].name",
+      "tier": "standard"
+    },
+    {
+      "description": "Unit price of the line item product, in the store currency.",
+      "exposure": "exposed",
+      "field_id": "line_item_price",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].price",
+      "tier": "standard"
+    },
+    {
+      "description": "Quantity ordered for the line item.",
+      "exposure": "exposed",
+      "field_id": "line_item_quantity",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].quantity",
+      "tier": "standard"
+    },
+    {
+      "description": "Stock keeping unit of the line item product.",
+      "exposure": "exposed",
+      "field_id": "line_item_sku",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].sku",
+      "tier": "standard"
+    },
+    {
+      "description": "Line subtotal before discounts, in the store currency.",
+      "exposure": "exposed",
+      "field_id": "line_item_subtotal",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].subtotal",
+      "tier": "standard"
+    },
+    {
+      "description": "Line total after discounts, in the store currency.",
+      "exposure": "exposed",
+      "field_id": "line_item_total",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].total",
+      "tier": "standard"
+    },
+    {
+      "description": "Order number (display value, may differ from the internal id).",
+      "exposure": "exposed",
+      "field_id": "number",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "number",
+      "tier": "core"
+    },
+    {
+      "description": "Count of orders (1 per order record).",
+      "exposure": "exposed",
+      "field_id": "order",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ORDER",
+      "source_field": "order",
+      "tier": "core"
+    },
+    {
+      "description": "Order key, a unique auto-generated token for the order.",
+      "exposure": "exposed",
+      "field_id": "order_key",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "order_key",
+      "tier": "core"
+    },
+    {
+      "description": "orders count exposed by WooCommerce. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+      "exposure": "exposed",
+      "field_id": "orders_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "order",
+      "tier": "core"
+    },
+    {
+      "description": "Payment method id (e.g. bacs, stripe, ppcp-gateway).",
+      "exposure": "exposed",
+      "field_id": "payment_method",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "payment_method",
+      "tier": "standard"
+    },
+    {
+      "description": "Human-readable payment method title.",
+      "exposure": "exposed",
+      "field_id": "payment_method_title",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "payment_method_title",
+      "tier": "core"
+    },
+    {
+      "description": "Whether the order prices include tax.",
+      "exposure": "exposed",
+      "field_id": "prices_include_tax",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "ORDER",
+      "source_field": "prices_include_tax",
+      "tier": "core"
+    },
+    {
+      "description": "The id of the product the line item refers to.",
+      "exposure": "exposed",
+      "field_id": "product_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PRODUCT",
+      "source_field": "line_items[].product_id",
+      "tier": "standard"
+    },
+    {
+      "description": "refund amount exposed by WooCommerce (abs sum of refunds[].total). Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+      "exposure": "exposed",
+      "field_id": "refund_amount",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "total_refunded",
+      "tier": "core"
+    },
+    {
+      "description": "Unique identifier of a refund on the order.",
+      "exposure": "exposed",
+      "field_id": "refund_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REFUND",
+      "source_field": "refunds[].id",
+      "tier": "core"
+    },
+    {
+      "description": "Reason for the refund.",
+      "exposure": "exposed",
+      "field_id": "refund_reason",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REFUND",
+      "source_field": "refunds[].reason",
+      "tier": "core"
+    },
+    {
+      "description": "Refund total as reported by WooCommerce (NEGATIVE amount). The connector takes abs() to build the positive refund_amount.",
+      "exposure": "exposed",
+      "field_id": "refund_total",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "REFUND",
+      "source_field": "refunds[].total",
+      "tier": "core"
+    },
+    {
+      "description": "revenue exposed by WooCommerce (order.total). Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the live probe.",
+      "exposure": "exposed",
+      "field_id": "revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "total",
+      "tier": "core"
+    },
+    {
+      "description": "City of the shipping address.",
+      "exposure": "exposed",
+      "field_id": "shipping_city",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SHIPPING ADDRESS",
+      "source_field": "shipping.city",
+      "tier": "advanced"
+    },
+    {
+      "description": "Two-letter ISO 3166-1 alpha-2 country code of the shipping address.",
+      "exposure": "exposed",
+      "field_id": "shipping_country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SHIPPING ADDRESS",
+      "source_field": "shipping.country",
+      "tier": "advanced"
+    },
+    {
+      "description": "Postal code of the shipping address.",
+      "exposure": "exposed",
+      "field_id": "shipping_postcode",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SHIPPING ADDRESS",
+      "source_field": "shipping.postcode",
+      "tier": "advanced"
+    },
+    {
+      "description": "State/county code of the shipping address.",
+      "exposure": "exposed",
+      "field_id": "shipping_state",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SHIPPING ADDRESS",
+      "source_field": "shipping.state",
+      "tier": "advanced"
+    },
+    {
+      "description": "Total shipping tax amount for the order in the store currency.",
+      "exposure": "exposed",
+      "field_id": "shipping_tax",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "shipping_tax",
+      "tier": "core"
+    },
+    {
+      "description": "Total shipping amount for the order in the store currency.",
+      "exposure": "exposed",
+      "field_id": "shipping_total",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "shipping_total",
+      "tier": "core"
+    },
+    {
+      "description": "Order status. Values: pending, processing, on-hold, completed, cancelled, refunded, failed, trash. Only completed/processing count as a sale.",
+      "exposure": "exposed",
+      "field_id": "status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "status",
+      "tier": "core"
+    },
+    {
+      "description": "Sum of line item taxes before discounts, in the store currency.",
+      "exposure": "exposed",
+      "field_id": "subtotal_tax",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "subtotal_tax",
+      "tier": "core"
+    },
+    {
+      "description": "Tax total for a tax line, in the store currency.",
+      "exposure": "exposed",
+      "field_id": "tax_line_total",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "TAX",
+      "source_field": "tax_lines[].tax_total",
+      "tier": "advanced"
+    },
+    {
+      "description": "Tax rate code applied to the order.",
+      "exposure": "exposed",
+      "field_id": "tax_rate_code",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TAX",
+      "source_field": "tax_lines[].rate_code",
+      "tier": "advanced"
+    },
+    {
+      "description": "Grand total of the order in the store currency (includes items, shipping, taxes, fees minus discounts).",
+      "exposure": "exposed",
+      "field_id": "total",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "total",
+      "tier": "core"
+    },
+    {
+      "description": "Sum of all taxes on the order in the store currency.",
+      "exposure": "exposed",
+      "field_id": "total_tax",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "total_tax",
+      "tier": "core"
+    },
+    {
+      "description": "Payment-gateway transaction id. OFTEN EMPTY on manual/offline payments. Used as the GA4 x WooCommerce join key (Epic 17).",
+      "exposure": "exposed",
+      "field_id": "transaction_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "transaction_id",
+      "tier": "core"
+    },
+    {
+      "description": "The id of the product variation the line item refers to (0 if none).",
+      "exposure": "exposed",
+      "field_id": "variant_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PRODUCT",
+      "source_field": "line_items[].variation_id",
+      "tier": "standard"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://woocommerce.github.io/woocommerce-rest-api-docs/"
+    }
+  ]
+}

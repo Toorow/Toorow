@@ -1,0 +1,5 @@
+project_id,date,connector,breakdown_dimension,breakdown_value,metric,value
+__money_contract_test__,2026-07-01,__money_contract_test__,day_total,all,ad_revenue,9999999000000
+__money_contract_test__,2026-07-01,__money_contract_test__,day_total,all,cost,3000000300000
+__money_contract_test__,2026-07-02,__money_contract_test__,day_total,all,ad_revenue,1234567890123
+__money_contract_test__,2026-07-02,__money_contract_test__,day_total,all,cost,500001000000

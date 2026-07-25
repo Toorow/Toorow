@@ -1,0 +1,13 @@
+version: 2
+sources:
+  - name: raw_linkedin_company_pages
+    schema: main
+    tables:
+      - name: raw_linkedin_company_pages_daily
+models:
+  - name: stg_linkedin_company_pages_daily
+    columns:
+      - name: organization_urn
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]

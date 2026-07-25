@@ -1,0 +1,62 @@
+[
+  {
+    "date": "2026-07-01",
+    "payment_id": "sqpmt_5000000001",
+    "order_id": "sqord_0000000001",
+    "location_id": "L_PARIS",
+    "revenue": 128.5,
+    "refunds": 0.0,
+    "fees": 3.98,
+    "transaction_count": 1,
+    "order_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-01",
+    "payment_id": "sqpmt_5000000002",
+    "order_id": "sqord_0000000002",
+    "location_id": "L_PARIS",
+    "revenue": 64.0,
+    "refunds": 0.0,
+    "fees": 2.11,
+    "transaction_count": 1,
+    "order_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-02",
+    "payment_id": "sqpmt_5000000003",
+    "order_id": "sqord_0000000003",
+    "location_id": "L_LYON",
+    "revenue": 210.9,
+    "refunds": 42.18,
+    "fees": 6.37,
+    "transaction_count": 1,
+    "order_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-02",
+    "payment_id": "sqpmt_5000000004",
+    "order_id": null,
+    "location_id": "L_LYON",
+    "revenue": 39.99,
+    "refunds": 0.0,
+    "fees": 1.41,
+    "transaction_count": 1,
+    "order_count": 1,
+    "revenue_source_currency": "EUR"
+  },
+  {
+    "date": "2026-07-03",
+    "payment_id": "sqpmt_5000000005",
+    "order_id": null,
+    "location_id": "L_TOKYO",
+    "revenue": 15000.0,
+    "refunds": 15000.0,
+    "fees": 450.0,
+    "transaction_count": 1,
+    "order_count": 1,
+    "revenue_source_currency": "JPY"
+  }
+]

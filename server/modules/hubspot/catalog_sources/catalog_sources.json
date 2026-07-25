@@ -1,0 +1,107 @@
+{
+  "connector": "hubspot",
+  "api_version": "v3",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "official_fields.json is produced by build_official_fields.py (committed alongside, deterministic). The hubspot module extracts daily CRM aggregates from the CRM v3 Search API on two objects (POST /crm/v3/objects/contacts/search and .../deals/search), counting paginated results client-side (HubSpot exposes NO native daily aggregate). The catalog curates: (1) the DEFAULT properties of the four main CRM objects the Search/Properties API exposes -- contacts, companies, deals, tickets; (2) the module-derived daily metrics the connector computes (new_contacts, deals_created, deals_closed, deal_amount) + the canonical `date` dimension.",
+    "namespacing_rule": "A HubSpot property internal name (createdate, hubspot_owner_id, hs_object_id, city, ...) legitimately exists on several objects. The merge engine keys the catalog by a GLOBALLY UNIQUE field_id (duplicates are dropped + reported), so each object's property is emitted as `<object>_<property>` (e.g. contact_createdate, deal_createdate) while `source_field` preserves the raw provider token (createdate). The 5 module-derived fields keep their bare ids with the exact source_field the manifest declares; a namespaced property that would collapse onto a derived id (deal `amount` -> deal_amount) is not re-emitted (the derived field owns that family).",
+    "count_divergence": "This is intentionally the DEFAULT-property surface of the four main CRM objects (88 fields: 23 metrics / 65 dimensions), NOT the full HubSpot property universe. Supermetrics publishes 174 metrics / 403 dimensions across 45 sections (ANALYTICS|COMPANY|CONTACT|DEAL|EMAIL|EMAIL CAMPAIGN|ENGAGEMENT (CALL/EMAIL/MEETING/NOTE/TASK)|FORM|TICKET|WORKFLOW|...). The large gap is EXPECTED and honest: (a) Supermetrics spans every Hub -- Marketing Email, Email Campaign, Forms, Workflows, per-Engagement-type (Call/Email/Meeting/Note/Task) -- surfaces this module's connector.py does NOT query; (b) Supermetrics counts every account-defined CUSTOM property and every bucketed/derived column as its own field; (c) Supermetrics itemises breakdown-value permutations as distinct dimensions. Those extra fields are enrichment SUSPECTS (reported in the fusion report's enrichment_only_ids), NEVER emitted, because emitting fields the module cannot pull would be dishonest drift, not coverage."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.hubspot.com/docs/guides/api/crm/properties",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "crm_search_api",
+          "url": "https://developers.hubspot.com/docs/guides/api/crm/search",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "default_contact_properties",
+          "url": "https://knowledge.hubspot.com/properties/hubspots-default-contact-properties",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "default_company_properties",
+          "url": "https://knowledge.hubspot.com/records/hubspots-default-company-properties",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "default_deal_properties",
+          "url": "https://developers.hubspot.com/docs/reference/api/crm/objects/deals",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "default_ticket_properties",
+          "url": "https://knowledge.hubspot.com/tickets/hubspots-default-ticket-properties",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "error_handling",
+          "url": "https://developers.hubspot.com/docs/reference/api/other-resources/error-handling",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "file": "supermetrics.md",
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/hubspot-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/hubspot-fields.md -o server/modules/hubspot/catalog_sources/supermetrics.md   # DO NOT COMMIT this file (enrichment snapshot only)"
+    }
+  ],
+  "section_tier_map": {
+    "DEAL": "core",
+    "TIME": "core",
+    "CONTACT": "standard",
+    "COMPANY": "standard",
+    "ANALYTICS": "standard",
+    "TICKET": "advanced"
+  },
+  "field_tier_overrides": {
+    "new_contacts": "core",
+    "deals_created": "core",
+    "deals_closed": "core",
+    "deal_amount": "core",
+    "date": "core",
+    "contact_email": "core",
+    "contact_firstname": "core",
+    "contact_lastname": "core",
+    "contact_createdate": "core",
+    "contact_lifecyclestage": "core",
+    "company_name": "core",
+    "company_domain": "core",
+    "company_createdate": "core",
+    "deal_dealname": "core",
+    "deal_dealstage": "core",
+    "deal_pipeline": "core",
+    "deal_closedate": "core",
+    "deal_createdate": "core"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "report_statistics",
+    "batch_size": 20,
+    "structural_note": "HubSpot CRM search POSTs a properties[] list on the selected portal over a bounded window (limit=1). The probe batches up to 20 properties per search; a property HubSpot does not recognise is recorded unsupported (400 PROPERTY_DOESNT_EXIST) after the batch is bisected to isolate it."
+  },
+  "sensitive_dimensions": [
+    "contact_email",
+    "contact_firstname",
+    "contact_lastname",
+    "contact_address",
+    "contact_phone",
+    "contact_mobilephone"
+  ],
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {
+    "COMPANY": "The daily pull makes no companies endpoint calls; requires additional fetches.",
+    "TICKET": "The daily pull makes no tickets endpoint calls; requires additional fetches.",
+    "ANALYTICS": "Analytics API surfaces are not called by the daily pull."
+  }
+}

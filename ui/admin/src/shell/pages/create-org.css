@@ -1,0 +1,195 @@
+/**
+ * create-org.css — page-specific styles for CreateOrgV3.
+ *
+ * ⚠️ SPEC-DERIVED, NO MOCKUP — pending a visual mockup.
+ * These surfaces are derived from the Epic 36 DESIGN.md tokens and component
+ * anatomy (ScopeSummary on {colors.surface-page} at {rounded.md}; focused
+ * dialog; JetBrains Mono for immutable identifiers), NOT from a validated
+ * mockup. The base shell classes the screen also uses — .primary-button /
+ * .secondary-button, .icon-button, .action-link, .signal-label / .signal-mark,
+ * .mono, .page-header — already live in application.css and are NOT redefined
+ * here.
+ *
+ * The focused-dialog frame mirrors the sibling datastream-create.css surfaces,
+ * but is prefixed `createorg-` so nothing in this file depends on or collides
+ * with that page's `.dialog-*` classes (no cross-file coupling; no edits to
+ * application.css or datastream-create.css).
+ *
+ * Tokenized: every color references the application.css CSS variables. Brand /
+ * focus accents are derived from var(--rose) / var(--info) via color-mix. The
+ * neutral scrim/shadow inks (rgba(35,32,40,…) / rgba(17,17,17,…)) read as
+ * dimming/elevation on both light and dark schemes, matching datastream-create.
+ */
+
+/* ---- Full-bleed stage: neutralize the shell .main padding around it ------- */
+.main:has(> .createorg-stage) { padding: 0; overflow: visible; }
+
+.createorg-stage { position: relative; min-height: 828px; }
+
+.createorg-scrim {
+  position: absolute;
+  z-index: var(--layer-modal);
+  inset: 0;
+  display: grid;
+  place-items: start center;
+  padding: 28px;
+  background: rgba(35, 32, 40, .18);
+}
+
+.createorg-dialog {
+  width: min(640px, calc(100% - 56px));
+  overflow: hidden;
+  border: 1px solid rgba(17, 17, 17, .08);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 28px 90px rgba(17, 17, 17, .22);
+}
+
+/* ---- Header -------------------------------------------------------------- */
+.createorg-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.createorg-header h1 { margin: 0; font: 600 22px "Lexend", sans-serif; letter-spacing: -.01em; }
+.createorg-subtitle {
+  max-width: 44ch;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ---- Body --------------------------------------------------------------- */
+.createorg-body { padding: 24px 28px; display: grid; gap: 22px; }
+.createorg-lead { margin: 0; font-size: 14px; line-height: 1.6; }
+.createorg-lead strong { font-weight: 700; }
+
+/* ---- Name field --------------------------------------------------------- */
+.field { display: grid; gap: 8px; }
+.field label { font: 600 13px "Plus Jakarta Sans", sans-serif; }
+.text-input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+}
+.text-input::placeholder { color: var(--muted); }
+.text-input:focus-visible {
+  outline: 2px solid var(--focus, var(--info));
+  outline-offset: 2px;
+  border-color: color-mix(in srgb, var(--rose) 55%, var(--line));
+}
+.text-input[aria-invalid="true"] { border-color: var(--error); }
+.field-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.field-error { margin: 0; color: var(--error); font-size: 12px; line-height: 1.4; font-weight: 600; }
+
+/* ---- Derived slug preview ----------------------------------------------- */
+.slug-preview {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.slug-preview-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.slug-preview-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.slug-preview-value { font-size: 15px; font-weight: 700; }
+.slug-preview-note { margin: 10px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.slug-preview-note strong { color: var(--ink); font-weight: 700; }
+
+/* ---- ScopeSummary (DESIGN.md: surface-page, rounded.md, read-only) ------- */
+.scope-summary {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--page);
+}
+.scope-summary-title {
+  margin-bottom: 12px;
+  font: 600 13px "Lexend", sans-serif;
+}
+.scope-row {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 14px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.scope-summary .scope-row:first-of-type,
+.scope-summary-title + .scope-row { border-top: 0; }
+.scope-key { color: var(--muted); font-size: 12px; font-weight: 600; }
+.scope-val { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* JetBrains Mono for immutable identifiers (DESIGN.md). .mono is defined in
+   application.css; this only sizes it inside the scope/slug surfaces. */
+.scope-val.mono,
+.slug-preview .mono,
+.schema-list .mono { font-size: 13px; }
+
+/* ---- Provisioned schemas (success view) --------------------------------- */
+.createorg-subhead { margin: 0; font: 600 15px "Lexend", sans-serif; }
+.createorg-note { margin: -12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.schema-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.schema-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.schema-role { color: var(--muted); font-size: 12px; font-weight: 600; }
+
+/* ---- Error -------------------------------------------------------------- */
+.createorg-error {
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--error) 40%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+}
+.createorg-error p { margin: 8px 0 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* ---- Footer ------------------------------------------------------------- */
+.createorg-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 28px;
+  border-top: 1px solid var(--line);
+}
+.createorg-footer > span { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.createorg-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.createorg-actions .primary-button[disabled] {
+  opacity: .55;
+  cursor: not-allowed;
+  filter: saturate(.7);
+}
+
+/* ---- Narrow-desktop resilience (mirrors sibling breakpoint) ------------- */
+@media (max-width: 1180px) {
+  .createorg-dialog { width: calc(100% - 36px); }
+  .createorg-footer { flex-wrap: wrap; }
+  .scope-row { grid-template-columns: 1fr; gap: 3px; }
+}

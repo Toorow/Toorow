@@ -1,0 +1,166 @@
+{
+  "api_version": "analytics-2.0",
+  "catalog_version": "1",
+  "connector": "adobe-analytics",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Non-additive average time spent.",
+      "exposure": "exposed",
+      "field_id": "average_time_spent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "metrics/averagetimespent",
+      "tier": "core"
+    },
+    {
+      "description": "Non-additive bounce rate.",
+      "exposure": "exposed",
+      "field_id": "bounce_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "metrics/bouncerate",
+      "tier": "core"
+    },
+    {
+      "description": "Report-suite-local calendar day.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "DIMENSION",
+      "source_field": "variables/daterangeday",
+      "tier": "core"
+    },
+    {
+      "description": "Dynamic reportable dimension id.",
+      "exposure": "exposed",
+      "field_id": "dimension",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "dimension",
+      "tier": "core"
+    },
+    {
+      "description": "Stable component item id.",
+      "exposure": "exposed",
+      "field_id": "item_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "rows.itemId",
+      "tier": "core"
+    },
+    {
+      "description": "Human-readable component value.",
+      "exposure": "exposed",
+      "field_id": "item_value",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "rows.value",
+      "tier": "core"
+    },
+    {
+      "description": "Occurrences at full report grain.",
+      "exposure": "exposed",
+      "field_id": "occurrences",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "metrics/occurrences",
+      "tier": "core"
+    },
+    {
+      "description": "Orders at full report grain.",
+      "exposure": "exposed",
+      "field_id": "orders",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "metrics/orders",
+      "tier": "core"
+    },
+    {
+      "description": "Page views at full report grain.",
+      "exposure": "exposed",
+      "field_id": "page_views",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "metrics/pageviews",
+      "tier": "core"
+    },
+    {
+      "description": "Stable parent item for bounded breakdowns.",
+      "exposure": "exposed",
+      "field_id": "parent_item_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "rowContainer.rowId",
+      "tier": "core"
+    },
+    {
+      "description": "Revenue in the report-suite currency.",
+      "exposure": "exposed",
+      "field_id": "revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "metrics/revenue",
+      "tier": "core"
+    },
+    {
+      "description": "Selected report suite id.",
+      "exposure": "exposed",
+      "field_id": "rsid",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "rsid",
+      "tier": "core"
+    },
+    {
+      "description": "Exact selected segment ids.",
+      "exposure": "exposed",
+      "field_id": "segment_ids",
+      "kind": "dimension",
+      "physical_type": "json",
+      "section": "DIMENSION",
+      "source_field": "globalFilters.segmentId",
+      "tier": "core"
+    },
+    {
+      "description": "Visitors at exact report grain.",
+      "exposure": "exposed",
+      "field_id": "visitors",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "metrics/visitors",
+      "tier": "core"
+    },
+    {
+      "description": "Visits at exact report grain.",
+      "exposure": "exposed",
+      "field_id": "visits",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "metrics/visits",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-22",
+      "kind": "official",
+      "url": "https://developer.adobe.com/analytics-apis/docs/2.0/apis/"
+    }
+  ]
+}

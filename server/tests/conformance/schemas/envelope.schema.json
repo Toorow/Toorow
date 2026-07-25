@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CanonicalEnvelope",
+  "description": "AD-1 canonical envelope shape required from every MCP tool. Additive-under-1.x policy (AI-31, Story 5.1): within a 1.x schema line, new meta/data keys are ADDED here and `schema_version` stays unchanged (currently \"1\"); a breaking change (removed/renamed/retyped key) bumps the major schema version and updates every consumer. New keys must be declared here so the conformance envelope layer (Layer 2) validates them.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "meta",
+    "data"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "meta": {
+      "type": "object",
+      "required": [
+        "freshness",
+        "provenance",
+        "alerts"
+      ],
+      "properties": {
+        "freshness": {
+          "description": "Either a scalar freshness label (e.g. \"live\") or a freshness object (e.g. {\"stale_since\": ISO-8601}). Story 2.5 health enrichment writes the object form.",
+          "type": [
+            "string",
+            "object",
+            "null"
+          ]
+        },
+        "provenance": {
+          "type": [
+            "object",
+            "string",
+            "null",
+            "array"
+          ]
+        },
+        "alerts": {
+          "type": "array"
+        },
+        "as_of": {
+          "description": "AI-31 (Story 5.1 audit): as-of replay timestamp (Story 4.6, AC5). ISO-8601 datetime string when as-of replay is active; explicit null in the current view.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context_events": {
+          "description": "AI-31 (Story 5.1 audit): lightweight business-context markers for the reporting window (Story 4.3, AC7). Array of {id, event_date, type, label}. Absent/omitted when none.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "confidence": {
+          "description": "AI-31 (Story 5.1 audit): completeness confidence (Story 3.5/4.2, AC8). Either {\"completeness\": float} for a single connector or {\"per_connector\": {name: ratio}} for multi/all. Omitted when no verification data exists.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "trace_id": {
+          "description": "Story 5.5 (AC2): OTel trace_id hex (32 chars) for the current tool call span. Null when TRACING_ENABLED=false or no active span. Echoed back in submit_feedback to link Langfuse score to the same trace (AD-13). Additive under 1.x (AI-31 policy).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "briefing": {
+          "description": "Story 6.7 (AC6): morning briefing for today (precomputed nightly). Object with briefing_date, insights[], and built_at when a briefing exists; explicit null otherwise. Additive under 1.x (AI-31 policy).",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "card_selection": {
+          "description": "Epic 9 (Story 9.1, get_card): which card template was chosen and why. Object {chosen, mode ('explicit'|'suggested'|'fallback_empty'), answers_question, alternatives:[{id, answers_question}]} so the LLM can re-request a different card. Present only on get_card envelopes. Additive under 1.x (AI-31 policy).",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "project_id": {
+          "description": "Epic 9 (Story 9.1, get_card): the AD-5 project scope the card was resolved under. String. Present only on get_card envelopes. Additive under 1.x (AI-31 policy).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gate": {
+          "description": "Epic 11 (Story 11.6, AD-18): measured pre-query gate verdict for this data query. Object {adherent (bool: did a context call precede this query in the same session?), context_tool (search_context|get_procedure|null), session_kind ('trace'|'time_window')}. MEASURED only, never enforced -- a non-adherent query still succeeds. Present on get_daily_report/get_report/get_card envelopes. Additive under 1.x (AI-31 policy).",
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    },
+    "data": {
+      "description": "Tool-specific payload. Additive keys are documented here per tool path.",
+      "type": "object",
+      "properties": {
+        "metric_definitions": {
+          "description": "AI-50 (Story AI-50): metric_definitions injected from the module pack's default report doc when available. Mirrors the get_report (story 8.8 R6) and get_card ad-hoc path. Present on get_daily_report and get_card envelopes when the module pack declares definitions; omitted otherwise. Additive under 1.x (AI-31 policy).",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "llm_commentary_guidelines": {
+          "description": "AI-50 (Story AI-50): LLM commentary guidelines from the module pack's default report override, injected alongside metric_definitions. Present on get_daily_report and get_card envelopes when a stored project override declares them; omitted otherwise. Additive under 1.x (AI-31 policy).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

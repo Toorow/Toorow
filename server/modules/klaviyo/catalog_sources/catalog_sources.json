@@ -1,0 +1,159 @@
+{
+  "connector": "klaviyo",
+  "api_version": "2026-07-15",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "Official fields derived from the Klaviyo OpenAPI specification (stable channel, https://raw.githubusercontent.com/klaviyo/openapi/main/openapi/stable/). Statistics enum values extracted from query_campaign_values.json and query_flow_values.json (identical sets, 30 statistics each). Grouping dimensions extracted from the same specs. The 'date' dimension is a derived field from the daily interval of the flow-series-reports and campaign-series-reports endpoints, not a grouping parameter per se. Enrichment source: Supermetrics Klaviyo fields catalog (https://docs.supermetrics.com/docs/klaviyo-fields.md).",
+    "drift_detected": [
+      {
+        "manifest_field_id": "sends",
+        "manifest_source_field": "sends",
+        "official_source_field": "recipients",
+        "severity": "hard",
+        "note": "The statistic 'sends' does not exist in the Klaviyo Reporting API OpenAPI spec. The correct statistic name is 'recipients'. The connector's _REPORTING_STATISTICS list uses 'sends' which will cause an API error in live runs. This drift must be resolved before live ratification."
+      },
+      {
+        "manifest_field_id": "attributed_revenue",
+        "manifest_source_field": "revenue",
+        "official_source_field": "conversion_value",
+        "severity": "hard",
+        "note": "The statistic 'revenue' does not exist in the Klaviyo Reporting API OpenAPI spec. The correct statistic name is 'conversion_value'. The connector requests 'revenue' which will cause an API error in live runs."
+      },
+      {
+        "manifest_field_id": "campaign_name",
+        "manifest_source_field": "campaign_name",
+        "official_note": "campaign_name is not a grouping dimension on campaign-values-reports. Available campaign grouping fields are: campaign_id, campaign_message_id, campaign_message_name, group, group_name, send_channel, tag_id, tag_name, text_message_format, variation, variation_name. campaign_name may be obtained by joining to the campaigns endpoint (GET /api/campaigns/{id}).",
+        "severity": "hard"
+      }
+    ]
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://raw.githubusercontent.com/klaviyo/openapi/main/openapi/stable/",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "campaign_statistics_enum",
+          "url": "https://raw.githubusercontent.com/klaviyo/openapi/main/openapi/stable/apis/query_campaign_values.json",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "flow_statistics_enum",
+          "url": "https://raw.githubusercontent.com/klaviyo/openapi/main/openapi/stable/apis/query_flow_values.json",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "flow_series_enum",
+          "url": "https://raw.githubusercontent.com/klaviyo/openapi/main/openapi/stable/apis/query_flow_series.json",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "reporting_api_overview",
+          "url": "https://developers.klaviyo.com/en/reference/reporting_api_overview",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "error_handling",
+          "url": "https://developers.klaviyo.com/en/docs/rate_limits_and_error_handling",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "file": "supermetrics.md",
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/klaviyo-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/klaviyo-fields.md -o server/modules/klaviyo/catalog_sources/supermetrics.md   # DO NOT COMMIT this file (enrichment snapshot only)"
+    }
+  ],
+  "section_tier_map": {
+    "DELIVERY": "core",
+    "ENGAGEMENT": "core",
+    "CONVERSION": "core",
+    "TIME": "core",
+    "CAMPAIGN": "core",
+    "FLOW": "core",
+    "COMPLIANCE": "standard",
+    "SMS": "standard",
+    "MAGENTO": "advanced",
+    "WOOCOMMERCE": "advanced",
+    "STRIPE": "advanced",
+    "LIST": "advanced",
+    "PERSON": "advanced",
+    "PURCHASE": "advanced",
+    "AD": "advanced",
+    "EMAIL CLIENT": "advanced",
+    "API": "advanced",
+    "PLATFORM CONTRACT": "core"
+  },
+  "_section_tier_rationale": {
+    "MAGENTO": "enrichment_only — Magento/WooCommerce/Stripe cross-source sections are Supermetrics-only aggregations that do not map to Klaviyo Reporting API statistics. They are advanced tier and will land as enrichment_only in the generated catalog.",
+    "PERSON": "enrichment_only — Supermetrics exposes person-level profile attributes (email, address, city, etc.) that come from the Klaviyo Profiles API (GET /api/profiles/), not the Reporting API. These are dimensions not available in the reporting statistics endpoints.",
+    "PURCHASE": "enrichment_only — Purchase dimensions (order_number, gateway, etc.) come from Klaviyo event data (Metrics API), not the Reporting API. Available via metric-aggregates endpoint with event-property breakdowns, which is a distinct pull path not yet implemented.",
+    "LIST": "advanced — List membership metrics (subscribed, unsubscribed_from_list) come from the Klaviyo Lists API / Events API, not the Reporting API. Advanced enrichment tier.",
+    "AD": "advanced — Ad attribution dimensions from third-party integrations (Facebook Ads, etc.) are stored as UTM properties on profiles, not Reporting API statistics."
+  },
+  "field_tier_overrides": {
+    "recipients": "core",
+    "opens": "core",
+    "clicks": "core",
+    "conversions": "core",
+    "conversion_value": "core",
+    "delivered": "core",
+    "campaign_id": "core",
+    "campaign_message_id": "core",
+    "flow_id": "core",
+    "flow_message_id": "standard",
+    "flow_name": "core",
+    "date": "core",
+    "open_rate": "standard",
+    "click_rate": "standard",
+    "bounce_rate": "standard",
+    "unsubscribes": "standard",
+    "unsubscribe_rate": "standard",
+    "spam_complaints": "standard",
+    "spam_complaint_rate": "standard",
+    "average_order_value": "standard",
+    "revenue_per_recipient": "standard",
+    "clicks_unique": "standard",
+    "opens_unique": "standard",
+    "conversion_rate": "standard",
+    "conversion_uniques": "standard",
+    "text_message_spend": "standard",
+    "message_segment_count_sum": "standard",
+    "bounced": "standard",
+    "delivered_rate": "standard",
+    "failed": "advanced",
+    "failed_rate": "advanced",
+    "bounced_or_failed": "advanced",
+    "bounced_or_failed_rate": "advanced",
+    "click_to_open_rate": "advanced",
+    "delivery_rate": "advanced",
+    "unsubscribe_uniques": "advanced",
+    "text_message_credit_usage_amount": "advanced",
+    "text_message_roi": "advanced",
+    "send_channel": "standard",
+    "tag_id": "advanced",
+    "tag_name": "advanced",
+    "text_message_format": "advanced",
+    "variation": "advanced",
+    "variation_name": "advanced",
+    "campaign_message_name": "standard",
+    "flow_message_name": "standard",
+    "group": "advanced",
+    "group_name": "advanced"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "report_statistics",
+    "batch_size": 20,
+    "structural_note": "Klaviyo reporting POSTs a statistics[] list (with sparse fieldset filters) on the selected account over a 1-day window. The probe batches up to 20 statistics/fields per request; a batch that returns an invalid_request is bisected so the exact rejected field is captured."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {}
+}

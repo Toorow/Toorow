@@ -1,0 +1,50 @@
+[
+  {
+    "conversions": 1945.0,
+    "source_medium": "google / organic"
+  },
+  {
+    "conversions": 930.0,
+    "source_medium": "google / cpc"
+  },
+  {
+    "conversions": 630.0,
+    "source_medium": "direct"
+  },
+  {
+    "conversions": 498.0,
+    "source_medium": "facebook / cpc"
+  },
+  {
+    "conversions": 312.0,
+    "source_medium": "newsletter / email"
+  },
+  {
+    "conversions": 248.0,
+    "source_medium": "bing / organic"
+  },
+  {
+    "conversions": 200.0,
+    "source_medium": "linkedin / cpc"
+  },
+  {
+    "conversions": 146.0,
+    "source_medium": "youtube / referral"
+  },
+  {
+    "conversions": 117.0,
+    "source_medium": "partner.example.com / referral"
+  },
+  {
+    "conversions": 94.0,
+    "source_medium": "instagram / social"
+  },
+  {
+    "conversions": 70.0,
+    "source_medium": "reddit / referral"
+  },
+  {
+    "conversions": 60.0,
+    "source_medium": "unknown"
+  }
+]

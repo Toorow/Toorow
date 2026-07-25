@@ -1,0 +1,25 @@
+{
+  "api_version": "bid-manager-v2",
+  "profiles": {
+    "standard_daily": {
+      "report_type": "STANDARD",
+      "metrics": ["impressions", "clicks", "media_cost_micros"],
+      "dimensions": ["date", "advertiser_id", "campaign_id", "insertion_order_id", "line_item_id", "creative_id"]
+    },
+    "conversion_daily": {
+      "report_type": "STANDARD",
+      "metrics": ["conversions", "conversion_value_micros"],
+      "dimensions": ["date", "advertiser_id", "campaign_id", "conversion_type", "currency", "timezone"]
+    },
+    "reach": {
+      "report_type": "REACH",
+      "metrics": ["unique_reach", "average_frequency"],
+      "dimensions": ["date", "advertiser_id", "campaign_id", "country", "timezone"]
+    },
+    "youtube_compatible": {
+      "report_type": "YOUTUBE",
+      "metrics": ["impressions", "clicks", "viewability_rate"],
+      "dimensions": ["date", "advertiser_id", "campaign_id", "youtube_ad_group_id", "country"]
+    }
+  }
+}

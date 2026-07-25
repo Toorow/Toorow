@@ -1,0 +1,567 @@
+{
+    "schema_version": "1.2",
+    "name": "tiktok-ads",
+    "display_name": "TikTok Ads",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "paid_media",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "module_kind": "kpi",
+    "auth_type": "oauth2",
+    "report_profiles": [
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-Driven Daily (any field)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id",
+                "campaign_name",
+                "adgroup_id",
+                "adgroup_name",
+                "ad_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 1000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "campaign_daily",
+            "display_name": "Campaign Performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "campaign_id",
+                "campaign_name"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 1000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "adgroup_daily",
+            "display_name": "Ad Group Performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "adgroup_id",
+                "adgroup_name",
+                "campaign_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 1000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "ad_daily",
+            "display_name": "Ad Performance (daily)",
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversions"
+            ],
+            "dimensions": [
+                "date",
+                "ad_id",
+                "adgroup_id",
+                "campaign_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 1000,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        }
+    ],
+    "error_map": {
+        "401:40105": "auth_expired",
+        "401:40002": "auth_expired",
+        "401:40100": "auth_expired",
+        "401:40000": "auth_expired",
+        "401:40001": "auth_revoked",
+        "403:40001": "permission_denied",
+        "403:40003": "permission_denied",
+        "403:40300": "permission_denied",
+        "400:40002": "invalid_request",
+        "400:40001": "invalid_request",
+        "500:50000": "provider_transient",
+        "500:50002": "provider_transient"
+    },
+    "canonical_metric_mapping": {
+        "spend": "cost",
+        "impressions": "impressions",
+        "clicks": "clicks",
+        "conversions": "conversions"
+    },
+    "canonical_dimension_mapping": {
+        "campaign_id": "campaign_id",
+        "campaign_name": "campaign_name",
+        "adgroup_id": "adgroup_id",
+        "adgroup_name": "adgroup_name",
+        "ad_id": "ad_id"
+    },
+    "attribution_window": {
+        "click_through_days": 7,
+        "view_through_days": 1,
+        "note": "AI-53 verifie le 2026-07-19: la fenetre PAR DEFAUT de TikTok Ads Manager est 7 jours click-through / 1 jour view-through (7D CTA / 1D VTA). Configurable au niveau ad group (CTA 1/7/14/28 j ; VTA off/1/7 j). L'extraction utilise la fenetre DECLAREE par le compte/ad group cote TikTok -- l'API /report/integrated/get renvoie les conversions deja attribuees selon ce reglage (pas de parametre de fenetre a l'extraction sur les comptes SAN). A CONFIRMER en passe live: valeur reelle par ad group et disponibilite d'un champ de fenetre dans la reponse."
+    },
+    "quota": {
+        "window_seconds": 60,
+        "budget_points": 600,
+        "read_cost": 1,
+        "write_cost": 3
+    },
+    "widget_ref": "ui://core/daily-report",
+    "_ai_53_notes": {
+        "verified_on": "2026-07-19",
+        "endpoint": "AI-53 verifie le 2026-07-19 (doc officielle business-api.tiktok.com): TikTok Marketing API, endpoint synchrone GET /open_api/v1.3/report/integrated/get/. Parametres: advertiser_id, report_type=BASIC, data_level (AUCTION_CAMPAIGN / AUCTION_ADGROUP / AUCTION_AD), dimensions (campaign_id|adgroup_id|ad_id + stat_time_day), metrics (spend, impressions, clicks, conversions), start_date, end_date, page, page_size. A CONFIRMER en passe live: noms exacts des metriques 'conversions' selon l'evenement optimise et la version d'API.",
+        "quota": "AI-53 verifie le 2026-07-19: TikTok applique un rate limit sur une FENETRE GLISSANTE d'1 MINUTE et renvoie HTTP 429 (code 40100 rate_limit_exceeded) au depassement. TikTok N'EXPOSE PAS d'API de quota -- le client doit s'adapter au 429 (backstop reel = handler 429 -> RateLimitError). La QPS exacte de l'endpoint reporting n'est PAS documentee publiquement par endpoint (varie selon l'app/l'advertiser). Profil retenu: window 60s / 600 points (approximation d'apres la limite publique 600 req/min observee sur les API business ; l'engine core est FIXED-WINDOW, pas sliding -- a recalibrer en passe live via les headers/429). RESTE A CONFIRMER: la QPS reelle de /report/integrated/get pour le tier d'acces du compte (Basic vs Standard access).",
+        "conversions_dedup": "AI-53 / AD-4: les conversions TikTok sont REVENDIQUEES par le canal (pixel/events API TikTok, attribuees selon la fenetre du compte). Elles NE SONT JAMAIS sommees avec les conversions GA4/Meta/GSC sans la regle de dedup declarative (Rule P, story 3.7). Dans fact_daily_kpi elles restent des lignes SEPAREES distinguees par connector='tiktok-ads'. Meme discipline que meta-ads.",
+        "breakdown_geo_device": "AI-53 A CONFIRMER en passe live: TikTok expose des dimensions de breakdown geographique (country_code) et device (placement, os) via des report_type/dimensions dedies. HORS SCOPE de cette story (comme meta country/device) -- a planifier en enrichissement donnees (pattern Epic 10). Le mart n'emet donc PAS de composite country>device pour tiktok-ads."
+    },
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "spend",
+                "source_field": "spend",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "spend exposed by TikTok Ads.",
+                "semantic_hints": [
+                    "spend",
+                    "currency"
+                ],
+                "canonical_target": "cost",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "impressions",
+                "source_field": "impressions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "impressions exposed by TikTok Ads.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "clicks",
+                "source_field": "clicks",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "clicks exposed by TikTok Ads.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "conversions",
+                "source_field": "conversions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "conversions exposed by TikTok Ads.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "conversions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "stat_time_day",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "date exposed by TikTok Ads.",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_id",
+                "source_field": "campaign_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "campaign id exposed by TikTok Ads.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_name",
+                "source_field": "campaign_name",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "campaign name exposed by TikTok Ads.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "adgroup_id",
+                "source_field": "adgroup_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "adgroup id exposed by TikTok Ads.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "adgroup_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "adgroup_name",
+                "source_field": "adgroup_name",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "adgroup name exposed by TikTok Ads.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "adgroup_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "ad_id",
+                "source_field": "ad_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "ad id exposed by TikTok Ads.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "ad_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id",
+                    "campaign_name",
+                    "adgroup_id",
+                    "adgroup_name",
+                    "ad_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id",
+                        "campaign_name",
+                        "adgroup_id",
+                        "adgroup_name",
+                        "ad_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "page",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 1000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                }
+            },
+            {
+                "id": "campaign_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaign_id",
+                    "campaign_name"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaign_id",
+                        "campaign_name"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "page",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 1000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_campaign_daily"
+                }
+            },
+            {
+                "id": "adgroup_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "adgroup_id",
+                    "adgroup_name",
+                    "campaign_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "adgroup_id",
+                        "adgroup_name",
+                        "campaign_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "page",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 1000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_adgroup_daily"
+                }
+            },
+            {
+                "id": "ad_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "spend",
+                    "impressions",
+                    "clicks",
+                    "conversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "ad_id",
+                    "adgroup_id",
+                    "campaign_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "ad_id",
+                        "adgroup_id",
+                        "campaign_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "page",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 1000,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_ad_daily"
+                }
+            }
+        ]
+    },
+    "account_topology": {
+        "_comment": "Story 25.7 stitch: TikTok topology is a single flat level -- the token's reachable ADVERTISERS (ad accounts). The selected reporting entity is the ADVERTISER (pulls target /report/integrated/get with advertiser_id). discover_accounts lists what the token can reach via oauth2/advertiser/get. Replaces the TIKTOK_ADS_ADVERTISER_ID env-var pattern (deprecated, removed at 25.7 rollout -- see catalog_sources/ROLLOUT_NOTES.md). Additive per AD-2: core reads levels/selection_level/discovery generically, never TikTok vocabulary.",
+        "levels": [
+            {
+                "id": "advertiser",
+                "label": "Advertiser"
+            }
+        ],
+        "selection_level": "advertiser",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    }
+}

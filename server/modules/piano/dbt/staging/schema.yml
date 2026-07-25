@@ -1,0 +1,95 @@
+version: 2
+
+sources:
+  - name: raw_piano
+    description: "Immutable raw landing zone for Piano Analytics daily data (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_piano_daily
+        description: >
+          Raw Piano Analytics daily data, LONG format (Story 28.1): one row per
+          grain x metric x pull_id. Append-only (AD-7). The catalog_daily
+          profile can land ANY Data Model key (baseline OR per-site custom)
+          here (metric, value_num), which is why the landing is long, not wide.
+          Piano metrics are plain counts/decimals (no micro-currency
+          conversion). non_additive marks visit/visitor-scoped metrics (AD-4).
+        columns:
+          - name: date
+            description: "ISO-8601 date string (Piano DATE property at granularity D, site TZ). Day grain."
+          - name: site_id
+            description: "Reporting Piano site id (selected via the topology flow)."
+          - name: segments_json
+            description: >
+              Canonical sorted-key JSON of the selected non-key properties
+              (device_type, geo_country, src_source, page, event_name, and any
+              per-site custom_* key). NULL when none were selected. Part of the
+              supersede grain.
+          - name: metric
+            description: >
+              Canonical metric id (catalog field_id after manifest rename, e.g.
+              'visits' for m_visits). Long-format contract.
+          - name: value_num
+            description: >
+              Metric value as returned by Piano (counts / decimals). Ratio
+              metrics (bounce_rate, conversion_rate...) are RAW day-grain values:
+              recompute at the semantic layer. NON-ADDITIVE metrics must not be
+              summed across breakdowns (see non_additive).
+          - name: non_additive
+            description: >
+              TRUE for visit/visitor-scoped metrics (visits, unique_visitors,
+              bounce_rate, avg_pages_per_visit, visit_duration, exit_rate,
+              new_visitors) that do NOT sum across property breakdowns (AD-4).
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: "Project binding (AD-14). 'default' for seeded test data."
+
+models:
+  - name: stg_piano_daily
+    description: >
+      Staging layer for the Piano Analytics LONG landing (Story 28.1).
+      Supersede semantics (AD-7): QUALIFY keeps only the latest pull per grain
+      (project_id, date, site_id, segments_json, metric). AD-4: non-additive
+      visit/visitor metrics land raw and are never summed across breakdowns.
+      Piano is near-real-time; a nightly 3-day refetch catches late/queued hits.
+    tests:
+      # AI-05 grain uniqueness: a duplicate grain row means double-counted KPIs
+      # downstream. The QUALIFY dedup must always hold. COALESCE the nullable
+      # segments_json so rows without a segments key still key cleanly.
+      - unique:
+          name: stg_piano_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || site_id || '|' || COALESCE(segments_json, '') || '|' || metric"
+    columns:
+      - name: date
+        description: "ISO-8601 date string. Day grain."
+        tests:
+          - not_null
+      - name: site_id
+        description: "Reporting Piano site id."
+        tests:
+          - not_null
+      - name: metric
+        description: "Canonical metric id (long format)."
+        tests:
+          - not_null
+      - name: value_num
+        description: "Metric value (counts / decimals)."
+        tests:
+          - not_null
+      - name: non_additive
+        description: "TRUE for visit/visitor-scoped metrics (never summed across breakdowns)."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding for this row. Propagated from raw_piano_daily."
+        tests:
+          - not_null

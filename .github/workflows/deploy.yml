@@ -1,0 +1,159 @@
+name: Deploy
+
+# Triggers: every push to main + manual dispatch.
+# Story 2.1 AC3.
+#
+# [HUMAN GATE] This workflow is authored but NOT runnable until:
+#   - GCP billing account + projects are provisioned (Phase B, AI-08).
+#   - GitHub Actions Variables are set: GCP_PROJECT_DEV, GCP_PROJECT_PROD,
+#     CLOUD_RUN_HOSTNAME_DEV, CLOUD_RUN_HOSTNAME_PROD.
+#   - GitHub Actions Secrets are set: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SA_EMAIL.
+#   - A 'production' environment is created in GitHub repo Settings > Environments
+#     with at least one required reviewer (Jean — human gate).
+#   - Workload Identity Federation pool/provider provisioned by Terraform SA
+#     (infra/terraform/main.tf google_service_account.github_actions).
+#
+# Task 3.5 BLOCKED: actionlint and act are not available in this environment.
+# Structural validation performed via python -c "import yaml; yaml.safe_load(...)"
+# (see CONTRIBUTING.md AI-01). Run `actionlint .github/workflows/deploy.yml`
+# to perform offline structural validation once actionlint is installed.
+
+on:
+  # Gate on CI success: only deploy when the CI workflow completes successfully on main.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  # Allow manual trigger at any time (e.g. hotfix, re-deploy without a new push).
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Build Docker image and push to Artifact Registry.
+  # ---------------------------------------------------------------------------
+  build-and-push:
+    name: Build and push mcp-server image
+    runs-on: ubuntu-latest
+    # When triggered by workflow_run: only proceed if CI passed.
+    # workflow_dispatch runs always (no workflow_run context to check).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      id-token: write   # required for Workload Identity Federation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Authenticate to GCP via Workload Identity Federation (no JSON key committed).
+      # The WIF pool and provider are provisioned by the Terraform SA in
+      # infra/terraform/main.tf (google_service_account.github_actions).
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/mcp-server/Dockerfile
+          push: true
+          tags: |
+            europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_DEV }}/connector/mcp-server:${{ github.sha }}
+            europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_DEV }}/connector/mcp-server:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Deploy to Cloud Run (dev environment).
+  # --allow-unauthenticated is a placeholder; auth lands in Story 2.3.
+  # ---------------------------------------------------------------------------
+  deploy-dev:
+    name: Deploy to Cloud Run (dev)
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Deploy to Cloud Run (dev)
+        run: |
+          gcloud run deploy mcp-server \
+            --image "europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_DEV }}/connector/mcp-server:${{ github.sha }}" \
+            --project "${{ vars.GCP_PROJECT_DEV }}" \
+            --region europe-west1 \
+            --platform managed \
+            --allow-unauthenticated \
+            --min-instances=0 \
+            --max-instances=4 \
+            --set-secrets "NANGO_ENCRYPTION_KEY=nango-encryption-key:latest,TOOROW_STATIC_TOKEN=connector-static-token:latest" \
+            --set-env-vars "HOST_HEADER_VALIDATION=strict,ALLOWED_HOST=${{ vars.CLOUD_RUN_HOSTNAME_DEV }},FASTMCP_HTTP_ALLOWED_HOSTS=${{ vars.CLOUD_RUN_HOSTNAME_DEV }},PORT=8080,TOOROW_AUTH_MODE=static" \
+            --quiet
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Deploy to Cloud Run (prod environment).
+  # Gated on the GitHub 'production' environment (manual approval by Jean).
+  # [HUMAN GATE] Create the 'production' environment in GitHub repo Settings >
+  # Environments with a required reviewer before this job can run.
+  # ---------------------------------------------------------------------------
+  deploy-prod:
+    name: Deploy to Cloud Run (prod)
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      # Pre-deploy validation: assert that all required JWT/auth vars are set.
+      # A missing value here would silently disable OAuth enforcement in prod.
+      - name: Validate prod JWT configuration vars
+        run: |
+          MISSING=""
+          [ -z "${{ vars.TOOROW_JWT_JWKS_URI }}"  ] && MISSING="$MISSING TOOROW_JWT_JWKS_URI"
+          [ -z "${{ vars.TOOROW_JWT_ISSUER }}"    ] && MISSING="$MISSING TOOROW_JWT_ISSUER"
+          [ -z "${{ vars.TOOROW_JWT_AUDIENCE }}"  ] && MISSING="$MISSING TOOROW_JWT_AUDIENCE"
+          if [ -n "$MISSING" ]; then
+            echo "ERROR: The following required GitHub Actions Variables are not set:$MISSING"
+            echo "Set them under Settings > Environments > production > Variables before deploying."
+            exit 1
+          fi
+          echo "OK: all required prod JWT vars are set."
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Deploy to Cloud Run (prod)
+        # NOTE: --allow-unauthenticated is intentionally absent for prod.
+        # Prod access is restricted via IAM invoker bindings + Load Balancer (Phase B).
+        # Dev uses --allow-unauthenticated for easier testing (see deploy-dev job above).
+        run: |
+          gcloud run deploy mcp-server \
+            --image "europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_PROD }}/connector/mcp-server:${{ github.sha }}" \
+            --project "${{ vars.GCP_PROJECT_PROD }}" \
+            --region europe-west1 \
+            --platform managed \
+            --min-instances=0 \
+            --max-instances=4 \
+            --set-secrets "NANGO_ENCRYPTION_KEY=nango-encryption-key:latest" \
+            --set-env-vars "HOST_HEADER_VALIDATION=strict,ALLOWED_HOST=${{ vars.CLOUD_RUN_HOSTNAME_PROD }},FASTMCP_HTTP_ALLOWED_HOSTS=${{ vars.CLOUD_RUN_HOSTNAME_PROD }},PORT=8080,TOOROW_AUTH_MODE=oauth,TOOROW_JWT_JWKS_URI=${{ vars.TOOROW_JWT_JWKS_URI }},TOOROW_JWT_ISSUER=${{ vars.TOOROW_JWT_ISSUER }},TOOROW_JWT_AUDIENCE=${{ vars.TOOROW_JWT_AUDIENCE }}" \
+            --quiet

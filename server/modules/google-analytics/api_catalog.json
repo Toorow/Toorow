@@ -1,0 +1,3607 @@
+{
+  "api_version": "GA4 Data API v1",
+  "catalog_version": "1",
+  "connector": "google-analytics",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "The achievement ID in a game for an event.",
+      "exposure": "exposed",
+      "field_id": "achievementId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GAMING",
+      "source_field": "achievementId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The number of distinct active users on your site or app within a 1-day period.",
+      "exposure": "exposed",
+      "field_id": "active1DayUsers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "USER",
+      "source_field": "active1DayUsers",
+      "tier": "core"
+    },
+    {
+      "description": "The number of distinct active users on your site or app within a 28-day period.",
+      "exposure": "exposed",
+      "field_id": "active28DayUsers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "USER",
+      "source_field": "active28DayUsers",
+      "tier": "core"
+    },
+    {
+      "description": "The number of distinct active users on your site or app within a 7-day period.",
+      "exposure": "exposed",
+      "field_id": "active7DayUsers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "USER",
+      "source_field": "active7DayUsers",
+      "tier": "core"
+    },
+    {
+      "description": "The number of distinct users who visited your site or app.",
+      "exposure": "exposed",
+      "field_id": "active_users",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "USER",
+      "source_field": "activeUsers",
+      "tier": "core"
+    },
+    {
+      "description": "Describes the way ads looked and where they appeared.",
+      "exposure": "exposed",
+      "field_id": "adFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PUBLISHER",
+      "source_field": "adFormat",
+      "tier": "advanced"
+    },
+    {
+      "description": "The source network that served the ad.",
+      "exposure": "exposed",
+      "field_id": "adSourceName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PUBLISHER",
+      "source_field": "adSourceName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The time (milliseconds) an ad unit was exposed to a user.",
+      "exposure": "exposed",
+      "field_id": "adUnitExposure",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PUBLISHER",
+      "source_field": "adUnitExposure",
+      "tier": "advanced"
+    },
+    {
+      "description": "The name chosen to describe this ad unit.",
+      "exposure": "exposed",
+      "field_id": "adUnitName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PUBLISHER",
+      "source_field": "adUnitName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The total number of times users clicked on your ad.",
+      "exposure": "exposed",
+      "field_id": "advertiserAdClicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ADS",
+      "source_field": "advertiserAdClicks",
+      "tier": "standard"
+    },
+    {
+      "description": "The total amount you paid for your ads.",
+      "exposure": "exposed",
+      "field_id": "advertiserAdCost",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ADS",
+      "source_field": "advertiserAdCost",
+      "tier": "standard"
+    },
+    {
+      "description": "The ad cost per click (CPC).",
+      "exposure": "exposed",
+      "field_id": "advertiserAdCostPerClick",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ADS",
+      "source_field": "advertiserAdCostPerClick",
+      "tier": "standard"
+    },
+    {
+      "description": "The ad cost per key event.",
+      "exposure": "exposed",
+      "field_id": "advertiserAdCostPerKeyEvent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ADS",
+      "source_field": "advertiserAdCostPerKeyEvent",
+      "tier": "standard"
+    },
+    {
+      "description": "The total number of impressions.",
+      "exposure": "exposed",
+      "field_id": "advertiserAdImpressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ADS",
+      "source_field": "advertiserAdImpressions",
+      "tier": "standard"
+    },
+    {
+      "description": "The numeric identifier of an audience.",
+      "exposure": "exposed",
+      "field_id": "audienceId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "audienceId",
+      "tier": "standard"
+    },
+    {
+      "description": "The given name of an audience.",
+      "exposure": "exposed",
+      "field_id": "audienceName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "audienceName",
+      "tier": "standard"
+    },
+    {
+      "description": "The resource name of this audience.",
+      "exposure": "exposed",
+      "field_id": "audienceResourceName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AUDIENCE",
+      "source_field": "audienceResourceName",
+      "tier": "standard"
+    },
+    {
+      "description": "The average purchase revenue in the transaction group of events.",
+      "exposure": "exposed",
+      "field_id": "averagePurchaseRevenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "averagePurchaseRevenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The average revenue per paying user (ARPPU).",
+      "exposure": "exposed",
+      "field_id": "averagePurchaseRevenuePerPayingUser",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "averagePurchaseRevenuePerPayingUser",
+      "tier": "standard"
+    },
+    {
+      "description": "The average purchase revenue per active user.",
+      "exposure": "exposed",
+      "field_id": "averagePurchaseRevenuePerUser",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "averagePurchaseRevenuePerUser",
+      "tier": "standard"
+    },
+    {
+      "description": "The average revenue per active user (ARPU).",
+      "exposure": "exposed",
+      "field_id": "averageRevenuePerUser",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "averageRevenuePerUser",
+      "tier": "standard"
+    },
+    {
+      "description": "The average duration (seconds) of users' sessions.",
+      "exposure": "exposed",
+      "field_id": "averageSessionDuration",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "SESSION",
+      "source_field": "averageSessionDuration",
+      "tier": "core"
+    },
+    {
+      "description": "The percentage of sessions that were not engaged.",
+      "exposure": "exposed",
+      "field_id": "bounceRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "SESSION",
+      "source_field": "bounceRate",
+      "tier": "core"
+    },
+    {
+      "description": "Interests demonstrated by users higher in the shopping funnel.",
+      "exposure": "exposed",
+      "field_id": "brandingInterest",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "USER",
+      "source_field": "brandingInterest",
+      "tier": "core"
+    },
+    {
+      "description": "The browsers used to view your website.",
+      "exposure": "exposed",
+      "field_id": "browser",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "browser",
+      "tier": "core"
+    },
+    {
+      "description": "The version of the browser.",
+      "exposure": "exposed",
+      "field_id": "browserVersion",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "browserVersion",
+      "tier": "core"
+    },
+    {
+      "description": "The number of users who added a product to their cart divided by the number who viewed it.",
+      "exposure": "exposed",
+      "field_id": "cartToViewRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "cartToViewRate",
+      "tier": "standard"
+    },
+    {
+      "description": "The player character in a game for an event.",
+      "exposure": "exposed",
+      "field_id": "character",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GAMING",
+      "source_field": "character",
+      "tier": "advanced"
+    },
+    {
+      "description": "The city from which the user activity originated.",
+      "exposure": "exposed",
+      "field_id": "city",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "city",
+      "tier": "core"
+    },
+    {
+      "description": "The geographic ID of the city from which activity originated.",
+      "exposure": "exposed",
+      "field_id": "cityId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "cityId",
+      "tier": "core"
+    },
+    {
+      "description": "The CM360 account ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360AccountId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360AccountId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 account name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360AccountName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360AccountName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 advertiser ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360AdvertiserId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360AdvertiserId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 advertiser name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360AdvertiserName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360AdvertiserName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 campaign ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360CampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360CampaignId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 campaign name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360CampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360CampaignName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative format that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360CreativeFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360CreativeFormat",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360CreativeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360CreativeId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360CreativeName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360CreativeName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative type that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360CreativeType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360CreativeType",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative type ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360CreativeTypeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360CreativeTypeId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative version that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360CreativeVersion",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360CreativeVersion",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 medium that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360Medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360Medium",
+      "tier": "advanced"
+    },
+    {
+      "description": "How the CM360 media cost is calculated (e.g. CPM).",
+      "exposure": "exposed",
+      "field_id": "cm360PlacementCostStructure",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360PlacementCostStructure",
+      "tier": "advanced"
+    },
+    {
+      "description": "Identifies a CM360 placement.",
+      "exposure": "exposed",
+      "field_id": "cm360PlacementId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360PlacementId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The given name for a CM360 placement.",
+      "exposure": "exposed",
+      "field_id": "cm360PlacementName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360PlacementName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 rendering ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360RenderingId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360RenderingId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 site ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360SiteId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360SiteId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 site name from which the ad space was purchased.",
+      "exposure": "exposed",
+      "field_id": "cm360SiteName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360SiteName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 source (also referred to as site name).",
+      "exposure": "exposed",
+      "field_id": "cm360Source",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360Source",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 source medium that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "cm360SourceMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "cm360SourceMedium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The cohort's name in the request.",
+      "exclusion_reason": "Cohort fields require a runReport cohortSpec which pull_catalog_daily does not build.",
+      "exposure": "excluded",
+      "field_id": "cohort",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DAILY COHORT",
+      "source_field": "cohort",
+      "tier": "advanced"
+    },
+    {
+      "description": "The number of users in the cohort who are active in the time window.",
+      "exclusion_reason": "Cohort fields require a runReport cohortSpec which pull_catalog_daily does not build.",
+      "exposure": "excluded",
+      "field_id": "cohortActiveUsers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "DAILY COHORT",
+      "source_field": "cohortActiveUsers",
+      "tier": "advanced"
+    },
+    {
+      "description": "The day offset relative to firstSessionDate within the cohort.",
+      "exclusion_reason": "Cohort fields require a runReport cohortSpec which pull_catalog_daily does not build.",
+      "exposure": "excluded",
+      "field_id": "cohortNthDay",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DAILY COHORT",
+      "source_field": "cohortNthDay",
+      "tier": "advanced"
+    },
+    {
+      "description": "The month offset relative to firstSessionDate within the cohort.",
+      "exclusion_reason": "Cohort fields require a runReport cohortSpec which pull_catalog_daily does not build.",
+      "exposure": "excluded",
+      "field_id": "cohortNthMonth",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DAILY COHORT",
+      "source_field": "cohortNthMonth",
+      "tier": "advanced"
+    },
+    {
+      "description": "The week offset relative to firstSessionDate within the cohort.",
+      "exclusion_reason": "Cohort fields require a runReport cohortSpec which pull_catalog_daily does not build.",
+      "exposure": "excluded",
+      "field_id": "cohortNthWeek",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DAILY COHORT",
+      "source_field": "cohortNthWeek",
+      "tier": "advanced"
+    },
+    {
+      "description": "The total number of users in the cohort.",
+      "exclusion_reason": "Cohort fields require a runReport cohortSpec which pull_catalog_daily does not build.",
+      "exposure": "excluded",
+      "field_id": "cohortTotalUsers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "DAILY COHORT",
+      "source_field": "cohortTotalUsers",
+      "tier": "advanced"
+    },
+    {
+      "description": "A category that applies to items of published content.",
+      "exposure": "exposed",
+      "field_id": "contentGroup",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "contentGroup",
+      "tier": "core"
+    },
+    {
+      "description": "The identifier of the selected content.",
+      "exposure": "exposed",
+      "field_id": "contentId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "contentId",
+      "tier": "core"
+    },
+    {
+      "description": "The category of the selected content.",
+      "exposure": "exposed",
+      "field_id": "contentType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "contentType",
+      "tier": "core"
+    },
+    {
+      "description": "The continent from which the user activity originated.",
+      "exposure": "exposed",
+      "field_id": "continent",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "continent",
+      "tier": "core"
+    },
+    {
+      "description": "The geographic ID of the continent from which activity originated.",
+      "exposure": "exposed",
+      "field_id": "continentId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "continentId",
+      "tier": "core"
+    },
+    {
+      "description": "The count of key events (legacy apiName 'conversions'; GA4 UI 'Key events').",
+      "exposure": "exposed",
+      "field_id": "conversions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "EVENT",
+      "source_field": "conversions",
+      "tier": "core"
+    },
+    {
+      "description": "The country from which the user activity originated.",
+      "exposure": "exposed",
+      "field_id": "country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "country",
+      "tier": "core"
+    },
+    {
+      "description": "The geographic ID of the country (ISO 3166-1 alpha-2).",
+      "exposure": "exposed",
+      "field_id": "countryId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "countryId",
+      "tier": "core"
+    },
+    {
+      "description": "The number of users who logged a crash in this row of the report.",
+      "exposure": "exposed",
+      "field_id": "crashAffectedUsers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "EVENT",
+      "source_field": "crashAffectedUsers",
+      "tier": "core"
+    },
+    {
+      "description": "The percentage of users without crash events in this row of the report.",
+      "exposure": "exposed",
+      "field_id": "crashFreeUsersRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "EVENT",
+      "source_field": "crashFreeUsersRate",
+      "tier": "core"
+    },
+    {
+      "description": "The local currency code (ISO 4217) of the e-commerce event.",
+      "exposure": "exposed",
+      "field_id": "currencyCode",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "currencyCode",
+      "tier": "standard"
+    },
+    {
+      "description": "The date of the event, formatted as YYYYMMDD.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "The combined values of date and hour (YYYYMMDDHH).",
+      "exposure": "exposed",
+      "field_id": "dateHour",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "dateHour",
+      "tier": "core"
+    },
+    {
+      "description": "The combined values of date, hour, and minute (YYYYMMDDHHMM).",
+      "exposure": "exposed",
+      "field_id": "dateHourMinute",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "dateHourMinute",
+      "tier": "core"
+    },
+    {
+      "description": "The rolling percentage of 30-day active users who are also 1-day active users.",
+      "exposure": "exposed",
+      "field_id": "dauPerMau",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "USER",
+      "source_field": "dauPerMau",
+      "tier": "core"
+    },
+    {
+      "description": "The rolling percentage of 7-day active users who are also 1-day active users.",
+      "exposure": "exposed",
+      "field_id": "dauPerWau",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "USER",
+      "source_field": "dauPerWau",
+      "tier": "core"
+    },
+    {
+      "description": "The day of the month, a two-digit number from 01 to 31.",
+      "exposure": "exposed",
+      "field_id": "day",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "day",
+      "tier": "core"
+    },
+    {
+      "description": "The integer day of the week (0-6, Sunday first).",
+      "exposure": "exposed",
+      "field_id": "dayOfWeek",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "TIME",
+      "source_field": "dayOfWeek",
+      "tier": "core"
+    },
+    {
+      "description": "The day of the week in English.",
+      "exposure": "exposed",
+      "field_id": "dayOfWeekName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "dayOfWeekName",
+      "tier": "core"
+    },
+    {
+      "description": "The key event's default channel group based on source and medium.",
+      "exposure": "exposed",
+      "field_id": "defaultChannelGroup",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SESSION SOURCE",
+      "source_field": "defaultChannelGroup",
+      "tier": "core"
+    },
+    {
+      "description": "The mobile device model (example: iPhone 10,6).",
+      "exposure": "exposed",
+      "field_id": "deviceModel",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "deviceModel",
+      "tier": "core"
+    },
+    {
+      "description": "The type of device: Desktop, Tablet, or Mobile.",
+      "exposure": "exposed",
+      "field_id": "device_category",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "deviceCategory",
+      "tier": "core"
+    },
+    {
+      "description": "The DV360 advertiser ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360AdvertiserId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360AdvertiserId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 advertiser name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360AdvertiserName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360AdvertiserName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 campaign ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360CampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360CampaignId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 campaign name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360CampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360CampaignName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 creative format (expandable, video, native).",
+      "exposure": "exposed",
+      "field_id": "dv360CreativeFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360CreativeFormat",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 creative ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360CreativeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360CreativeId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 creative name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360CreativeName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360CreativeName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 exchange ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360ExchangeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360ExchangeId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 exchange name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360ExchangeName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360ExchangeName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 insertion order ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360InsertionOrderId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360InsertionOrderId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 insertion order name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360InsertionOrderName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360InsertionOrderName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 line item ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360LineItemId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360LineItemId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 line item name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360LineItemName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360LineItemName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 medium that led to the key event (e.g. cpm).",
+      "exposure": "exposed",
+      "field_id": "dv360Medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360Medium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 partner ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360PartnerId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360PartnerId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 partner name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360PartnerName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360PartnerName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 source (site name where the ad displayed).",
+      "exposure": "exposed",
+      "field_id": "dv360Source",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360Source",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 source medium that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "dv360SourceMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "dv360SourceMedium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The number of times users completed a purchase.",
+      "exposure": "exposed",
+      "field_id": "ecommercePurchases",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "ecommercePurchases",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of sessions that lasted longer than 10 seconds, had a key event, or had 2+ screen/page views.",
+      "exposure": "exposed",
+      "field_id": "engagedSessions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "SESSION",
+      "source_field": "engagedSessions",
+      "tier": "core"
+    },
+    {
+      "description": "The percentage of engaged sessions.",
+      "exposure": "exposed",
+      "field_id": "engagementRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "SESSION",
+      "source_field": "engagementRate",
+      "tier": "core"
+    },
+    {
+      "description": "The count of events.",
+      "exposure": "exposed",
+      "field_id": "eventCount",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "EVENT",
+      "source_field": "eventCount",
+      "tier": "core"
+    },
+    {
+      "description": "The average number of events per user.",
+      "exposure": "exposed",
+      "field_id": "eventCountPerUser",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "EVENT",
+      "source_field": "eventCountPerUser",
+      "tier": "core"
+    },
+    {
+      "description": "The name of the event.",
+      "exposure": "exposed",
+      "field_id": "eventName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "EVENT",
+      "source_field": "eventName",
+      "tier": "core"
+    },
+    {
+      "description": "The sum of the event parameter named 'value'.",
+      "exposure": "exposed",
+      "field_id": "eventValue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "EVENT",
+      "source_field": "eventValue",
+      "tier": "core"
+    },
+    {
+      "description": "The average number of events per session.",
+      "exposure": "exposed",
+      "field_id": "eventsPerSession",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "EVENT",
+      "source_field": "eventsPerSession",
+      "tier": "core"
+    },
+    {
+      "description": "The extension of the downloaded file (e.g. pdf, txt).",
+      "exposure": "exposed",
+      "field_id": "fileExtension",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINKS",
+      "source_field": "fileExtension",
+      "tier": "standard"
+    },
+    {
+      "description": "The page path of the downloaded file.",
+      "exposure": "exposed",
+      "field_id": "fileName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINKS",
+      "source_field": "fileName",
+      "tier": "standard"
+    },
+    {
+      "description": "The date (YYYYMMDD) the user's first session occurred.",
+      "exposure": "exposed",
+      "field_id": "firstSessionDate",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "USER",
+      "source_field": "firstSessionDate",
+      "tier": "core"
+    },
+    {
+      "description": "The percentage of active users who made their first-ever purchase.",
+      "exposure": "exposed",
+      "field_id": "firstTimePurchaserConversionRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "firstTimePurchaserConversionRate",
+      "tier": "standard"
+    },
+    {
+      "description": "The percentage of active users who made their first purchase.",
+      "exposure": "exposed",
+      "field_id": "firstTimePurchaserRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "firstTimePurchaserRate",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of users who made their first purchase.",
+      "exposure": "exposed",
+      "field_id": "firstTimePurchasers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "firstTimePurchasers",
+      "tier": "standard"
+    },
+    {
+      "description": "The CM360 account ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360AccountId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360AccountId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 account name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360AccountName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360AccountName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 advertiser ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360AdvertiserId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360AdvertiserId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 advertiser name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360AdvertiserName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360AdvertiserName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 campaign ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360CampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360CampaignId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 campaign name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360CampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360CampaignName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative format that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360CreativeFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360CreativeFormat",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360CreativeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360CreativeId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360CreativeName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360CreativeName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative type that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360CreativeType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360CreativeType",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative type ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360CreativeTypeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360CreativeTypeId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative version that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360CreativeVersion",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360CreativeVersion",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 medium that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360Medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360Medium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 placement cost structure that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360PlacementCostStructure",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360PlacementCostStructure",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 placement ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360PlacementId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360PlacementId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 placement name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360PlacementName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360PlacementName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 rendering ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360RenderingId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360RenderingId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 site ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360SiteId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360SiteId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 site name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360SiteName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360SiteName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 source that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360Source",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360Source",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 source medium that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserCm360SourceMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "firstUserCm360SourceMedium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The default channel group that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDefaultChannelGroup",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "USER SOURCE",
+      "source_field": "firstUserDefaultChannelGroup",
+      "tier": "core"
+    },
+    {
+      "description": "The DV360 advertiser ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360AdvertiserId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360AdvertiserId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 advertiser name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360AdvertiserName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360AdvertiserName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 campaign ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360CampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360CampaignId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 campaign name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360CampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360CampaignName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 creative format that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360CreativeFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360CreativeFormat",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 creative ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360CreativeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360CreativeId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 creative name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360CreativeName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360CreativeName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 exchange ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360ExchangeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360ExchangeId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 exchange name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360ExchangeName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360ExchangeName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 insertion order ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360InsertionOrderId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360InsertionOrderId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 insertion order name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360InsertionOrderName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360InsertionOrderName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 line item ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360LineItemId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360LineItemId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 line item name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360LineItemName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360LineItemName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 medium that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360Medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360Medium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 partner ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360PartnerId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360PartnerId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 partner name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360PartnerName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360PartnerName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 source that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360Source",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360Source",
+      "tier": "advanced"
+    },
+    {
+      "description": "The DV360 source medium that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserDv360SourceMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DV360",
+      "source_field": "firstUserDv360SourceMedium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The account name from Google Ads that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsAccountName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsAccountName",
+      "tier": "standard"
+    },
+    {
+      "description": "The ad group ID that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsAdGroupId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsAdGroupId",
+      "tier": "standard"
+    },
+    {
+      "description": "The ad group name that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsAdGroupName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsAdGroupName",
+      "tier": "standard"
+    },
+    {
+      "description": "The advertising network that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsAdNetworkType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsAdNetworkType",
+      "tier": "standard"
+    },
+    {
+      "description": "The identifier of the Google Ads campaign that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsCampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsCampaignId",
+      "tier": "standard"
+    },
+    {
+      "description": "The name of the Google Ads campaign that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsCampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsCampaignName",
+      "tier": "standard"
+    },
+    {
+      "description": "The Google Ads campaign type that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsCampaignType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsCampaignType",
+      "tier": "standard"
+    },
+    {
+      "description": "The Google Ads creative ID that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsCreativeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsCreativeId",
+      "tier": "standard"
+    },
+    {
+      "description": "The customer ID from Google Ads that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsCustomerId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsCustomerId",
+      "tier": "standard"
+    },
+    {
+      "description": "The Google Ads keyword text that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsKeyword",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsKeyword",
+      "tier": "standard"
+    },
+    {
+      "description": "The search query that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserGoogleAdsQuery",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "firstUserGoogleAdsQuery",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual campaign ID (utm_id) that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserManualCampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "firstUserManualCampaignId",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual campaign name (utm_campaign) that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserManualCampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "firstUserManualCampaignName",
+      "tier": "standard"
+    },
+    {
+      "description": "The ad content (utm_content) that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserManualContent",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "firstUserManualContent",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual creative format (utm_creative_format) that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserManualCreativeFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "firstUserManualCreativeFormat",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual marketing tactic (utm_marketing_tactic) that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserManualMarketingTactic",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "firstUserManualMarketingTactic",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual medium (utm_medium) that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserManualMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "firstUserManualMedium",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual source (utm_source) that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserManualSource",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "firstUserManualSource",
+      "tier": "standard"
+    },
+    {
+      "description": "The combination of the manual source and medium that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserManualSourceMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "firstUserManualSourceMedium",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual source platform (utm_source_platform) that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserManualSourcePlatform",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "firstUserManualSourcePlatform",
+      "tier": "standard"
+    },
+    {
+      "description": "The term (utm_term) that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserManualTerm",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "firstUserManualTerm",
+      "tier": "standard"
+    },
+    {
+      "description": "The medium that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "USER SOURCE",
+      "source_field": "firstUserMedium",
+      "tier": "core"
+    },
+    {
+      "description": "The primary channel group that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserPrimaryChannelGroup",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "USER SOURCE",
+      "source_field": "firstUserPrimaryChannelGroup",
+      "tier": "core"
+    },
+    {
+      "description": "The SA360 ad group ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360AdGroupId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360AdGroupId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 ad group name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360AdGroupName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360AdGroupName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 campaign ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360CampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360CampaignId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 campaign name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360CampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360CampaignName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 creative format that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360CreativeFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360CreativeFormat",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 engine account ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360EngineAccountId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360EngineAccountId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 engine account name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360EngineAccountName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360EngineAccountName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 engine account type that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360EngineAccountType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360EngineAccountType",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 keyword text that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360KeywordText",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360KeywordText",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 manager account ID that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360ManagerAccountId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360ManagerAccountId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 manager account name that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360ManagerAccountName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360ManagerAccountName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 medium that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360Medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360Medium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 query that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360Query",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360Query",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 source that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360Source",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360Source",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 source medium that originally acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSa360SourceMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "firstUserSa360SourceMedium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The source that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "firstUserSource",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "USER SOURCE",
+      "source_field": "firstUserSource",
+      "tier": "core"
+    },
+    {
+      "description": "The combined source and medium that first acquired the user.",
+      "exposure": "exposed",
+      "field_id": "first_user_source_medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "USER SOURCE",
+      "source_field": "firstUserSourceMedium",
+      "tier": "core"
+    },
+    {
+      "description": "The hostname, page path, and query string of visited web pages.",
+      "exposure": "exposed",
+      "field_id": "fullPageUrl",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "fullPageUrl",
+      "tier": "core"
+    },
+    {
+      "description": "The account name from Google Ads for the key event.",
+      "exposure": "exposed",
+      "field_id": "googleAdsAccountName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsAccountName",
+      "tier": "standard"
+    },
+    {
+      "description": "The Google Ads ad group ID attributed to the key event.",
+      "exposure": "exposed",
+      "field_id": "googleAdsAdGroupId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsAdGroupId",
+      "tier": "standard"
+    },
+    {
+      "description": "The ad group name attributed to the key event.",
+      "exposure": "exposed",
+      "field_id": "googleAdsAdGroupName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsAdGroupName",
+      "tier": "standard"
+    },
+    {
+      "description": "The advertising network type (Google search, Display, etc.).",
+      "exposure": "exposed",
+      "field_id": "googleAdsAdNetworkType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsAdNetworkType",
+      "tier": "standard"
+    },
+    {
+      "description": "The campaign ID for the Google Ads campaign attributed to the key event.",
+      "exposure": "exposed",
+      "field_id": "googleAdsCampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsCampaignId",
+      "tier": "standard"
+    },
+    {
+      "description": "The campaign name for the Google Ads campaign attributed to the key event.",
+      "exposure": "exposed",
+      "field_id": "googleAdsCampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsCampaignName",
+      "tier": "standard"
+    },
+    {
+      "description": "The Google Ads campaign type (Search, Display, Shopping, Video, etc.).",
+      "exposure": "exposed",
+      "field_id": "googleAdsCampaignType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsCampaignType",
+      "tier": "standard"
+    },
+    {
+      "description": "The ID of the Google Ads creative.",
+      "exposure": "exposed",
+      "field_id": "googleAdsCreativeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsCreativeId",
+      "tier": "standard"
+    },
+    {
+      "description": "The customer ID from Google Ads.",
+      "exposure": "exposed",
+      "field_id": "googleAdsCustomerId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsCustomerId",
+      "tier": "standard"
+    },
+    {
+      "description": "The matched keyword that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "googleAdsKeyword",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsKeyword",
+      "tier": "standard"
+    },
+    {
+      "description": "The search query that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "googleAdsQuery",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "googleAdsQuery",
+      "tier": "standard"
+    },
+    {
+      "description": "The total revenue from items only, before refunds.",
+      "exposure": "exposed",
+      "field_id": "grossItemRevenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "grossItemRevenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The sum of revenue from purchases, before refunds.",
+      "exposure": "exposed",
+      "field_id": "grossPurchaseRevenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "grossPurchaseRevenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The player group ID in a game for an event.",
+      "exposure": "exposed",
+      "field_id": "groupId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GAMING",
+      "source_field": "groupId",
+      "tier": "advanced"
+    },
+    {
+      "description": "Includes the subdomain and domain names of a URL.",
+      "exposure": "exposed",
+      "field_id": "hostName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "hostName",
+      "tier": "core"
+    },
+    {
+      "description": "The two-digit hour of day (00-23) in property time zone.",
+      "exposure": "exposed",
+      "field_id": "hour",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "hour",
+      "tier": "core"
+    },
+    {
+      "description": "The string 'true' if the event is a key event.",
+      "exposure": "exposed",
+      "field_id": "isKeyEvent",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "EVENT",
+      "source_field": "isKeyEvent",
+      "tier": "core"
+    },
+    {
+      "description": "ISO week number, where each week starts on Monday.",
+      "exposure": "exposed",
+      "field_id": "isoWeek",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "isoWeek",
+      "tier": "core"
+    },
+    {
+      "description": "The ISO year of the event.",
+      "exposure": "exposed",
+      "field_id": "isoYear",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "isoYear",
+      "tier": "core"
+    },
+    {
+      "description": "The combined values of isoWeek and isoYear.",
+      "exposure": "exposed",
+      "field_id": "isoYearIsoWeek",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "isoYearIsoWeek",
+      "tier": "core"
+    },
+    {
+      "description": "The name or code of the affiliate/partner for the item.",
+      "exposure": "exposed",
+      "field_id": "itemAffiliation",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemAffiliation",
+      "tier": "standard"
+    },
+    {
+      "description": "The brand name of the item.",
+      "exposure": "exposed",
+      "field_id": "itemBrand",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemBrand",
+      "tier": "standard"
+    },
+    {
+      "description": "The hierarchical category in which the item is classified.",
+      "exposure": "exposed",
+      "field_id": "itemCategory",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemCategory",
+      "tier": "standard"
+    },
+    {
+      "description": "The hierarchical category in which the item is classified (second level).",
+      "exposure": "exposed",
+      "field_id": "itemCategory2",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemCategory2",
+      "tier": "standard"
+    },
+    {
+      "description": "The hierarchical category in which the item is classified (third level).",
+      "exposure": "exposed",
+      "field_id": "itemCategory3",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemCategory3",
+      "tier": "standard"
+    },
+    {
+      "description": "The hierarchical category in which the item is classified (fourth level).",
+      "exposure": "exposed",
+      "field_id": "itemCategory4",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemCategory4",
+      "tier": "standard"
+    },
+    {
+      "description": "The hierarchical category in which the item is classified (fifth level).",
+      "exposure": "exposed",
+      "field_id": "itemCategory5",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemCategory5",
+      "tier": "standard"
+    },
+    {
+      "description": "The ID of the item.",
+      "exposure": "exposed",
+      "field_id": "itemId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemId",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of times users clicked an item that appeared in a list.",
+      "exposure": "exposed",
+      "field_id": "itemListClickEvents",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemListClickEvents",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of users who selected a list divided by the number who viewed the same list.",
+      "exposure": "exposed",
+      "field_id": "itemListClickThroughRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "itemListClickThroughRate",
+      "tier": "standard"
+    },
+    {
+      "description": "The ID of the item list.",
+      "exposure": "exposed",
+      "field_id": "itemListId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemListId",
+      "tier": "standard"
+    },
+    {
+      "description": "The name of the item list.",
+      "exposure": "exposed",
+      "field_id": "itemListName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemListName",
+      "tier": "standard"
+    },
+    {
+      "description": "The position of an item in a list.",
+      "exposure": "exposed",
+      "field_id": "itemListPosition",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemListPosition",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of times an item list was viewed.",
+      "exposure": "exposed",
+      "field_id": "itemListViewEvents",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemListViewEvents",
+      "tier": "standard"
+    },
+    {
+      "description": "The physical location associated with the item.",
+      "exposure": "exposed",
+      "field_id": "itemLocationID",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemLocationID",
+      "tier": "standard"
+    },
+    {
+      "description": "The name of the item.",
+      "exposure": "exposed",
+      "field_id": "itemName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemName",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of users who selected a promotion divided by the number who viewed it.",
+      "exposure": "exposed",
+      "field_id": "itemPromotionClickThroughRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "itemPromotionClickThroughRate",
+      "tier": "standard"
+    },
+    {
+      "description": "The name of the item-promotion creative.",
+      "exposure": "exposed",
+      "field_id": "itemPromotionCreativeName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemPromotionCreativeName",
+      "tier": "standard"
+    },
+    {
+      "description": "The name of the promotional creative slot.",
+      "exposure": "exposed",
+      "field_id": "itemPromotionCreativeSlot",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemPromotionCreativeSlot",
+      "tier": "standard"
+    },
+    {
+      "description": "The ID of the item promotion.",
+      "exposure": "exposed",
+      "field_id": "itemPromotionId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemPromotionId",
+      "tier": "standard"
+    },
+    {
+      "description": "The name of the promotion for the item.",
+      "exposure": "exposed",
+      "field_id": "itemPromotionName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemPromotionName",
+      "tier": "standard"
+    },
+    {
+      "description": "The item refund amount is the total refunded transaction revenue from items only.",
+      "exposure": "exposed",
+      "field_id": "itemRefundAmount",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "itemRefundAmount",
+      "tier": "standard"
+    },
+    {
+      "description": "The total revenue from items only.",
+      "exposure": "exposed",
+      "field_id": "itemRevenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "itemRevenue",
+      "tier": "standard"
+    },
+    {
+      "description": "The specific variation of a product (XS, S, M, L).",
+      "exposure": "exposed",
+      "field_id": "itemVariant",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "itemVariant",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of times the item details were viewed.",
+      "exposure": "exposed",
+      "field_id": "itemViewEvents",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemViewEvents",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of units added to cart for a single item.",
+      "exposure": "exposed",
+      "field_id": "itemsAddedToCart",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemsAddedToCart",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of units checked out for a single item.",
+      "exposure": "exposed",
+      "field_id": "itemsCheckedOut",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemsCheckedOut",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of units clicked in a list for a single item.",
+      "exposure": "exposed",
+      "field_id": "itemsClickedInList",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemsClickedInList",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of units clicked in a promotion for a single item.",
+      "exposure": "exposed",
+      "field_id": "itemsClickedInPromotion",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemsClickedInPromotion",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of units for a single item included in purchase events.",
+      "exposure": "exposed",
+      "field_id": "itemsPurchased",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemsPurchased",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of units viewed for a single item.",
+      "exposure": "exposed",
+      "field_id": "itemsViewed",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemsViewed",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of units viewed in a list for a single item.",
+      "exposure": "exposed",
+      "field_id": "itemsViewedInList",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemsViewedInList",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of units viewed in a promotion for a single item.",
+      "exposure": "exposed",
+      "field_id": "itemsViewedInPromotion",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "itemsViewedInPromotion",
+      "tier": "standard"
+    },
+    {
+      "description": "The count of key events.",
+      "exposure": "exposed",
+      "field_id": "keyEvents",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "EVENT",
+      "source_field": "keyEvents",
+      "tier": "core"
+    },
+    {
+      "description": "The page path + query string associated with the first pageview in a session.",
+      "exposure": "exposed",
+      "field_id": "landingPagePlusQueryString",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "landingPagePlusQueryString",
+      "tier": "core"
+    },
+    {
+      "description": "The page path associated with the first pageview in a session.",
+      "exposure": "exposed",
+      "field_id": "landing_page",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "landingPage",
+      "tier": "core"
+    },
+    {
+      "description": "The language setting of the user's browser or device.",
+      "exposure": "exposed",
+      "field_id": "language",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "language",
+      "tier": "core"
+    },
+    {
+      "description": "The language setting of the user's browser or device (ISO 639).",
+      "exposure": "exposed",
+      "field_id": "languageCode",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "languageCode",
+      "tier": "core"
+    },
+    {
+      "description": "The player's level in a game.",
+      "exposure": "exposed",
+      "field_id": "level",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GAMING",
+      "source_field": "level",
+      "tier": "advanced"
+    },
+    {
+      "description": "The HTML class attribute for an outbound link or file download.",
+      "exposure": "exposed",
+      "field_id": "linkClasses",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINKS",
+      "source_field": "linkClasses",
+      "tier": "standard"
+    },
+    {
+      "description": "The destination domain of the outbound link.",
+      "exposure": "exposed",
+      "field_id": "linkDomain",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINKS",
+      "source_field": "linkDomain",
+      "tier": "standard"
+    },
+    {
+      "description": "The HTML ID attribute for an outbound link or file download.",
+      "exposure": "exposed",
+      "field_id": "linkId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINKS",
+      "source_field": "linkId",
+      "tier": "standard"
+    },
+    {
+      "description": "The link text of the file download.",
+      "exposure": "exposed",
+      "field_id": "linkText",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINKS",
+      "source_field": "linkText",
+      "tier": "standard"
+    },
+    {
+      "description": "The full URL for an outbound link or file download.",
+      "exposure": "exposed",
+      "field_id": "linkUrl",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINKS",
+      "source_field": "linkUrl",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual campaign ID (utm_id) that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "manualCampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "manualCampaignId",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual campaign name (utm_campaign) that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "manualCampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "manualCampaignName",
+      "tier": "standard"
+    },
+    {
+      "description": "The ad content (utm_content) that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "manualContent",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "manualContent",
+      "tier": "standard"
+    },
+    {
+      "description": "The creative format (utm_creative_format) that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "manualCreativeFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "manualCreativeFormat",
+      "tier": "standard"
+    },
+    {
+      "description": "The targeting criteria (utm_marketing_tactic) that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "manualMarketingTactic",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "manualMarketingTactic",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual medium (utm_medium) that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "manualMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "manualMedium",
+      "tier": "standard"
+    },
+    {
+      "description": "The manual source (utm_source) that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "manualSource",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "manualSource",
+      "tier": "standard"
+    },
+    {
+      "description": "The combination of the manual source and medium.",
+      "exposure": "exposed",
+      "field_id": "manualSourceMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "manualSourceMedium",
+      "tier": "standard"
+    },
+    {
+      "description": "The platform (utm_source_platform) that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "manualSourcePlatform",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "manualSourcePlatform",
+      "tier": "standard"
+    },
+    {
+      "description": "The term (utm_term) attributed to the key event.",
+      "exposure": "exposed",
+      "field_id": "manualTerm",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "MANUAL SOURCE",
+      "source_field": "manualTerm",
+      "tier": "standard"
+    },
+    {
+      "description": "The medium attributed to the key event.",
+      "exposure": "exposed",
+      "field_id": "medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SESSION SOURCE",
+      "source_field": "medium",
+      "tier": "core"
+    },
+    {
+      "description": "The two-digit minute of the hour (00-59) in property time zone.",
+      "exposure": "exposed",
+      "field_id": "minute",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "minute",
+      "tier": "core"
+    },
+    {
+      "description": "Manufacturer or branded name (Samsung, HTC, Verizon).",
+      "exposure": "exposed",
+      "field_id": "mobileDeviceBranding",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "mobileDeviceBranding",
+      "tier": "core"
+    },
+    {
+      "description": "The branded device name (Galaxy S10 or P30 Pro).",
+      "exposure": "exposed",
+      "field_id": "mobileDeviceMarketingName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "mobileDeviceMarketingName",
+      "tier": "core"
+    },
+    {
+      "description": "The mobile device model name (iPhone X or SM-G950F).",
+      "exposure": "exposed",
+      "field_id": "mobileDeviceModel",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "mobileDeviceModel",
+      "tier": "core"
+    },
+    {
+      "description": "The month of the event, a two-digit integer from 01 to 12.",
+      "exposure": "exposed",
+      "field_id": "month",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "month",
+      "tier": "core"
+    },
+    {
+      "description": "The number of users who interacted with your site or launched your app for the first time.",
+      "exposure": "exposed",
+      "field_id": "newUsers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "USER",
+      "source_field": "newUsers",
+      "tier": "core"
+    },
+    {
+      "description": "New users (0 prior sessions) or returning users (1+ prior sessions).",
+      "exposure": "exposed",
+      "field_id": "newVsReturning",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "USER",
+      "source_field": "newVsReturning",
+      "tier": "core"
+    },
+    {
+      "description": "The number of days since the start of the date range.",
+      "exposure": "exposed",
+      "field_id": "nthDay",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "nthDay",
+      "tier": "core"
+    },
+    {
+      "description": "The number of hours since the start of the date range.",
+      "exposure": "exposed",
+      "field_id": "nthHour",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "nthHour",
+      "tier": "core"
+    },
+    {
+      "description": "The number of minutes since the start of the date range.",
+      "exposure": "exposed",
+      "field_id": "nthMinute",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "nthMinute",
+      "tier": "core"
+    },
+    {
+      "description": "The number of months since the start of the date range.",
+      "exposure": "exposed",
+      "field_id": "nthMonth",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "nthMonth",
+      "tier": "core"
+    },
+    {
+      "description": "The number of weeks since the start of the date range.",
+      "exposure": "exposed",
+      "field_id": "nthWeek",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "nthWeek",
+      "tier": "core"
+    },
+    {
+      "description": "The number of years since the start of the date range.",
+      "exposure": "exposed",
+      "field_id": "nthYear",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "nthYear",
+      "tier": "core"
+    },
+    {
+      "description": "The operating systems used by visitors.",
+      "exposure": "exposed",
+      "field_id": "operatingSystem",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "operatingSystem",
+      "tier": "core"
+    },
+    {
+      "description": "The operating system versions (Android 10, iOS 13.5.1).",
+      "exposure": "exposed",
+      "field_id": "operatingSystemVersion",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "operatingSystemVersion",
+      "tier": "core"
+    },
+    {
+      "description": "The operating system and version combined.",
+      "exposure": "exposed",
+      "field_id": "operatingSystemWithVersion",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "operatingSystemWithVersion",
+      "tier": "core"
+    },
+    {
+      "description": "The code for the order-level coupon.",
+      "exposure": "exposed",
+      "field_id": "orderCoupon",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "orderCoupon",
+      "tier": "standard"
+    },
+    {
+      "description": "Returns 'true' if the link led to a site outside the domain.",
+      "exposure": "exposed",
+      "field_id": "outbound",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINKS",
+      "source_field": "outbound",
+      "tier": "standard"
+    },
+    {
+      "description": "The portion of the URL between the hostname and the query string.",
+      "exposure": "exposed",
+      "field_id": "page",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "pagePath",
+      "tier": "core"
+    },
+    {
+      "description": "The protocol, hostname, page path, and query string for web pages visited.",
+      "exposure": "exposed",
+      "field_id": "pageLocation",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "pageLocation",
+      "tier": "core"
+    },
+    {
+      "description": "The portion of the URL following the hostname (path + query string).",
+      "exposure": "exposed",
+      "field_id": "pagePathPlusQueryString",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "pagePathPlusQueryString",
+      "tier": "core"
+    },
+    {
+      "description": "The full referring URL including the hostname and path.",
+      "exposure": "exposed",
+      "field_id": "pageReferrer",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "pageReferrer",
+      "tier": "core"
+    },
+    {
+      "description": "The web page titles used on your site.",
+      "exposure": "exposed",
+      "field_id": "pageTitle",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "pageTitle",
+      "tier": "core"
+    },
+    {
+      "description": "The percentage down the page that the user scrolled (e.g. 90).",
+      "exposure": "exposed",
+      "field_id": "percentScrolled",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "percentScrolled",
+      "tier": "core"
+    },
+    {
+      "description": "The platform on which your app or website ran (web, iOS, Android).",
+      "exposure": "exposed",
+      "field_id": "platform",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "platform",
+      "tier": "core"
+    },
+    {
+      "description": "The platform and type of device combined.",
+      "exposure": "exposed",
+      "field_id": "platformDeviceCategory",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "platformDeviceCategory",
+      "tier": "core"
+    },
+    {
+      "description": "The primary channel group attributed to the key event.",
+      "exposure": "exposed",
+      "field_id": "primaryChannelGroup",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SESSION SOURCE",
+      "source_field": "primaryChannelGroup",
+      "tier": "core"
+    },
+    {
+      "description": "The number of publisher_ad_click events.",
+      "exposure": "exposed",
+      "field_id": "publisherAdClicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PUBLISHER",
+      "source_field": "publisherAdClicks",
+      "tier": "advanced"
+    },
+    {
+      "description": "The number of ad impressions logged by publisher_ad_impression events.",
+      "exposure": "exposed",
+      "field_id": "publisherAdImpressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PUBLISHER",
+      "source_field": "publisherAdImpressions",
+      "tier": "advanced"
+    },
+    {
+      "description": "The sum of revenue from purchases made in your app or site.",
+      "exposure": "exposed",
+      "field_id": "purchase_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "purchaseRevenue",
+      "tier": "core"
+    },
+    {
+      "description": "The percentage of active users who made one or more purchases.",
+      "exposure": "exposed",
+      "field_id": "purchaserRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "purchaserRate",
+      "tier": "standard"
+    },
+    {
+      "description": "The total refunded transaction revenues.",
+      "exposure": "exposed",
+      "field_id": "refundAmount",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "refundAmount",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of refunded transactions.",
+      "exposure": "exposed",
+      "field_id": "refunds",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "refunds",
+      "tier": "standard"
+    },
+    {
+      "description": "The geographic region from which the user activity originated.",
+      "exposure": "exposed",
+      "field_id": "region",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "region",
+      "tier": "core"
+    },
+    {
+      "description": "Return on ad spend (ROAS): total revenue divided by advertiser ad cost.",
+      "exposure": "exposed",
+      "field_id": "returnOnAdSpend",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ADS",
+      "source_field": "returnOnAdSpend",
+      "tier": "standard"
+    },
+    {
+      "description": "The SA360 ad group ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360AdGroupId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360AdGroupId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 ad group name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360AdGroupName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360AdGroupName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 campaign ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360CampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360CampaignId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 campaign name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360CampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360CampaignName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 creative format that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360CreativeFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360CreativeFormat",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 engine account ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360EngineAccountId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360EngineAccountId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 engine account name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360EngineAccountName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360EngineAccountName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 engine account type that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360EngineAccountType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360EngineAccountType",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 keyword text that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360KeywordText",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360KeywordText",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 manager account ID that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360ManagerAccountId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360ManagerAccountId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 manager account name that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360ManagerAccountName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360ManagerAccountName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 medium that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360Medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360Medium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 query that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360Query",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360Query",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 source that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360Source",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360Source",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SA360 source medium that led to the key event.",
+      "exposure": "exposed",
+      "field_id": "sa360SourceMedium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SA360",
+      "source_field": "sa360SourceMedium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The average number of screens/pages viewed per session.",
+      "exposure": "exposed",
+      "field_id": "screenPageViewsPerSession",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONTENT",
+      "source_field": "screenPageViewsPerSession",
+      "tier": "core"
+    },
+    {
+      "description": "The average number of screens/pages viewed per user.",
+      "exposure": "exposed",
+      "field_id": "screenPageViewsPerUser",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONTENT",
+      "source_field": "screenPageViewsPerUser",
+      "tier": "core"
+    },
+    {
+      "description": "The screen resolution of the user's monitor (1920x1080).",
+      "exposure": "exposed",
+      "field_id": "screenResolution",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "screenResolution",
+      "tier": "core"
+    },
+    {
+      "description": "The number of app screens or web pages your users viewed.",
+      "exposure": "exposed",
+      "field_id": "screen_page_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONTENT",
+      "source_field": "screenPageViews",
+      "tier": "core"
+    },
+    {
+      "description": "The number of unique users who scrolled down at least 90% of the page.",
+      "exposure": "exposed",
+      "field_id": "scrolledUsers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "EVENT",
+      "source_field": "scrolledUsers",
+      "tier": "core"
+    },
+    {
+      "description": "The term searched by the user.",
+      "exposure": "exposed",
+      "field_id": "searchTerm",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SEARCH",
+      "source_field": "searchTerm",
+      "tier": "standard"
+    },
+    {
+      "description": "The marketing campaign ID for a session.",
+      "exposure": "exposed",
+      "field_id": "sessionCampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SESSION SOURCE",
+      "source_field": "sessionCampaignId",
+      "tier": "core"
+    },
+    {
+      "description": "The CM360 account ID that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360AccountId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360AccountId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 account name that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360AccountName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360AccountName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 advertiser ID that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360AdvertiserId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360AdvertiserId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 advertiser name that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360AdvertiserName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360AdvertiserName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 campaign ID that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360CampaignId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360CampaignId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 campaign name that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360CampaignName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360CampaignName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative format that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360CreativeFormat",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360CreativeFormat",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative ID that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360CreativeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360CreativeId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative name that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360CreativeName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360CreativeName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative type that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360CreativeType",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360CreativeType",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative type ID that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360CreativeTypeId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360CreativeTypeId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 creative version that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360CreativeVersion",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360CreativeVersion",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 medium that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360Medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360Medium",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 placement cost structure that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360PlacementCostStructure",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360PlacementCostStructure",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 placement ID that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360PlacementId",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360PlacementId",
+      "tier": "advanced"
+    },
+    {
+      "description": "The CM360 placement name that led to the session.",
+      "exposure": "exposed",
+      "field_id": "sessionCm360PlacementName",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CM360",
+      "source_field": "sessionCm360PlacementName",
+      "tier": "advanced"
+    },
+    {
+      "description": "The percentage of sessions in which any key event was triggered.",
+      "exposure": "exposed",
+      "field_id": "sessionKeyEventRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "EVENT",
+      "source_field": "sessionKeyEventRate",
+      "tier": "core"
+    },
+    {
+      "description": "The marketing campaign name for a session.",
+      "exposure": "exposed",
+      "field_id": "session_campaign",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SESSION SOURCE",
+      "source_field": "sessionCampaignName",
+      "tier": "core"
+    },
+    {
+      "description": "The combined source and medium that led to the session.",
+      "exposure": "exposed",
+      "field_id": "session_source_medium",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SESSION SOURCE",
+      "source_field": "sessionSourceMedium",
+      "tier": "core"
+    },
+    {
+      "description": "The number of sessions that began on your site or app.",
+      "exposure": "exposed",
+      "field_id": "sessions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "SESSION",
+      "source_field": "sessions",
+      "tier": "core"
+    },
+    {
+      "description": "The average number of sessions per user.",
+      "exposure": "exposed",
+      "field_id": "sessionsPerUser",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "SESSION",
+      "source_field": "sessionsPerUser",
+      "tier": "core"
+    },
+    {
+      "description": "The shipping amount associated with a transaction.",
+      "exposure": "exposed",
+      "field_id": "shippingAmount",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "shippingAmount",
+      "tier": "standard"
+    },
+    {
+      "description": "The source attributed to the key event.",
+      "exposure": "exposed",
+      "field_id": "source",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SESSION SOURCE",
+      "source_field": "source",
+      "tier": "core"
+    },
+    {
+      "description": "The tax amount associated with a transaction.",
+      "exposure": "exposed",
+      "field_id": "taxAmount",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "taxAmount",
+      "tier": "standard"
+    },
+    {
+      "description": "The total advertising revenue from both AdMob and third-party sources.",
+      "exposure": "exposed",
+      "field_id": "totalAdRevenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PUBLISHER",
+      "source_field": "totalAdRevenue",
+      "tier": "advanced"
+    },
+    {
+      "description": "The number of users who made a purchase in the reporting date range.",
+      "exposure": "exposed",
+      "field_id": "totalPurchasers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "totalPurchasers",
+      "tier": "standard"
+    },
+    {
+      "description": "The sum of revenue from purchases, subscriptions, and advertising.",
+      "exposure": "exposed",
+      "field_id": "totalRevenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "totalRevenue",
+      "tier": "core"
+    },
+    {
+      "description": "The total number of unique users who logged an event.",
+      "exposure": "exposed",
+      "field_id": "totalUsers",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "USER",
+      "source_field": "totalUsers",
+      "tier": "core"
+    },
+    {
+      "description": "The ID of the e-commerce transaction.",
+      "exposure": "exposed",
+      "field_id": "transaction_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ECOMMERCE",
+      "source_field": "transactionId",
+      "tier": "core"
+    },
+    {
+      "description": "The count of transaction events with purchase revenue.",
+      "exposure": "exposed",
+      "field_id": "transactions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ECOMMERCE",
+      "source_field": "transactions",
+      "tier": "core"
+    },
+    {
+      "description": "The average number of transactions per purchaser.",
+      "exposure": "exposed",
+      "field_id": "transactionsPerPurchaser",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ECOMMERCE",
+      "source_field": "transactionsPerPurchaser",
+      "tier": "standard"
+    },
+    {
+      "description": "The total time (seconds) your website or app was in the foreground of users' devices.",
+      "exposure": "exposed",
+      "field_id": "userEngagementDuration",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "SESSION",
+      "source_field": "userEngagementDuration",
+      "tier": "core"
+    },
+    {
+      "description": "The percentage of users who triggered any key event.",
+      "exposure": "exposed",
+      "field_id": "userKeyEventRate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "EVENT",
+      "source_field": "userKeyEventRate",
+      "tier": "core"
+    },
+    {
+      "description": "The rolling percentage of 30-day active users who are also 7-day active users.",
+      "exposure": "exposed",
+      "field_id": "wauPerMau",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "USER",
+      "source_field": "wauPerMau",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://developers.google.com/analytics/devguides/reporting/data/v1/api-schema"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://docs.supermetrics.com/docs/google-analytics-4-fields.md"
+    }
+  ]
+}

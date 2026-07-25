@@ -1,0 +1,52 @@
+# Root uv workspace for the "connector" monorepo.
+# This root declares no runtime dependencies of its own — it only wires the
+# workspace members together so `uv sync` resolves a single, shared lockfile.
+#
+# Members:
+#   server/  — FastMCP core + modules (Python 3.12)
+#   dbt/     — dbt-core semantic layer scaffold
+#
+# The uv.lock at repo root is the source of truth for reproducible Python envs.
+[project]
+name = "toorow"
+version = "0.1.0"
+description = "Modular MCP marketing-reporting platform (open Atlas) — monorepo root"
+requires-python = ">=3.12,<3.13"
+# No dependencies at the root; deps live in the workspace members.
+dependencies = []
+
+[tool.uv]
+# The root is a workspace coordinator, not an installable package.
+package = false
+
+[tool.uv.workspace]
+members = ["server", "dbt"]
+
+[tool.uv.sources]
+toorow-server = { workspace = true }
+toorow-dbt = { workspace = true }
+
+# Dev tooling shared across the workspace.
+[dependency-groups]
+dev = [
+    "ruff==0.14.*",
+    "pytest==8.*",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["server/tests"]
+markers = [
+    "conformance_layer_1: manifest schema validation layer",
+    "conformance_layer_2: envelope shape validation layer",
+    "conformance_layer_3: single-file bundle check layer",
+    "conformance_layer_4: golden pull fixture layer",
+    "conformance_layer_5: context-event golden fixture layer (Story 4.5)",
+    "conformance_layer_6: report-pack definition validation layer (Story 6.1)",
+]

@@ -1,0 +1,26 @@
+version: 2
+sources:
+  - name: raw_amazon_dsp
+    schema: main
+    tables:
+      - name: raw_amazon_dsp_daily
+models:
+  - name: stg_amazon_dsp_daily
+    description: Amazon DSP values at full regional account/advertiser/report/group grain.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - project_id
+            - region
+            - ads_account_id
+            - advertiser_id
+            - report_type
+            - group_by
+            - date
+            - dimensions_json
+            - metric
+    columns:
+      - name: advertiser_id
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]

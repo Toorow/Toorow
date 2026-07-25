@@ -1,0 +1,57 @@
+{
+  "pull_inputs": {
+    "connection_id": "conn-conformance",
+    "date_from": "2026-07-20",
+    "date_to": "2026-07-22",
+    "project_id": "proj-conformance",
+    "pull_id": "pull_CONFORMANCE_MONDAY001",
+    "profile_id": "board_events",
+    "connection_config": {"board_id": "9007199254740993"}
+  },
+  "api_responses": {
+    "https://api.monday.com/v2": {
+      "status_code": 200,
+      "headers": {
+        "API-Version": "2026-07",
+        "RateLimit-Policy": "5000000;w=60",
+        "RateLimit": "remaining=4999999;limit=5000000"
+      },
+      "json": {
+        "data": {
+          "complexity": {"query": 10, "before": 5000000, "after": 4999990, "reset_in_x_seconds": 60},
+          "boards": [
+            {
+              "updates": [
+                {
+                  "id": "upd_conformance_1",
+                  "created_at": "2026-07-21T09:00:00Z",
+                  "updated_at": "2026-07-21T09:05:00Z",
+                  "text_body": "Conformance fixture: scope approved",
+                  "creator": {"id": "usr_1", "name": "Alice"}
+                },
+                {
+                  "id": "upd_conformance_2",
+                  "created_at": "2026-07-22T11:00:00Z",
+                  "updated_at": "2026-07-22T11:00:00Z",
+                  "text_body": "Conformance fixture: sprint started",
+                  "creator": {"id": "usr_2", "name": "Bob"}
+                },
+                {
+                  "id": "upd_out_of_range",
+                  "created_at": "2026-07-18T08:00:00Z",
+                  "updated_at": "2026-07-18T08:00:00Z",
+                  "text_body": "Out of date range — should be filtered",
+                  "creator": {"id": "usr_1", "name": "Alice"}
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "expected_rows_written": 2,
+  "expected_event_types": ["milestone"],
+  "expected_platform": "monday",
+  "expected_source": "monday"
+}

@@ -1,0 +1,4330 @@
+[
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeAutomotive' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeAutomotive",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeAutomotive"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeAutomotiveAbsorbed' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeAutomotiveAbsorbed",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeAutomotiveAbsorbed"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeComScore' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeComScore",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeComScore"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeComScoreAbsorbed' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeComScoreAbsorbed",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeComScoreAbsorbed"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeCPM1' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeCPM1",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeCPM1"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeCPM1Absorbed' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeCPM1Absorbed",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeCPM1Absorbed"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeCPM2' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeCPM2",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeCPM2"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeCPM2Absorbed' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeCPM2Absorbed",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeCPM2Absorbed"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeCPM3' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeCPM3",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeCPM3"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeCPM3Absorbed' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeCPM3Absorbed",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeCPM3Absorbed"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeDoubleclickCampaignManager' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeDoubleclickCampaignManager",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeDoubleclickCampaignManager"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeDoubleclickCampaignManagerAbsorbed' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeDoubleclickCampaignManagerAbsorbed",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeDoubleclickCampaignManagerAbsorbed"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeDoubleVerify' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeDoubleVerify",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeDoubleVerify"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeDoubleVerifyAbsorbed' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeDoubleVerifyAbsorbed",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeDoubleVerifyAbsorbed"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeIntegralAdScience' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeIntegralAdScience",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeIntegralAdScience"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3pFeeIntegralAdScienceAbsorbed' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3pFeeIntegralAdScienceAbsorbed",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3pFeeIntegralAdScienceAbsorbed"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3PFees' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "3PFees",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3PFees"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3PPreBidFee' (Decimal); report types: dspCampaign.",
+    "field_id": "3PPreBidFee",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3PPreBidFee"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3PPreBidFeeDoubleVerify' (Decimal); report types: dspCampaign.",
+    "field_id": "3PPreBidFeeDoubleVerify",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3PPreBidFeeDoubleVerify"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3PPreBidFeeIntegralAdScience' (Decimal); report types: dspCampaign.",
+    "field_id": "3PPreBidFeeIntegralAdScience",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3PPreBidFeeIntegralAdScience"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3PPreBidFeeOracleDataCloud' (Decimal); report types: dspCampaign.",
+    "field_id": "3PPreBidFeeOracleDataCloud",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3PPreBidFeeOracleDataCloud"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column '3PPreBidFeePixalate' (Decimal); report types: dspCampaign.",
+    "field_id": "3PPreBidFeePixalate",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "3PPreBidFeePixalate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToCart' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "addToCart",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToCart"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToCartBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "addToCartBrandHalo",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToCartBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToCartBrandHaloClicks' (Integer); report types: dspProduct.",
+    "field_id": "addToCartBrandHaloClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToCartBrandHaloClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToCartBrandHaloViews' (Integer); report types: dspProduct.",
+    "field_id": "addToCartBrandHaloViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToCartBrandHaloViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToCartClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "addToCartClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToCartClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'addToCartRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "addToCartRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToCartRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToCartViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "addToCartViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToCartViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToList' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "addToList",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToList"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToListBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "addToListBrandHalo",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToListBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToListBrandHaloClicks' (Integer); report types: dspProduct.",
+    "field_id": "addToListBrandHaloClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToListBrandHaloClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToListBrandHaloViews' (Integer); report types: dspProduct.",
+    "field_id": "addToListBrandHaloViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToListBrandHaloViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToListClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "addToListClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToListClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToListRate' (Integer); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "addToListRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToListRate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'addToListViews' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "addToListViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToListViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToShoppingCart' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "addToShoppingCart",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToShoppingCart"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToShoppingCartClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "addToShoppingCartClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToShoppingCartClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'addToShoppingCartCPA' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "addToShoppingCartCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToShoppingCartCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'addToShoppingCartCVR' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "addToShoppingCartCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToShoppingCartCVR"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'addToShoppingCartValueAverage' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "addToShoppingCartValueAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToShoppingCartValueAverage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'addToShoppingCartValueSum' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "addToShoppingCartValueSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToShoppingCartValueSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToShoppingCartViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "addToShoppingCartViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToShoppingCartViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToWatchlist' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "addToWatchlist",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToWatchlist"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToWatchlistClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "addToWatchlistClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToWatchlistClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'addToWatchlistRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "addToWatchlistRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToWatchlistRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'addToWatchlistViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "addToWatchlistViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "addToWatchlistViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'advertiserCountry' (String); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "advertiserCountry",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "advertiserCountry"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'advertiserId' (String); report types: dspAudience, dspAudioAndVideo, dspBidAdjustment, dspCampaign, dspGeo, dspInventory, dspProduct, dspReachFrequency, dspTech.",
+    "field_id": "advertiserId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "advertiserId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'advertiserName' (String); report types: dspAudience, dspAudioAndVideo, dspBidAdjustment, dspCampaign, dspGeo, dspInventory, dspProduct, dspReachFrequency, dspTech.",
+    "field_id": "advertiserName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "advertiserName"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'advertiserTimezone' (String); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "advertiserTimezone",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "advertiserTimezone"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'agencyFee' (Decimal); report types: dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "agencyFee",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "agencyFee"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'alexaSkillEnable' (Integer); report types: dspCampaign.",
+    "field_id": "alexaSkillEnable",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "alexaSkillEnable"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'alexaSkillEnableClicks' (Integer); report types: dspCampaign.",
+    "field_id": "alexaSkillEnableClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "alexaSkillEnableClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'alexaSkillEnableRate' (Decimal); report types: dspCampaign. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "alexaSkillEnableRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "alexaSkillEnableRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'alexaSkillEnableViews' (Integer); report types: dspCampaign.",
+    "field_id": "alexaSkillEnableViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "alexaSkillEnableViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'amazonDSPAudienceFee' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "amazonDSPAudienceFee",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "amazonDSPAudienceFee"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'amazonDSPConsoleFee' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "amazonDSPConsoleFee",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "amazonDSPConsoleFee"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'amazonExclusiveReachRate' (Decimal); report types: dspReachFrequency. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "amazonExclusiveReachRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "amazonExclusiveReachRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'application' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "application",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "application"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'applicationClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "applicationClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "applicationClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'applicationCPA' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "applicationCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "applicationCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'applicationCVR' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "applicationCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "applicationCVR"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'applicationValueAverage' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "applicationValueAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "applicationValueAverage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'applicationValueSum' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "applicationValueSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "applicationValueSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'applicationViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "applicationViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "applicationViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appStoreFirstOpens' (Integer); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreFirstOpens",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreFirstOpens"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appStoreFirstOpensClicks' (Integer); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreFirstOpensClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreFirstOpensClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appStoreFirstOpensRate' (Decimal); report types: dspCampaign. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "appStoreFirstOpensRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreFirstOpensRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appStoreFirstOpensViews' (Integer); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreFirstOpensViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreFirstOpensViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appStoreFirstSessionHours' (Integer); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreFirstSessionHours",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreFirstSessionHours"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appStoreFirstSessionHoursClicks' (Integer); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreFirstSessionHoursClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreFirstSessionHoursClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appStoreFirstSessionHoursViews' (Integer); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreFirstSessionHoursViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreFirstSessionHoursViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appStoreOpens' (Integer); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreOpens",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreOpens"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appStoreOpensClicks' (Integer); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreOpensClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreOpensClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appStoreOpensRate' (Decimal); report types: dspCampaign. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "appStoreOpensRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreOpensRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appStoreOpensViews' (Integer); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreOpensViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreOpensViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appStoreUsageHours' (Decimal); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreUsageHours",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreUsageHours"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appStoreUsageHoursClicks' (Decimal); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreUsageHoursClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreUsageHoursClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appStoreUsageHoursViews' (Decimal); report types: dspCampaign, dspProduct.",
+    "field_id": "appStoreUsageHoursViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appStoreUsageHoursViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionCost' (Decimal); report types: dspGeo.",
+    "field_id": "appSubscriptionCost",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "appSubscriptionCost"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionFreeTrialCost' (Decimal); report types: dspGeo.",
+    "field_id": "appSubscriptionFreeTrialCost",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "appSubscriptionFreeTrialCost"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUp' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "appSubscriptionSignUp",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUp"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpClicks' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "appSubscriptionSignUpClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUpClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpFreeTrial' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "appSubscriptionSignUpFreeTrial",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUpFreeTrial"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpFreeTrialClicks' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "appSubscriptionSignUpFreeTrialClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUpFreeTrialClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpFreeTrialRate' (Decimal); report types: dspGeo. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "appSubscriptionSignUpFreeTrialRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUpFreeTrialRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpFreeTrialViews' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "appSubscriptionSignUpFreeTrialViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUpFreeTrialViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpPaid' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "appSubscriptionSignUpPaid",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "appSubscriptionSignUpPaid"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpPaidClicks' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "appSubscriptionSignUpPaidClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUpPaidClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpPaidCost' (Decimal); report types: dspGeo.",
+    "field_id": "appSubscriptionSignUpPaidCost",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "appSubscriptionSignUpPaidCost"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpPaidRate' (Decimal); report types: dspGeo. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "appSubscriptionSignUpPaidRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUpPaidRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpPaidViews' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "appSubscriptionSignUpPaidViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUpPaidViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpRate' (Decimal); report types: dspGeo. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "appSubscriptionSignUpRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUpRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'appSubscriptionSignUpViews' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "appSubscriptionSignUpViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "appSubscriptionSignUpViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'asin' (String); report types: dspProduct.",
+    "field_id": "asin",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "asin"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdCompanionBannerClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdCompanionBannerClicks",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdCompanionBannerClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdCompanionBannerViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdCompanionBannerViews",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdCompanionBannerViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'audioAdCompletionRate' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "audioAdCompletionRate",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdCompletionRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdCompletions' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdCompletions",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdCompletions"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdFirstQuartile' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdFirstQuartile",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdFirstQuartile"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdMidpoint' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdMidpoint",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdMidpoint"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdMute' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdMute",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdMute"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdPause' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdPause",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdPause"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'audioAdProgression' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdProgression",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdProgression"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdResume' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdResume",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdResume"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdRewind' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdRewind",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdRewind"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdSkip' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdSkip",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdSkip"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdStart' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdStart",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdStart"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdThirdQuartile' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdThirdQuartile",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdThirdQuartile"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdUnmute' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdUnmute",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdUnmute"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'audioAdViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "audioAdViews",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "audioAdViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'averageCostPerClickToApply' (Decimal); report types: dspAudience. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "averageCostPerClickToApply",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "averageCostPerClickToApply"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'averageCostPerKindleDetailPageView' (Decimal); report types: dspAudience. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "averageCostPerKindleDetailPageView",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "averageCostPerKindleDetailPageView"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'bidAdjustment' (Decimal); report types: dspBidAdjustment.",
+    "field_id": "bidAdjustment",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "bidAdjustment"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'bidAdjustmentMatchedTermIds' (String); report types: dspBidAdjustment.",
+    "field_id": "bidAdjustmentMatchedTermIds",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "bidAdjustmentMatchedTermIds"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'bidAdjustmentMatchedTerms' (String); report types: dspBidAdjustment.",
+    "field_id": "bidAdjustmentMatchedTerms",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "bidAdjustmentMatchedTerms"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'bidAdjustmentRule' (String); report types: dspBidAdjustment.",
+    "field_id": "bidAdjustmentRule",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "bidAdjustmentRule"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'bidAdjustmentRuleId' (String); report types: dspBidAdjustment.",
+    "field_id": "bidAdjustmentRuleId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "bidAdjustmentRuleId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'bidAdjustmentRuleVersionId' (String); report types: dspBidAdjustment.",
+    "field_id": "bidAdjustmentRuleVersionId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "bidAdjustmentRuleVersionId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'bidOptimization' (String); report types: dspBidAdjustment.",
+    "field_id": "bidOptimization",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "bidOptimization"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'brandName' (String); report types: dspProduct.",
+    "field_id": "brandName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "brandName"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'brandSearches' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "brandSearches",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "brandSearches"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'brandSearchesClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "brandSearchesClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "brandSearchesClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'brandSearchesViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "brandSearchesViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "brandSearchesViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'brandSearchRate' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "brandSearchRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "brandSearchRate"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'browserName' (String); report types: dspTech.",
+    "field_id": "browserName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "browserName"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'browserVersion' (String); report types: dspTech.",
+    "field_id": "browserVersion",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "browserVersion"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'checkout' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "checkout",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "checkout"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'checkoutClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "checkoutClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "checkoutClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'checkoutCPA' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory.",
+    "field_id": "checkoutCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "checkoutCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'checkoutCVR' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory.",
+    "field_id": "checkoutCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "checkoutCVR"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'checkoutValueAverage' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "checkoutValueAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "checkoutValueAverage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'checkoutValueSum' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "checkoutValueSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "checkoutValueSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'checkoutViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "checkoutViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "checkoutViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'city' (String); report types: dspGeo.",
+    "field_id": "city",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "city"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'clicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "clicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "clicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'clickThroughRate' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "clickThroughRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "clickThroughRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'clickToApply' (Integer); report types: dspAudience, dspGeo, dspProduct, dspTech.",
+    "field_id": "clickToApply",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "clickToApply"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'clickToApplyBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "clickToApplyBrandHalo",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "clickToApplyBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'clickToApplyBrandHaloClicks' (Integer); report types: dspProduct.",
+    "field_id": "clickToApplyBrandHaloClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "clickToApplyBrandHaloClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'clickToApplyBrandHaloViews' (Integer); report types: dspProduct.",
+    "field_id": "clickToApplyBrandHaloViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "clickToApplyBrandHaloViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'clickToApplyClicks' (Integer); report types: dspAudience, dspGeo, dspProduct, dspTech.",
+    "field_id": "clickToApplyClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "clickToApplyClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'clickToApplyConversionRate' (Decimal); report types: dspAudience. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "clickToApplyConversionRate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "clickToApplyConversionRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'clickToApplyViews' (Integer); report types: dspAudience, dspGeo, dspProduct, dspTech.",
+    "field_id": "clickToApplyViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "clickToApplyViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'combinedECPP' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "combinedECPP",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "combinedECPP"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'combinedERPM' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "combinedERPM",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "combinedERPM"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'combinedProductSales' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "combinedProductSales",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "combinedProductSales"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'combinedPurchaseRate' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "combinedPurchaseRate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "combinedPurchaseRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'combinedPurchases' (Integer); report types: dspCampaign, dspGeo, dspInventory.",
+    "field_id": "combinedPurchases",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "combinedPurchases"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'combinedPurchasesClicks' (Integer); report types: dspCampaign, dspGeo, dspInventory.",
+    "field_id": "combinedPurchasesClicks",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "combinedPurchasesClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'combinedPurchasesViews' (Integer); report types: dspCampaign, dspGeo, dspInventory.",
+    "field_id": "combinedPurchasesViews",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "combinedPurchasesViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'combinedROAS' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "combinedROAS",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "combinedROAS"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'combinedUnitsSold' (Integer); report types: dspCampaign, dspGeo, dspInventory.",
+    "field_id": "combinedUnitsSold",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "combinedUnitsSold"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'contact' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "contact",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "contact"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'contactClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "contactClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "contactClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'contactCPA' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory.",
+    "field_id": "contactCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "contactCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'contactCVR' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory.",
+    "field_id": "contactCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "contactCVR"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'contactValueAverage' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "contactValueAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "contactValueAverage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'contactValueSum' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "contactValueSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "contactValueSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'contactViews' (Integer); report types: dspBrandSuitability.",
+    "field_id": "contactViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "contactViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'contentGenre' (String); report types: dspAudioAndVideo.",
+    "field_id": "contentGenre",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "contentGenre"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'contentRating' (String); report types: dspAudioAndVideo.",
+    "field_id": "contentRating",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "contentRating"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'contentTitle' (String); report types: dspAudioAndVideo.",
+    "field_id": "contentTitle",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "contentTitle"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'contentType' (String); report types: dspAudioAndVideo.",
+    "field_id": "contentType",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "contentType"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'conversionType' (String); report types: dspProduct.",
+    "field_id": "conversionType",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "conversionType"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'costPerThousandImpressions' (Decimal); report types: dspAudioAndVideo.",
+    "field_id": "costPerThousandImpressions",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "costPerThousandImpressions"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'country' (String); report types: dspGeo.",
+    "field_id": "country",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "country"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'creativeAdId' (String); report types: dspCampaign.",
+    "field_id": "creativeAdId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "creativeAdId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'creativeId' (String); report types: dspAudioAndVideo, dspCampaign, dspInventory.",
+    "field_id": "creativeId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "creativeId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'creativeLanguage' (String); report types: dspCampaign.",
+    "field_id": "creativeLanguage",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "creativeLanguage"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'creativeName' (String); report types: dspAudioAndVideo, dspCampaign, dspInventory.",
+    "field_id": "creativeName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "creativeName"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'creativeSize' (String); report types: dspCampaign, dspInventory.",
+    "field_id": "creativeSize",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "creativeSize"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'creativeType' (String); report types: dspCampaign, dspInventory.",
+    "field_id": "creativeType",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "creativeType"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'creativeweight' (Integer); report types: dspCampaign, dspInventory.",
+    "field_id": "creativeweight",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "creativeweight"
+  },
+  {
+    "data_type": "date",
+    "description": "Amazon DSP Reporting v3 column 'date' (String); report types: dspAudience, dspBidAdjustment, dspCampaign, dspGeo, dspInventory, dspProduct, dspReachFrequency, dspTech.",
+    "field_id": "date",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "date"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'deal' (String); report types: dspInventory.",
+    "field_id": "deal",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "deal"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'dealId' (String); report types: dspInventory.",
+    "field_id": "dealId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "dealId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'dealType' (String); report types: dspInventory.",
+    "field_id": "dealType",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "dealType"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'detailPageViewBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "detailPageViewBrandHalo",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "detailPageViewBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'detailPageViewBrandHaloClicks' (Integer); report types: dspProduct.",
+    "field_id": "detailPageViewBrandHaloClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "detailPageViewBrandHaloClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'detailPageViewBrandHaloViews' (Integer); report types: dspProduct.",
+    "field_id": "detailPageViewBrandHaloViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "detailPageViewBrandHaloViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'detailPageViewClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "detailPageViewClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "detailPageViewClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'detailPageViewRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "detailPageViewRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "detailPageViewRate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'detailPageViewRatePromotedClicks' (Decimal); report types: dspAudience. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "detailPageViewRatePromotedClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "detailPageViewRatePromotedClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'detailPageViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "detailPageViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "detailPageViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'detailPageViewsClicks' (Integer); report types: dspGeo.",
+    "field_id": "detailPageViewsClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "detailPageViewsClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'detailPageViewViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "detailPageViewViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "detailPageViewViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'dmaName' (String); report types: dspGeo.",
+    "field_id": "dmaName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "dmaName"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'downloadedVideoPlayRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "downloadedVideoPlayRate",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "downloadedVideoPlayRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'downloadedVideoPlays' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "downloadedVideoPlays",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "downloadedVideoPlays"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'downloadedVideoPlaysClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "downloadedVideoPlaysClicks",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "downloadedVideoPlaysClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'downloadedVideoPlaysViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "downloadedVideoPlaysViews",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "downloadedVideoPlaysViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPAddToCart' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPAddToCart",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPAddToCart"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPAddToList' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPAddToList",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPAddToList"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPAddToWatchlist' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPAddToWatchlist",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPAddToWatchlist"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPAlexaSkillEnable' (Decimal); report types: dspCampaign.",
+    "field_id": "eCPAlexaSkillEnable",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPAlexaSkillEnable"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPAppStoreFirstOpens' (Decimal); report types: dspCampaign.",
+    "field_id": "eCPAppStoreFirstOpens",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPAppStoreFirstOpens"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'eCPAppStoreOpens' (Integer); report types: dspCampaign.",
+    "field_id": "eCPAppStoreOpens",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPAppStoreOpens"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPAudioAdCompletion' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "eCPAudioAdCompletion",
+    "kind": "metric",
+    "section": "AUDIO",
+    "source_field": "eCPAudioAdCompletion"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPBrandSearch' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "eCPBrandSearch",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPBrandSearch"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPC' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "eCPC",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "eCPC"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPDetailPageView' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPDetailPageView",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPDetailPageView"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPDownloadedVideoPlays' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPDownloadedVideoPlays",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "eCPDownloadedVideoPlays"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPFreeTrialSubscriptionSignup' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPFreeTrialSubscriptionSignup",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPFreeTrialSubscriptionSignup"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPM' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "eCPM",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "eCPM"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPnewSubscribeAndSave' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPnewSubscribeAndSave",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPnewSubscribeAndSave"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPP' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPP",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPP"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPPaidSubscriptionSignup' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPPaidSubscriptionSignup",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPPaidSubscriptionSignup"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPPlayTrailer' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPPlayTrailer",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPPlayTrailer"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPProductReviewPageVisit' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPProductReviewPageVisit",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPProductReviewPageVisit"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPRental' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPRental",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPRental"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPSkillInvocation' (Decimal); report types: dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "eCPSkillInvocation",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPSkillInvocation"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPSubscriptionSignup' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPSubscriptionSignup",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eCPSubscriptionSignup"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPVideoAdCompletion' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPVideoAdCompletion",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "eCPVideoAdCompletion"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPVideoDownload' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPVideoDownload",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "eCPVideoDownload"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eCPVideoStream' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "eCPVideoStream",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "eCPVideoStream"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'effectiveCostPerDetailPageViewPromotedClicks' (Decimal); report types: dspAudience.",
+    "field_id": "effectiveCostPerDetailPageViewPromotedClicks",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "effectiveCostPerDetailPageViewPromotedClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'effectiveCostPerPurchasePromotedClicks' (Decimal); report types: dspAudience.",
+    "field_id": "effectiveCostPerPurchasePromotedClicks",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "effectiveCostPerPurchasePromotedClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'effectiveCostPerSkillInvocation' (Decimal); report types: dspAudience, dspProduct.",
+    "field_id": "effectiveCostPerSkillInvocation",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "effectiveCostPerSkillInvocation"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'einkDetailPageView' (Integer); report types: dspProduct.",
+    "field_id": "einkDetailPageView",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "einkDetailPageView"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'einkDetailPageViewBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "einkDetailPageViewBrandHalo",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "einkDetailPageViewBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'einkDetailPageViewBrandHaloClicks' (Integer); report types: dspProduct.",
+    "field_id": "einkDetailPageViewBrandHaloClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "einkDetailPageViewBrandHaloClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'einkDetailPageViewBrandHaloViews' (Integer); report types: dspProduct.",
+    "field_id": "einkDetailPageViewBrandHaloViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "einkDetailPageViewBrandHaloViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'einkDetailPageViewClicks' (Integer); report types: dspProduct.",
+    "field_id": "einkDetailPageViewClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "einkDetailPageViewClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'einkDetailPageViewViews' (Integer); report types: dspProduct.",
+    "field_id": "einkDetailPageViewViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "einkDetailPageViewViews"
+  },
+  {
+    "data_type": "date",
+    "description": "Amazon DSP Reporting v3 column 'endDate' (String); report types: dspBidAdjustment.",
+    "field_id": "endDate",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "endDate"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'entityId' (String); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "entityId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "entityId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'environmentName' (String); report types: dspTech.",
+    "field_id": "environmentName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "environmentName"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'eRPM' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "eRPM",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "eRPM"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'exclusiveReachRate' (decimal); report types: dspCampaign. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "exclusiveReachRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "exclusiveReachRate"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'featuredAsin' (String); report types: dspProduct.",
+    "field_id": "featuredAsin",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "featuredAsin"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'flightBudget' (Decimal); report types: dspCampaign.",
+    "field_id": "flightBudget",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "flightBudget"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'flightEndDate' (String); report types: dspCampaign.",
+    "field_id": "flightEndDate",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "flightEndDate"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'flightId' (String); report types: dspCampaign.",
+    "field_id": "flightId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "flightId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'flightName' (String); report types: dspCampaign.",
+    "field_id": "flightName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "flightName"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'flightStartDate' (String); report types: dspCampaign.",
+    "field_id": "flightStartDate",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "flightStartDate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'freeTrialSubscriptionSignupClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "freeTrialSubscriptionSignupClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "freeTrialSubscriptionSignupClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'freeTrialSubscriptionSignupRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "freeTrialSubscriptionSignupRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "freeTrialSubscriptionSignupRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'freeTrialSubscriptionSignups' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "freeTrialSubscriptionSignups",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "freeTrialSubscriptionSignups"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'freeTrialSubscriptionSignupViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "freeTrialSubscriptionSignupViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "freeTrialSubscriptionSignupViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'frequencyAverage' (Decimal); report types: dspCampaign, dspReachFrequency. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "frequencyAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "frequencyAverage"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'frequencyGroupId' (Long); report types: dspReachFrequency. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "frequencyGroupId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "frequencyGroupId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'frequencyGroupName' (String); report types: dspReachFrequency. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "frequencyGroupName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "frequencyGroupName"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'grossClickThroughs' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "grossClickThroughs",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "grossClickThroughs"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'grossImpressions' (Integer); report types: dspAudience, dspAudioAndVideo, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "grossImpressions",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "grossImpressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'householdFrequencyAverage' (Decimal); report types: dspCampaign. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "householdFrequencyAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "householdFrequencyAverage"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'householdReach' (Integer); report types: dspCampaign. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "householdReach",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "householdReach"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'impressionFrequencyAverage' (Decimal); report types: dspCampaign. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "impressionFrequencyAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "impressionFrequencyAverage"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'impressions' (Integer); report types: dspAudience, dspAudioAndVideo, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "impressions",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "impressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'incrementalReachRate' (decimal); report types: dspCampaign. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "incrementalReachRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "incrementalReachRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'interactiveImpressions' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "interactiveImpressions",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "interactiveImpressions"
+  },
+  {
+    "data_type": "date",
+    "description": "Amazon DSP Reporting v3 column 'intervalEnd' (String); report types: dspAudience, dspAudioAndVideo, dspCampaign, dspGeo, dspInventory, dspProduct, dspReachFrequency, dspTech.",
+    "field_id": "intervalEnd",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "intervalEnd"
+  },
+  {
+    "data_type": "date",
+    "description": "Amazon DSP Reporting v3 column 'intervalStart' (String); report types: dspAudience, dspAudioAndVideo, dspCampaign, dspGeo, dspInventory, dspProduct, dspReachFrequency, dspTech.",
+    "field_id": "intervalStart",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "intervalStart"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'invalidClickThroughRate' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "invalidClickThroughRate",
+    "kind": "metric",
+    "section": "VIEWABILITY",
+    "source_field": "invalidClickThroughRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'invalidClickThroughs' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "invalidClickThroughs",
+    "kind": "metric",
+    "section": "VIEWABILITY",
+    "source_field": "invalidClickThroughs"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'invalidImpressionRate' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "invalidImpressionRate",
+    "kind": "metric",
+    "section": "VIEWABILITY",
+    "source_field": "invalidImpressionRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'invalidImpressions' (Integer); report types: dspAudience, dspAudioAndVideo, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "invalidImpressions",
+    "kind": "metric",
+    "section": "VIEWABILITY",
+    "source_field": "invalidImpressions"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'inventoryTier' (String); report types: dspBrandSuitability.",
+    "field_id": "inventoryTier",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "inventoryTier"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'kindleDetailPageView' (String); report types: dspAudience, dspGeo, dspTech.",
+    "field_id": "kindleDetailPageView",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "kindleDetailPageView"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'kindleDetailPageViewClicks' (Integer); report types: dspAudience, dspGeo, dspTech.",
+    "field_id": "kindleDetailPageViewClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "kindleDetailPageViewClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'kindleDetailPageViewRate' (Decimal); report types: dspAudience. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "kindleDetailPageViewRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "kindleDetailPageViewRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'kindleDetailPageViewViews' (Integer); report types: dspAudience, dspGeo, dspTech.",
+    "field_id": "kindleDetailPageViewViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "kindleDetailPageViewViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'lead' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "lead",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "lead"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'leadClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "leadClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "leadClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'leadCPA' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "leadCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "leadCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'leadCVR' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "leadCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "leadCVR"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'leadValueAverage' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "leadValueAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "leadValueAverage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'leadValueSum' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "leadValueSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "leadValueSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'leadViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "leadViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "leadViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemApprovalStatus' (String); report types: dspCampaign.",
+    "field_id": "lineItemApprovalStatus",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemApprovalStatus"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'lineItemBudget' (Decimal); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "lineItemBudget",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "lineItemBudget"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'lineItemBudgetCap' (Decimal); report types: dspCampaign.",
+    "field_id": "lineItemBudgetCap",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "lineItemBudgetCap"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemComment' (String); report types: dspCampaign.",
+    "field_id": "lineItemComment",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemComment"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemComments' (String); report types: dspAudience, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "lineItemComments",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemComments"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'lineItemDeliveryRate' (Decimal); report types: dspCampaign. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "lineItemDeliveryRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "lineItemDeliveryRate"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemEndDate' (String); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "lineItemEndDate",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemEndDate"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemExternalId' (String); report types: dspCampaign, dspInventory, dspProduct.",
+    "field_id": "lineItemExternalId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemExternalId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemId' (String); report types: dspAudience, dspAudioAndVideo, dspBidAdjustment, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "lineItemId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemLanguageTargeting' (String); report types: dspCampaign.",
+    "field_id": "lineItemLanguageTargeting",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemLanguageTargeting"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemName' (String); report types: dspAudience, dspAudioAndVideo, dspBidAdjustment, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "lineItemName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemName"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemStartDate' (String); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "lineItemStartDate",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemStartDate"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemStatus' (String); report types: dspCampaign.",
+    "field_id": "lineItemStatus",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemStatus"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'lineItemType' (String); report types: dspAudience, dspCampaign.",
+    "field_id": "lineItemType",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "lineItemType"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'linkOuts' (Integer); report types: dspCampaign.",
+    "field_id": "linkOuts",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "linkOuts"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'marketplace' (String); report types: dspCampaign, dspInventory, dspProduct.",
+    "field_id": "marketplace",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "marketplace"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'masterClicks' (Integer); report types: dspAudience.",
+    "field_id": "masterClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "masterClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'masterImpressions' (Integer); report types: dspAudience.",
+    "field_id": "masterImpressions",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "masterImpressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'matchRate' (Decimal); report types: dspBidAdjustment. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "matchRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "matchRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'measurableImpressions' (Integer); report types: dspCampaign, dspInventory.",
+    "field_id": "measurableImpressions",
+    "kind": "metric",
+    "section": "VIEWABILITY",
+    "source_field": "measurableImpressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'measurableRate' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "measurableRate",
+    "kind": "metric",
+    "section": "VIEWABILITY",
+    "source_field": "measurableRate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'mobileAppFirstStartAverage' (Decimal); report types: dspGeo, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "mobileAppFirstStartAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "mobileAppFirstStartAverage"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'mobileAppFirstStartClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "mobileAppFirstStartClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "mobileAppFirstStartClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'mobileAppFirstStartCPA' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "mobileAppFirstStartCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "mobileAppFirstStartCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'mobileAppFirstStartCVR' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "mobileAppFirstStartCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "mobileAppFirstStartCVR"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'mobileAppFirstStarts' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "mobileAppFirstStarts",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "mobileAppFirstStarts"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'mobileAppFirstStartSum' (Decimal); report types: dspGeo, dspTech.",
+    "field_id": "mobileAppFirstStartSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "mobileAppFirstStartSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'mobileAppFirstStartViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "mobileAppFirstStartViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "mobileAppFirstStartViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newSubscribeAndSave' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newSubscribeAndSave",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newSubscribeAndSave"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newSubscribeAndSaveBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "newSubscribeAndSaveBrandHalo",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newSubscribeAndSaveBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newSubscribeAndSaveBrandHaloClicks' (Integer); report types: dspProduct.",
+    "field_id": "newSubscribeAndSaveBrandHaloClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newSubscribeAndSaveBrandHaloClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newSubscribeAndSaveBrandHaloViews' (Integer); report types: dspProduct.",
+    "field_id": "newSubscribeAndSaveBrandHaloViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newSubscribeAndSaveBrandHaloViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newSubscribeAndSaveClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newSubscribeAndSaveClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newSubscribeAndSaveClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'newSubscribeAndSaveRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "newSubscribeAndSaveRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newSubscribeAndSaveRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newSubscribeAndSaveViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newSubscribeAndSaveViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newSubscribeAndSaveViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandDetailPageViewClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newToBrandDetailPageViewClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newToBrandDetailPageViewClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandDetailPageViewRate' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "newToBrandDetailPageViewRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newToBrandDetailPageViewRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandDetailPageViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newToBrandDetailPageViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newToBrandDetailPageViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandDetailPageViewViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newToBrandDetailPageViewViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newToBrandDetailPageViewViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandECPDetailPageView' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newToBrandECPDetailPageView",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newToBrandECPDetailPageView"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'NewToBrandECPP' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "NewToBrandECPP",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "NewToBrandECPP"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandERPM' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "newToBrandERPM",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newToBrandERPM"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandProductSales' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newToBrandProductSales",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandProductSales"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandPurchasePercentageBrandHalo' (Decimal); report types: dspProduct.",
+    "field_id": "newToBrandPurchasePercentageBrandHalo",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandPurchasePercentageBrandHalo"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandPurchaseRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "newToBrandPurchaseRate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandPurchaseRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandPurchases' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newToBrandPurchases",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandPurchases"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandPurchasesBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "newToBrandPurchasesBrandHalo",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandPurchasesBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandPurchasesBrandHaloClicks' (Integer); report types: dspProduct.",
+    "field_id": "newToBrandPurchasesBrandHaloClicks",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandPurchasesBrandHaloClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandPurchasesBrandHaloViews' (Integer); report types: dspProduct.",
+    "field_id": "newToBrandPurchasesBrandHaloViews",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandPurchasesBrandHaloViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandPurchasesClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newToBrandPurchasesClicks",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandPurchasesClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandPurchasesPercentage' (Decimal); report types: dspAudience, dspCampaign, dspProduct.",
+    "field_id": "newToBrandPurchasesPercentage",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandPurchasesPercentage"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandPurchasesViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newToBrandPurchasesViews",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandPurchasesViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandROAS' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "newToBrandROAS",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandROAS"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandSalesBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "newToBrandSalesBrandHalo",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "newToBrandSalesBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandUnitsSold' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "newToBrandUnitsSold",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newToBrandUnitsSold"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'newToBrandUnitsSoldBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "newToBrandUnitsSoldBrandHalo",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "newToBrandUnitsSoldBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'notificationClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "notificationClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "notificationClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'notificationOpens' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "notificationOpens",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "notificationOpens"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "offAmazonClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "offAmazonClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonConversions' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "offAmazonConversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "offAmazonConversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonCPA' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "offAmazonCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "offAmazonCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonCVR' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "offAmazonCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "offAmazonCVR"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonECPP' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "offAmazonECPP",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "offAmazonECPP"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonERPM' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "offAmazonERPM",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "offAmazonERPM"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonProductSales' (Decimal); report types: dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "offAmazonProductSales",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "offAmazonProductSales"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonPurchaseRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "offAmazonPurchaseRate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "offAmazonPurchaseRate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonPurchases' (Decimal); report types: dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "offAmazonPurchases",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "offAmazonPurchases"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonPurchasesClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "offAmazonPurchasesClicks",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "offAmazonPurchasesClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonPurchasesViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "offAmazonPurchasesViews",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "offAmazonPurchasesViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonROAS' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "offAmazonROAS",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "offAmazonROAS"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonUnitsSold' (Integer); report types: dspCampaign, dspGeo, dspInventory.",
+    "field_id": "offAmazonUnitsSold",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "offAmazonUnitsSold"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'offAmazonViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "offAmazonViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "offAmazonViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'omnichannelMetricsFee' (Decimal); report types: dspCampaign.",
+    "field_id": "omnichannelMetricsFee",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "omnichannelMetricsFee"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'omsLineItemId' (String); report types: dspAudience, dspGeo, dspProduct, dspTech.",
+    "field_id": "omsLineItemId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "omsLineItemId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'omsProposalId' (String); report types: dspAudience, dspProduct.",
+    "field_id": "omsProposalId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "omsProposalId"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'onTargetCostPerImpression' (Decimal); report types: dspCampaign.",
+    "field_id": "onTargetCostPerImpression",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "onTargetCostPerImpression"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'onTargetCPM' (Decimal); report types: dspCampaign.",
+    "field_id": "onTargetCPM",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "onTargetCPM"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'onTargetImpressionCost' (Decimal); report types: dspCampaign.",
+    "field_id": "onTargetImpressionCost",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "onTargetImpressionCost"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'onTargetImpressions' (Integer); report types: dspCampaign.",
+    "field_id": "onTargetImpressions",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "onTargetImpressions"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'operatingSystemName' (String); report types: dspTech.",
+    "field_id": "operatingSystemName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "operatingSystemName"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'orderBudget' (Decimal); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "orderBudget",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "orderBudget"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'orderCurrency' (String); report types: dspAudience, dspBenchmarks, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "orderCurrency",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "orderCurrency"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'orderEndDate' (String); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "orderEndDate",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "orderEndDate"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'orderExternalId' (String); report types: dspCampaign, dspInventory, dspProduct.",
+    "field_id": "orderExternalId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "orderExternalId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'orderId' (String); report types: dspAudience, dspAudioAndVideo, dspBidAdjustment, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "orderId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "orderId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'orderName' (String); report types: dspAudience, dspAudioAndVideo, dspBidAdjustment, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "orderName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "orderName"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'orderStartDate' (String); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "orderStartDate",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "orderStartDate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'other' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "other",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "other"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'otherClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "otherClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "otherClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'otherCPA' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "otherCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "otherCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'otherCVR' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "otherCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "otherCVR"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'otherValueAverage' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "otherValueAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "otherValueAverage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'otherValueSum' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "otherValueSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "otherValueSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'otherViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "otherViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "otherViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'pageViewClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "pageViewClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "pageViewClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'pageViewCPA' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory.",
+    "field_id": "pageViewCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "pageViewCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'pageViewCVR' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory.",
+    "field_id": "pageViewCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "pageViewCVR"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'pageViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "pageViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "pageViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'pageViewValueAverage' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "pageViewValueAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "pageViewValueAverage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'pageViewValueSum' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "pageViewValueSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "pageViewValueSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'pageViewViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "pageViewViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "pageViewViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'paidSubscriptionSignupClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "paidSubscriptionSignupClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "paidSubscriptionSignupClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'paidSubscriptionSignupRate' (Deciimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "paidSubscriptionSignupRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "paidSubscriptionSignupRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'paidSubscriptionSignups' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "paidSubscriptionSignups",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "paidSubscriptionSignups"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'paidSubscriptionSignupViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "paidSubscriptionSignupViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "paidSubscriptionSignupViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'parentAsin' (String); report types: dspProduct.",
+    "field_id": "parentAsin",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "parentAsin"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'placement' (String); report types: dspInventory.",
+    "field_id": "placement",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "placement"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'placementSize' (Integer); report types: dspInventory.",
+    "field_id": "placementSize",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "placementSize"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'playTrailerRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "playTrailerRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "playTrailerRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'playTrailers' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "playTrailers",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "playTrailers"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'playTrailersClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "playTrailersClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "playTrailersClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'playTrailersViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "playTrailersViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "playTrailersViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'postalCode' (String); report types: dspGeo.",
+    "field_id": "postalCode",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "postalCode"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'productCategory' (String); report types: dspProduct.",
+    "field_id": "productCategory",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "productCategory"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'productGroup' (String); report types: dspProduct.",
+    "field_id": "productGroup",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "productGroup"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'productName' (String); report types: dspProduct.",
+    "field_id": "productName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "productName"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'productReviewPageViewBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "productReviewPageViewBrandHalo",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "productReviewPageViewBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'productReviewPageViewBrandHaloClicks' (Integer); report types: dspProduct.",
+    "field_id": "productReviewPageViewBrandHaloClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "productReviewPageViewBrandHaloClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'productReviewPageViewBrandHaloViews' (Integer); report types: dspProduct.",
+    "field_id": "productReviewPageViewBrandHaloViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "productReviewPageViewBrandHaloViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'productReviewPageVisitRate' (Deciaml); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "productReviewPageVisitRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "productReviewPageVisitRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'productReviewPageVisits' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "productReviewPageVisits",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "productReviewPageVisits"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'productReviewPageVisitsClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "productReviewPageVisitsClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "productReviewPageVisitsClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'productReviewPageVisitsViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "productReviewPageVisitsViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "productReviewPageVisitsViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'productSubCategory' (String); report types: dspProduct.",
+    "field_id": "productSubCategory",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "productSubCategory"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'proposalId' (String); report types: dspCampaign.",
+    "field_id": "proposalId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "proposalId"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'purchaseRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "purchaseRate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "purchaseRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'purchases' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "purchases",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "purchases"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'purchasesBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "purchasesBrandHalo",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "purchasesBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'purchasesBrandHaloClicks' (Integer); report types: dspProduct.",
+    "field_id": "purchasesBrandHaloClicks",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "purchasesBrandHaloClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'purchasesBrandHaloViews' (Integer); report types: dspProduct.",
+    "field_id": "purchasesBrandHaloViews",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "purchasesBrandHaloViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'purchasesClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "purchasesClicks",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "purchasesClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'purchasesClicksRate' (Decimal); report types: dspAudience. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "purchasesClicksRate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "purchasesClicksRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'purchasesViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "purchasesViews",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "purchasesViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'reach' (Integer); report types: dspCampaign, dspReachFrequency. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "reach",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "reach"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'region' (String); report types: dspGeo.",
+    "field_id": "region",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "region"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'rentalRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "rentalRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "rentalRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'rentals' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "rentals",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "rentals"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'rentalsClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "rentalsClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "rentalsClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'rentalsViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "rentalsViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "rentalsViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'reportGranularity' (String); report types: dspProduct.",
+    "field_id": "reportGranularity",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "reportGranularity"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'roas' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "roas",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "roas"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'sales' (Decimal); report types: dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "sales",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "sales"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'salesBrandHalo' (Decimal); report types: dspProduct.",
+    "field_id": "salesBrandHalo",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "salesBrandHalo"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'salesClicks' (Decimal); report types: dspGeo, dspProduct.",
+    "field_id": "salesClicks",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "salesClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'salesPromoted' (Decimal); report types: dspProduct.",
+    "field_id": "salesPromoted",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "salesPromoted"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'salesPromotedClicks' (Decimal); report types: dspGeo, dspProduct.",
+    "field_id": "salesPromotedClicks",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "salesPromotedClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'search' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "search",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "search"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'searchClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "searchClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "searchClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'searchCPA' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory.",
+    "field_id": "searchCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "searchCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'searchCVR' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory.",
+    "field_id": "searchCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "searchCVR"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'searchValueAverage' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "searchValueAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "searchValueAverage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'searchValueSum' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "searchValueSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "searchValueSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'searchViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "searchViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "searchViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'segmentClassCode' (String); report types: dspAudience.",
+    "field_id": "segmentClassCode",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "segmentClassCode"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'segmentId' (String); report types: dspAudience.",
+    "field_id": "segmentId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "segmentId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'segmentMarketplaceId' (String); report types: dspAudience.",
+    "field_id": "segmentMarketplaceId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "segmentMarketplaceId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'segmentName' (String); report types: dspAudience.",
+    "field_id": "segmentName",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "segmentName"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'segmentSource' (String); report types: dspAudience.",
+    "field_id": "segmentSource",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "segmentSource"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'segmentType' (String); report types: dspAudience.",
+    "field_id": "segmentType",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "segmentType"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'signUp' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "signUp",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "signUp"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'signUpClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "signUpClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "signUpClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'signUpCPA' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "signUpCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "signUpCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'signUpCVR' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "signUpCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "signUpCVR"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'signUpValueAverage' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "signUpValueAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "signUpValueAverage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'signUpValueSum' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "signUpValueSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "signUpValueSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'signUpViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "signUpViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "signUpViews"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'site' (String); report types: dspInventory.",
+    "field_id": "site",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "site"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'skillInvocation' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "skillInvocation",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "skillInvocation"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'skillInvocationClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "skillInvocationClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "skillInvocationClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'skillInvocationRate' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "skillInvocationRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "skillInvocationRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'skillInvocationViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "skillInvocationViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "skillInvocationViews"
+  },
+  {
+    "data_type": "date",
+    "description": "Amazon DSP Reporting v3 column 'startDate' (String); report types: dspBidAdjustment.",
+    "field_id": "startDate",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "startDate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'subscribe' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "subscribe",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscribe"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'subscribeClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "subscribeClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscribeClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'subscribeCPA' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "subscribeCPA",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscribeCPA"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'subscribeCVR' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "subscribeCVR",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscribeCVR"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'subscribeValueAverage' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "subscribeValueAverage",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscribeValueAverage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'subscribeValueSum' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "subscribeValueSum",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscribeValueSum"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'subscribeViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "subscribeViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscribeViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'subscriptionSignupClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "subscriptionSignupClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscriptionSignupClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'subscriptionSignupRate' (Decimal); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "subscriptionSignupRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscriptionSignupRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'subscriptionSignups' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "subscriptionSignups",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscriptionSignups"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'subscriptionSignupViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "subscriptionSignupViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "subscriptionSignupViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'supplyCost' (Decimal); report types: dspAudience, dspCampaign, dspInventory.",
+    "field_id": "supplyCost",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "supplyCost"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'supplySource' (String); report types: dspAudioAndVideo, dspInventory, dspReachFrequency.",
+    "field_id": "supplySource",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "supplySource"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'supplySourceId' (Integer); report types: dspReachFrequency.",
+    "field_id": "supplySourceId",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "supplySourceId"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'targetDemographic' (String); report types: dspCampaign.",
+    "field_id": "targetDemographic",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "targetDemographic"
+  },
+  {
+    "data_type": "string",
+    "description": "Amazon DSP Reporting v3 column 'targetingMethod' (String); report types: dspAudience.",
+    "field_id": "targetingMethod",
+    "kind": "dimension",
+    "section": "IDENTIFIERS",
+    "source_field": "targetingMethod"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalAddToCart' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalAddToCart",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalAddToCart"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalAddToCartClicks' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalAddToCartClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalAddToCartClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalAddToCartRate' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "totalAddToCartRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalAddToCartRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalAddToCartViews' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalAddToCartViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalAddToCartViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalAddToList' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalAddToList",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalAddToList"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalAddToListClicks' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalAddToListClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalAddToListClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalAddToListRate' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "totalAddToListRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalAddToListRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalAddToListViews' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalAddToListViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalAddToListViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalCost' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "totalCost",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "totalCost"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalDetailPageView' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalDetailPageView",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalDetailPageView"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalDetailPageViewClicks' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalDetailPageViewClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalDetailPageViewClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalDetailPageViewRate' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "totalDetailPageViewRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalDetailPageViewRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalDetailPageViewViews' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalDetailPageViewViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalDetailPageViewViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalECPAddToCart' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "totalECPAddToCart",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalECPAddToCart"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalECPAddToList' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "totalECPAddToList",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalECPAddToList"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalECPDetailPageView' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "totalECPDetailPageView",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalECPDetailPageView"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalECPP' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "totalECPP",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalECPP"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalECPProductReviewPageVisit' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "totalECPProductReviewPageVisit",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalECPProductReviewPageVisit"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalECPSubscribeAndSave' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "totalECPSubscribeAndSave",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalECPSubscribeAndSave"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalERPM' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "totalERPM",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalERPM"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalFee' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "totalFee",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "totalFee"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandDPVClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "totalNewToBrandDPVClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalNewToBrandDPVClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandDPVRate' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "totalNewToBrandDPVRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalNewToBrandDPVRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandDPVs' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "totalNewToBrandDPVs",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalNewToBrandDPVs"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandDPVViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "totalNewToBrandDPVViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalNewToBrandDPVViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandECPDetailPageView' (Decimal); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "totalNewToBrandECPDetailPageView",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalNewToBrandECPDetailPageView"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandECPP' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "totalNewToBrandECPP",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalNewToBrandECPP"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandERPM' (Decimal); report types: dspCampaign, dspInventory.",
+    "field_id": "totalNewToBrandERPM",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalNewToBrandERPM"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandPurchaseRate' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "totalNewToBrandPurchaseRate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalNewToBrandPurchaseRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandPurchases' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalNewToBrandPurchases",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalNewToBrandPurchases"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandPurchasesClicks' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalNewToBrandPurchasesClicks",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalNewToBrandPurchasesClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandPurchasesPercentage' (Decimal); report types: dspCampaign, dspProduct.",
+    "field_id": "totalNewToBrandPurchasesPercentage",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalNewToBrandPurchasesPercentage"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandPurchasesViews' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalNewToBrandPurchasesViews",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalNewToBrandPurchasesViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandROAS' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "totalNewToBrandROAS",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalNewToBrandROAS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandSales' (Decimal); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalNewToBrandSales",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalNewToBrandSales"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalNewToBrandUnitsSold' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalNewToBrandUnitsSold",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalNewToBrandUnitsSold"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalProductReviewPageVisitRate' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "totalProductReviewPageVisitRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalProductReviewPageVisitRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalProductReviewPageVisits' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalProductReviewPageVisits",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalProductReviewPageVisits"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalProductReviewPageVisitsClicks' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalProductReviewPageVisitsClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalProductReviewPageVisitsClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalProductReviewPageVisitsViews' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalProductReviewPageVisitsViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalProductReviewPageVisitsViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalPurchaseRate' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "totalPurchaseRate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalPurchaseRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalPurchases' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalPurchases",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalPurchases"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalPurchasesClicks' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalPurchasesClicks",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalPurchasesClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalPurchasesViews' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalPurchasesViews",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalPurchasesViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalROAS' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "totalROAS",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalROAS"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalSales' (Decimal); report types: dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "totalSales",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "totalSales"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalSubscribeAndSave' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalSubscribeAndSave",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalSubscribeAndSave"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalSubscribeAndSaveClicks' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalSubscribeAndSaveClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalSubscribeAndSaveClicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'totalSubscribeAndSaveRate' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "totalSubscribeAndSaveRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalSubscribeAndSaveRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalSubscribeAndSaveViews' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalSubscribeAndSaveViews",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalSubscribeAndSaveViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'totalUnitsSold' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct.",
+    "field_id": "totalUnitsSold",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "totalUnitsSold"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'unitsSold' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "unitsSold",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "unitsSold"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'unitsSoldBrandHalo' (Integer); report types: dspProduct.",
+    "field_id": "unitsSoldBrandHalo",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "unitsSoldBrandHalo"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'unitsSoldClicks' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "unitsSoldClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "unitsSoldClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'unitsSoldPromotedClicks' (Integer); report types: dspGeo, dspProduct.",
+    "field_id": "unitsSoldPromotedClicks",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "unitsSoldPromotedClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "videoAdClicks",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdComplete' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoAdComplete",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdComplete"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdCompletionRate' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "videoAdCompletionRate",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdCompletionRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdCreativeViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "videoAdCreativeViews",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdCreativeViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdEndStateClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "videoAdEndStateClicks",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdEndStateClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdFirstQuartile' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoAdFirstQuartile",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdFirstQuartile"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdImpressions' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "videoAdImpressions",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdImpressions"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdMidpoint' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoAdMidpoint",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdMidpoint"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdMute' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoAdMute",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdMute"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdPause' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoAdPause",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdPause"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdReplays' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "videoAdReplays",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdReplays"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdResume' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoAdResume",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdResume"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdSkipBacks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "videoAdSkipBacks",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdSkipBacks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdSkipForwards' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspProduct, dspTech.",
+    "field_id": "videoAdSkipForwards",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdSkipForwards"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdStart' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoAdStart",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdStart"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdThirdQuartile' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoAdThirdQuartile",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdThirdQuartile"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoAdUnmute' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoAdUnmute",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoAdUnmute"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoDownloadRate' (Integer); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "videoDownloadRate",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoDownloadRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoDownloads' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoDownloads",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoDownloads"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoDownloadsClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoDownloadsClicks",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoDownloadsClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoDownloadsViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoDownloadsViews",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoDownloadsViews"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoStreams' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoStreams",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoStreams"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoStreamsClicks' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoStreamsClicks",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoStreamsClicks"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoStreamsRate' (Integer); report types: dspAudience, dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "videoStreamsRate",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoStreamsRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'videoStreamsViews' (Integer); report types: dspAudience, dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "videoStreamsViews",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "videoStreamsViews"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'viewabilityRate' (Decimal); report types: dspCampaign, dspInventory. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "viewabilityRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "viewabilityRate"
+  },
+  {
+    "data_type": "integer",
+    "description": "Amazon DSP Reporting v3 column 'viewableImpressions' (Integer); report types: dspCampaign, dspGeo, dspInventory, dspTech.",
+    "field_id": "viewableImpressions",
+    "kind": "metric",
+    "section": "VIEWABILITY",
+    "source_field": "viewableImpressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Amazon DSP Reporting v3 column 'winRate' (Decimal); report types: dspBidAdjustment. Provider-computed non-additive value; never SUM across rows.",
+    "field_id": "winRate",
+    "kind": "metric",
+    "section": "DELIVERY",
+    "source_field": "winRate"
+  }
+]

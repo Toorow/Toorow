@@ -1,0 +1,21 @@
+version: 2
+sources:
+  - name: raw_brevo
+    schema: main
+    tables:
+      - name: raw_brevo_daily
+models:
+  - name: stg_brevo_daily
+    description: Brevo campaign snapshots and immutable events at their full protected grain.
+    tests:
+      # AI-05 grain uniqueness: a duplicate grain row means double-counted KPIs downstream.
+      # The QUALIFY supersede in stg_brevo_daily.sql must always hold across the full grain.
+      - unique:
+          name: stg_brevo_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || profile || '|' || account_id || '|' || source_id || '|' || date || '|' || channel || '|' || COALESCE(event_type, '') || '|' || COALESCE(protected_identifier, '') || '|' || metric"
+    columns:
+      - name: source_id
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]

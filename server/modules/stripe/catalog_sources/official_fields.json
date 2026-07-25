@@ -1,0 +1,1114 @@
+[
+  {
+    "field_id": "charge_id",
+    "source_field": "charge_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier for the Charge object.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_object",
+    "source_field": "object",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "String representing the object type; always 'charge'.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_status",
+    "source_field": "status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "The status of the charge (e.g., 'succeeded', 'pending', 'failed').",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_currency",
+    "source_field": "currency",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Three-letter ISO currency code for the charge, in lowercase.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_description",
+    "source_field": "description",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Arbitrary string attached to the charge object.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_captured",
+    "source_field": "captured",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the charge was captured (false if created without capture).",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_paid",
+    "source_field": "paid",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "True if the charge succeeded or was authorized for later capture.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_refunded",
+    "source_field": "refunded",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the charge has been fully refunded.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_disputed",
+    "source_field": "disputed",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the charge has been disputed.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_livemode",
+    "source_field": "livemode",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "True if charge exists in live mode; false in test mode.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "payment_intent_id",
+    "source_field": "payment_intent_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "ID of the PaymentIntent associated with the charge.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "payment_method_id",
+    "source_field": "payment_method",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "ID of the payment method used in the charge.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "payment_method_type",
+    "source_field": "payment_method_details.type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Payment method type used (card, sepa_debit, paypal, etc.).",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "client_reference_id",
+    "source_field": "client_reference_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Merchant-supplied client reference ID (only present for Stripe Checkout payments where merchant populates it; nullable).",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "customer_id",
+    "source_field": "customer",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "ID of the customer this charge is for.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_receipt_email",
+    "source_field": "receipt_email",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Email address for sending receipts.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_receipt_number",
+    "source_field": "receipt_number",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Receipt number for the charge.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_receipt_url",
+    "source_field": "receipt_url",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "URL for the charge receipt.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_statement_descriptor",
+    "source_field": "statement_descriptor",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Custom descriptor displayed on the customer's card statement.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_statement_descriptor_suffix",
+    "source_field": "statement_descriptor_suffix",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Suffix appended to the statement descriptor.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_failure_code",
+    "source_field": "failure_code",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Error code explaining the reason for charge failure.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_failure_message",
+    "source_field": "failure_message",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Human-readable message explaining charge failure.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_transfer_group",
+    "source_field": "transfer_group",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Transfer group identifier for the charge.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_on_behalf_of",
+    "source_field": "on_behalf_of",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Account the charge was made on behalf of (Connect).",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_application_id",
+    "source_field": "application",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "ID of the Connect application that created the charge.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_outcome_type",
+    "source_field": "outcome.type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Outcome type: authorized, manual_review, issuer_declined, blocked, or invalid.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_outcome_network_status",
+    "source_field": "outcome.network_status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Network status of the charge outcome.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_outcome_risk_level",
+    "source_field": "outcome.risk_level",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Stripe Radar risk evaluation: normal, elevated, highest, not_assessed, unknown.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_outcome_reason",
+    "source_field": "outcome.reason",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Detailed explanation of the charge outcome.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_outcome_seller_message",
+    "source_field": "outcome.seller_message",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Human-readable description of the outcome type.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_fraud_user_report",
+    "source_field": "fraud_details.user_report",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Merchant-reported fraud assessment: safe or fraudulent.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_fraud_stripe_report",
+    "source_field": "fraud_details.stripe_report",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Stripe fraud assessment report.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "card_brand",
+    "source_field": "payment_method_details.card.brand",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Card brand: amex, diners, discover, jcb, mastercard, unionpay, visa, unknown.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "card_funding",
+    "source_field": "payment_method_details.card.funding",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Card funding type: credit, debit, prepaid, unknown.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "card_country",
+    "source_field": "payment_method_details.card.country",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Two-letter ISO country code of the card issuer.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "card_network",
+    "source_field": "payment_method_details.card.network",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Card processing network.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "card_last4",
+    "source_field": "payment_method_details.card.last4",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Last four digits of the card.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "billing_country",
+    "source_field": "billing_details.address.country",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Two-letter country code from the billing address.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "billing_postal_code",
+    "source_field": "billing_details.address.postal_code",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Postal code from the billing address.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "date",
+    "source_field": "created",
+    "kind": "dimension",
+    "data_type": "date",
+    "description": "Date the charge was created (day grain, UTC, derived from Unix epoch timestamp).",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "amount_captured",
+    "source_field": "amount_captured",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Amount captured; can be less than amount for partial captures.",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "application_fee_amount",
+    "source_field": "application_fee_amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Amount of application fee requested for the charge (Connect).",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "charge_outcome_risk_score",
+    "source_field": "outcome.risk_score",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Stripe Radar risk score (0–100).",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "transaction_count",
+    "source_field": "transaction_count",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of charge transactions (1 per charge, aggregated at day grain).",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "order_count",
+    "source_field": "order_count",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of orders represented by charges (1 per charge, aggregated at day grain).",
+    "section": "CHARGE"
+  },
+  {
+    "field_id": "bt_id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier for the BalanceTransaction object.",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_type",
+    "source_field": "type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Transaction type (charge, refund, payout, transfer, etc.).",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_status",
+    "source_field": "status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Status of the balance transaction: available or pending.",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_currency",
+    "source_field": "currency",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Three-letter ISO currency code for the balance transaction.",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_description",
+    "source_field": "description",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Arbitrary string attached to the balance transaction.",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_reporting_category",
+    "source_field": "reporting_category",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Helps understand balance transactions from an accounting perspective.",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_balance_type",
+    "source_field": "balance_type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "The balance that this transaction impacts: issuing, payments, refund_and_dispute_prefunding, risk_reserved.",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_available_on",
+    "source_field": "available_on",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Date that the transaction's net funds become available in the Stripe balance.",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_created",
+    "source_field": "created",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Time at which the balance transaction was created (Unix epoch).",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_amount",
+    "source_field": "amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Gross amount of the balance transaction in smallest currency unit.",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_net",
+    "source_field": "net",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Net impact to Stripe balance: amount minus fee.",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "bt_exchange_rate",
+    "source_field": "exchange_rate",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Exchange rate used if the transaction involved a currency conversion.",
+    "section": "BALANCE TRANSACTION"
+  },
+  {
+    "field_id": "customer_email",
+    "source_field": "email",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Customer's email address.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_name",
+    "source_field": "name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Customer's full name or business name.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_phone",
+    "source_field": "phone",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Customer's phone number.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_description",
+    "source_field": "description",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Arbitrary description attached to the customer.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_currency",
+    "source_field": "currency",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Three-letter ISO currency code used for recurring billing of this customer.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_delinquent",
+    "source_field": "delinquent",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the customer is currently delinquent (latest invoice unpaid).",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_tax_exempt",
+    "source_field": "tax_exempt",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Tax exemption status: none, exempt, or reverse.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_invoice_prefix",
+    "source_field": "invoice_prefix",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Prefix used for generating unique invoice numbers for this customer.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_address_country",
+    "source_field": "address.country",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Two-letter ISO country code of the customer's billing address.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_created_date",
+    "source_field": "created",
+    "kind": "dimension",
+    "data_type": "date",
+    "description": "Date the customer record was created (day grain).",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "customer_balance",
+    "source_field": "balance",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Current customer balance in smallest currency unit. Negative = credit; positive = owed.",
+    "section": "CUSTOMER"
+  },
+  {
+    "field_id": "invoice_id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier for the Invoice object.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_status",
+    "source_field": "status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Invoice status: draft, open, paid, uncollectible, void.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_currency",
+    "source_field": "currency",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Three-letter ISO currency code of the invoice.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_number",
+    "source_field": "number",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifying string for the invoice, appearing on customer emails.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_billing_reason",
+    "source_field": "billing_reason",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Reason the invoice was created: manual, subscription_create, subscription_cycle, subscription_update, etc.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_collection_method",
+    "source_field": "collection_method",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Invoice collection method: charge_automatically or send_invoice.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_receipt_number",
+    "source_field": "receipt_number",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Transaction number appearing on email receipts for the invoice.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_account_country",
+    "source_field": "account_country",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Country of the business associated with this invoice.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_account_name",
+    "source_field": "account_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Public name of the business associated with this invoice.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_period_start",
+    "source_field": "period_start",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Earliest timestamp at which invoice items can be associated.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_period_end",
+    "source_field": "period_end",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Latest timestamp at which invoice items can be associated.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_created",
+    "source_field": "created",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Time the invoice was created (Unix epoch).",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_due_date",
+    "source_field": "due_date",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Date on which payment for this invoice is due.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_customer_email",
+    "source_field": "customer_email",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Customer email frozen at invoice finalization.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_customer_name",
+    "source_field": "customer_name",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Customer name frozen at invoice finalization.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_customer_address_country",
+    "source_field": "customer_address.country",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Customer billing address country frozen at finalization.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_livemode",
+    "source_field": "livemode",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "True if invoice exists in live mode; false in test mode.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_amount_due",
+    "source_field": "amount_due",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Final amount due at this time, in smallest currency unit.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_amount_paid",
+    "source_field": "amount_paid",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Amount already paid on the invoice, in smallest currency unit.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_amount_remaining",
+    "source_field": "amount_remaining",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Difference between amount_due and amount_paid.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_amount_shipping",
+    "source_field": "amount_shipping",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Sum of all shipping amounts on the invoice.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_subtotal",
+    "source_field": "subtotal",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total of subscriptions, invoice items, and prorations before discounts or taxes.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_total",
+    "source_field": "total",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total after discounts and taxes.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_starting_balance",
+    "source_field": "starting_balance",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Customer balance before invoice finalization.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_ending_balance",
+    "source_field": "ending_balance",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Customer balance after invoice finalization.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_attempt_count",
+    "source_field": "attempt_count",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of payment attempts made for this invoice.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_post_payment_credit_notes_amount",
+    "source_field": "post_payment_credit_notes_amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total amount of all post-payment credit notes issued.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "invoice_pre_payment_credit_notes_amount",
+    "source_field": "pre_payment_credit_notes_amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Total amount of all pre-payment credit notes issued.",
+    "section": "INVOICE"
+  },
+  {
+    "field_id": "subscription_id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier for the Subscription object.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_status",
+    "source_field": "status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Subscription status: incomplete, incomplete_expired, trialing, active, past_due, canceled, unpaid, paused.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_currency",
+    "source_field": "currency",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Three-letter ISO currency code for the subscription.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_collection_method",
+    "source_field": "collection_method",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Collection method: charge_automatically or send_invoice.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_cancel_at_period_end",
+    "source_field": "cancel_at_period_end",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the subscription will cancel at the end of the current period.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_livemode",
+    "source_field": "livemode",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "True if subscription exists in live mode; false in test mode.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_start_date",
+    "source_field": "start_date",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Date the subscription was first created.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_created",
+    "source_field": "created",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Time the subscription object was created (Unix epoch).",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_canceled_at",
+    "source_field": "canceled_at",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Date the subscription was canceled.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_ended_at",
+    "source_field": "ended_at",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Date the subscription ended.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_trial_start",
+    "source_field": "trial_start",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Beginning of the trial period for the subscription.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_trial_end",
+    "source_field": "trial_end",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "End of the trial period for the subscription.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_billing_cycle_anchor",
+    "source_field": "billing_cycle_anchor",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Reference point that aligns future billing cycle dates.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_days_until_due",
+    "source_field": "days_until_due",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of days until invoices are due (null for charge_automatically).",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "subscription_application_fee_percent",
+    "source_field": "application_fee_percent",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Percentage (0–100) of subscription revenue transferred to the application owner.",
+    "section": "SUBSCRIPTION"
+  },
+  {
+    "field_id": "refund_id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier for the Refund object.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_status",
+    "source_field": "status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Refund status: pending, requires_action, succeeded, failed, or canceled.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_reason",
+    "source_field": "reason",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Reason for refund: duplicate, fraudulent, requested_by_customer, expired_uncaptured_charge.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_failure_reason",
+    "source_field": "failure_reason",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Reason for refund failure: lost_or_stolen_card, expired_or_canceled_card, insufficient_funds, declined, merchant_request, unknown.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_currency",
+    "source_field": "currency",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Three-letter ISO currency code of the refund.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_description",
+    "source_field": "description",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Arbitrary string attached to the refund.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_receipt_number",
+    "source_field": "receipt_number",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Transaction number on email receipts for this refund.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_created",
+    "source_field": "created",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Time the refund was created (Unix epoch).",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "refund_amount",
+    "source_field": "amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Refund amount in the smallest currency unit.",
+    "section": "REFUND"
+  },
+  {
+    "field_id": "payout_id",
+    "source_field": "id",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Unique identifier for the Payout object.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_status",
+    "source_field": "status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Payout status: paid, pending, in_transit, canceled, or failed.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_type",
+    "source_field": "type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Payout type: bank_account or card.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_method",
+    "source_field": "method",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Payout method: standard or instant.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_currency",
+    "source_field": "currency",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Three-letter ISO currency code of the payout.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_source_type",
+    "source_field": "source_type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Source balance the payout came from: card, fpx, or bank_account.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_description",
+    "source_field": "description",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Arbitrary string attached to the payout.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_statement_descriptor",
+    "source_field": "statement_descriptor",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Extra information about the payout displayed on the user's bank statement.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_automatic",
+    "source_field": "automatic",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "True if created by automated payout schedule; false if manually requested.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_failure_code",
+    "source_field": "failure_code",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Error code providing the reason for payout failure.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_failure_message",
+    "source_field": "failure_message",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Human-readable message explaining payout failure.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_reconciliation_status",
+    "source_field": "reconciliation_status",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Reconciliation status: completed, in_progress, or not_applicable.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_created",
+    "source_field": "created",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Time the payout was created (Unix epoch).",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_arrival_date",
+    "source_field": "arrival_date",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Expected date the payout will arrive in the bank.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_amount",
+    "source_field": "amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Amount transferred to the bank account or debit card, in smallest currency unit.",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "payout_application_fee_amount",
+    "source_field": "application_fee_amount",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Application fee amount for the payout (Connect).",
+    "section": "PAYOUT"
+  },
+  {
+    "field_id": "fees",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "fees exposed by Stripe. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "fee_amount"
+  },
+  {
+    "field_id": "refunds",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "refunds exposed by Stripe. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "amount_refunded"
+  },
+  {
+    "field_id": "revenue",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "revenue exposed by Stripe. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+    "section": "PLATFORM CONTRACT",
+    "source_field": "amount"
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "catalog_version": "1",
+  "connector": "fixture-connector",
+  "api_version": "v2026-01",
+  "sources": [
+    {
+      "url": "https://thirdparty.dev/docs",
+      "kind": "enrichment",
+      "fetched_at": "2026-07-21T00:00:00Z"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "fields": []
+}

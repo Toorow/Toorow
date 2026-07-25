@@ -1,0 +1,105 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Node / pnpm ---
+node_modules/
+ui/**/dist/
+ui/tokens/dist/
+.pnpm-store/
+*.tsbuildinfo
+
+# --- dbt ---
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+# real dbt profile must never be committed (secrets)
+dbt/profiles/profiles.yml
+profiles.yml
+
+# --- Terraform ---
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/*.tfvars
+!infra/**/*.tfvars.example
+infra/terraform/backend.tf
+crash.log
+
+# --- Secrets / creds (never commit) ---
+*.key
+*-key.json
+service-account*.json
+.env
+.env.*
+!.env.example
+
+# --- Per-tenant key files (Story 7.3 -- key material NEVER in git) ---
+infra/keys/
+!infra/keys/.gitkeep
+
+# --- Story 1.4 generated artifacts (seeds) ---
+# These are generated at dev/CI time; never committed.
+server/modules/google-analytics/seeds/ga4_seed.csv
+server/modules/google-analytics/seeds/ga4_user_type_seed.csv
+server/modules/google-analytics/seeds/ga4_landing_seed.csv
+server/modules/google-analytics/seeds/ga4_paths_seed.csv
+server/modules/google-analytics/seeds/ga4_acquisition_session_seed.csv
+server/modules/google-analytics/seeds/ga4_acquisition_first_user_seed.csv
+server/modules/google-analytics/seeds/local.duckdb
+server/modules/google-analytics/seeds/*.duckdb
+
+# --- Local diagnostic/scratch artifacts ---
+server/core/scratch_*
+
+# --- design-sync (claude.ai/design) — staged scripts + build output; durable state
+# (design-sync.config.json, .design-sync/NOTES.md|previews/|overrides/) IS committed ---
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+
+# Le site marketing web/ fait partie du monorepo (zone privee, cf.
+# docs/project-context.md "Repository model" + distribution/public-app.toml:
+# web est dans private_paths, jamais exporte dans l'app publique).
+# L'ancien .git imbriqué (scaffolding Astro) a ete absorbe le 2026-07-19
+# (historique sauvegarde en bundle) -- on n'ignore que sa sauvegarde locale.
+web/.git-absorbed-*.bak/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Enrichment snapshots (Supermetrics) are fetch artifacts -- never committed (playbook section 2)
+server/modules/*/catalog_sources/supermetrics.md
+
+# Local DuckDB seed/build artifacts -- never committed (local test material)
+server/modules/*/seeds/*.duckdb
+
+# Firebase Hosting deploy cache -- local artifact, never committed
+web/.firebase/
+
+# Codex parallel-session scratch (audit scripts, backups, JSON dumps) -- never committed
+.codex-tmp/
+
+# Stray local test screenshots at repo root -- never committed
+/test_*.png
+
+# Visual-QA artifacts (Playwright route-mock harnesses + screenshots) -- never committed
+/*qa.mjs
+/test-results/
+ui/admin/shot-*.png
+ui/admin/qa-*.png
+ui/admin/dk-*.png
+ui/admin/lv-*.png
+ui/admin/lw-*.png
+ui/admin/live-*.png

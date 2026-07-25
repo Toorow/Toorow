@@ -1,0 +1,33 @@
+{
+  "connector": "generic",
+  "api_version": "toorow-generic-contract v1",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "Self-declared contract: the generic module has no external provider. The authority is the module's own connector.py docstring (source_capabilities.field_discovery.allowed_targets + column-mapping contract). official_fields.json is hand-curated from that docstring; no external API fetch is possible or required. The url field below points to connector.py as the canonical contract document.",
+    "field_discovery_mode": "runtime",
+    "authority": "connector.py docstring + manifest.json source_capabilities",
+    "enrichment": "none -- no Supermetrics catalog exists for this module"
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "server/modules/generic/connector.py",
+      "_note": "No external API reference exists. The contract is self-declared: the module docstring (connector.py lines 1-30) and source_capabilities.field_discovery.allowed_targets in manifest.json are the authoritative sources. official_fields.json is curated deterministically from those. No network fetch is needed or possible.",
+      "fetched_at": "2026-07-21"
+    }
+  ],
+  "section_tier_map": {
+    "GENERIC": "core"
+  },
+  "default_tier": "core",
+  "probe": {
+    "request_style": "none",
+    "batch_size": 0,
+    "structural_note": "No external provider. The catalog IS the contract by construction (self-declared from connector.py + manifest source_capabilities). ratify_connector.py records a structural ratification: every exposed/planned field is marked structurally-verified without a live API request."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {},
+  "_exposure_note": "Self-declared contract: every field IS the extraction contract by construction."
+}

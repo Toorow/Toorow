@@ -1,0 +1,381 @@
+{
+    "schema_version": "1.2",
+    "name": "stripe",
+    "display_name": "Stripe",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "commerce_billing",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "module_kind": "kpi",
+    "auth_type": "api_key",
+    "report_profiles": [
+        {
+            "id": "payments_daily",
+            "display_name": "Payments (daily revenue of record)",
+            "metrics": [
+                "revenue",
+                "refunds",
+                "fees",
+                "transaction_count",
+                "order_count"
+            ],
+            "dimensions": [
+                "date",
+                "charge_id",
+                "payment_intent_id",
+                "client_reference_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 100,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven daily (any selected field)",
+            "metrics": [
+                "revenue",
+                "refunds",
+                "fees",
+                "transaction_count",
+                "order_count"
+            ],
+            "dimensions": [
+                "date",
+                "charge_id",
+                "payment_intent_id",
+                "client_reference_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 100,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        }
+    ],
+    "canonical_metric_mapping": {
+        "amount": "revenue",
+        "amount_refunded": "refunds",
+        "fee_amount": "fees",
+        "transaction_count": "transaction_count",
+        "order_count": "order_count"
+    },
+    "canonical_dimension_mapping": {
+        "charge_id": "charge_id",
+        "payment_intent_id": "payment_intent_id",
+        "client_reference_id": "client_reference_id"
+    },
+    "quota": {
+        "window_seconds": 1,
+        "budget_points": 100,
+        "read_cost": 1,
+        "write_cost": 1
+    },
+    "widget_ref": "ui://core/daily-report",
+    "amount_unit": {
+        "source": "minor_unit_centimes",
+        "landed": "major_unit_currency",
+        "note": "Stripe renvoie TOUS les montants (amount, amount_refunded, balance_transaction.fee) dans la plus PETITE unite de la devise (centimes pour EUR/USD). Le connecteur DIVISE par 100 a l'ingestion (_amount_to_units), SAUF pour les devises zero-decimal (JPY, KRW, ...) deja en unite. Conversion EXPLICITE (jamais silencieuse), commentee et testee. La normalisation FX projet (pattern 4.2) est un etage SEPARE en staging dbt via fx_rates."
+    },
+    "revenue_dedup_rule": {
+        "rule": "priority_declarative",
+        "shared_metric": "revenue",
+        "priority_seed": "dbt/seeds/metric_source_priority.csv",
+        "cross_source_view": "dbt/models/marts/cross_source_revenue.sql",
+        "note": "CRITIQUE (AD-4) : le revenue Stripe et le revenue Shopify peuvent mesurer la MEME vente (un paiement Stripe qui regle une commande Shopify). Ils ne sont JAMAIS sommes dans un total croise. Regle DECLARATIVE (choix justifie ci-dessous) : metric_source_priority.csv porte revenue -> shopify priorite 1 (source de verite ventes e-commerce), stripe priorite 2 ; la vue cross_source_revenue.sql (miroir EXACT de cross_source_conversions 3.7) choisit UNE source gagnante par (projet, jour). Les lignes par source restent independamment interrogeables dans fact_daily_kpi (metric='revenue', connector distinct). JUSTIFICATION du choix priorite (vs non-agregation klaviyo) : le revenue Stripe et le revenue Shopify sont la MEME grandeur canonique (des ventes en euros), pas une vue d'attribution canal comme attributed_revenue Klaviyo -- la bonne regle est donc la priorite de source (comme conversions GA4/Meta/TikTok 3.7), pas la non-agregation. Un projet SaaS pur (Stripe seul) ne declenche aucun conflit ; un projet e-commerce avec les deux voit Shopify gagner."
+    },
+    "_ai_53_notes": {
+        "verified_on": "2026-07-19",
+        "endpoint": "AI-53 verifie le 2026-07-19 (doc officielle stripe.com/docs/api/charges): GET https://api.stripe.com/v1/charges, versionne par le header Stripe-Version (PAS par le chemin). Parametres: created[gte]/created[lte] (epoch seconds) pour la fenetre, limit<=100, starting_after=<id> pour la pagination curseur (has_more indique la suite), expand[]=data.balance_transaction pour porter la fee. A CONFIRMER en passe live: shape exact des Charges, disponibilite de balance_transaction.fee sans reglement, et si un endpoint agrege (Reporting API / Balance) est prefere aux Charges brutes pour un fait daily.",
+        "quota": "AI-53 verifie le 2026-07-19 (doc officielle stripe.com/docs/rate-limits): Stripe applique un rate limit et renvoie HTTP 429 (code 'rate_limit') au depassement. Les limites par defaut publiques sont ~100 read/s en mode LIVE et ~25 read/s en mode TEST (par compte). Stripe N'EXPOSE PAS d'API de quota -- le client doit s'adapter au 429 (backstop reel = handler 429 -> RateLimitError). Profil retenu: window 1s / 100 points. review-15-9 F-4/F-5 (HONNETETE FIXED-WINDOW): l'engine core est FIXED-WINDOW, donc ce profil autorise un BURST de 100 requetes par fenetre de 1s (compteur remis a zero a chaque fenetre), ce qui N'EST PAS strictement equivalent a 100 req/s SOUTENU (un token-bucket lisserait le debit ; une fenetre fixe permet un pic de 100 en debut de fenetre puis blocage). C'est une approximation conservatrice de la limite live read ; le vrai garde-fou reste le handler 429. A RECALIBRER en passe live via les headers/429. RESTE A CONFIRMER: la limite reelle du compte (live vs test) et l'endpoint effectivement retenu.",
+        "auth": "AI-53 verifie le 2026-07-19: Stripe s'authentifie par une CLE SECRETE (Bearer). Recommandation retenue: auth_type='api_key' avec une CLE RESTREINTE LECTURE SEULE (restricted key, scope Charges/BalanceTransactions read). Le secret transite via Nango UNIQUEMENT (AD-3) et n'est jamais stocke/logge cote module. Stripe Connect (OAuth) est une alternative pour les plateformes multi-comptes -- HORS SCOPE de cette story (comptes marchands directs). A confirmer en passe live: type de cle et scopes minimaux.",
+        "amount_unit": "AI-53 verifie le 2026-07-19 (doc officielle stripe.com/docs/currencies): montants en plus petite unite de la devise (centimes). Zero-decimal currencies (JPY, KRW, XOF, ...) deja en unite. Conversion /100 EXPLICITE a l'ingestion, sauf zero-decimal.",
+        "ga4_reconciliation_key": "AI-53 verifie le 2026-07-19 (doc officielle stripe.com/docs/api): investigation de la cle de reconciliation GA4 cote Stripe. RESULTAT HONNETE: (1) charge.payment_intent -> PaymentIntent dont metadata est LIBRE cote marchand mais N'EST PAS joignable GA4 par defaut ; (2) checkout.Session.client_reference_id est le SEUL champ officiellement PREVU pour transporter un identifiant cote marchand (ex: client_id GA4 / order id) et donc joignable GA4 -- MAIS il n'existe QUE pour les paiements passes par Stripe Checkout ET seulement si le marchand l'a rempli (souvent absent) ; (3) les Charges brutes (API/Elements hors Checkout) N'ONT PAS de client_reference_id. CONCLUSION: aucune cle de jointure GA4 FIABLE et universelle cote Stripe. Le connecteur expose client_reference_id comme DIMENSION DE DETAIL du raw (nullable, joignable GA4 quand present) + charge_id/payment_intent_id comme identifiants de transaction. La reconciliation Epic 17 cote Stripe reste au niveau AGREGE (verified = revenue jour), PAS au niveau transaction (contrairement a Shopify x GA4 via transaction_id, 17.4). A CONFIRMER en passe live: taux reel de presence de client_reference_id sur les comptes Checkout.",
+        "refunds_fees_decision": "DECISION 15.7 (meme discipline que Shopify 15.4): refunds et fees sont stockes en COLONNES DEDIEES (metriques additives positives), JAMAIS soustraits silencieusement de revenue. Le net (revenue - refunds - fees) se calcule au niveau semantique de facon explicite et auditable (AD-9 no-black-box). transaction_count = nombre de charges (paiements) ; order_count = 1 par charge (agreges au jour). transaction_count/order_count NE SONT PAS mappes sur 'conversions' (pas de collision avec la regle 3.7 GA4/Meta -- un paiement Stripe est une VENTE, pas une conversion regie)."
+    },
+    "error_map": {
+        "401:api_key_expired": "auth_expired",
+        "401:platform_api_key_expired": "auth_expired",
+        "401:invalid_api_key": "auth_revoked",
+        "401:secret_key_required": "auth_revoked",
+        "403:permission_error": "permission_denied",
+        "400:parameter_missing": "invalid_request",
+        "400:parameter_invalid_empty": "invalid_request",
+        "400:parameter_unknown": "invalid_request",
+        "500:api_error": "provider_transient",
+        "_error_map_note": "Stripe error responses carry {error:{type, code, message}} where error.type is one of api_error|card_error|idempotency_error|invalid_request_error. The core _extract_provider_code function reads error.code (shape {error:{code:X}} IS recognised). The canonical HTTP classification (401->auth_expired, 403->permission_denied, 400->invalid_request, 5xx->provider_transient) is already correct for Stripe without refinement: Stripe does NOT use a separate authentication_error type; 401 always maps to auth_expired. Refinement entries above are provided for known api_key_expired and platform_api_key_expired codes which confirm the token is stale (auth_expired is correct), and invalid_api_key / secret_key_required which indicate a wrong or revoked credential (auth_revoked). In practice, a 401 without a recognized code still classifies as auth_expired via the HTTP-based fallback, which is correct for Stripe."
+    },
+    "_account_topology_note": "Stripe uses API-key-scoped access: one secret key accesses one merchant account. There is no discovery call needed and no account selection step. Stripe Connect (OAuth, sub-accounts) is out of scope for this module (direct merchant integration only). account_topology declaration is not required.",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "revenue",
+                "source_field": "amount",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "revenue exposed by Stripe.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "revenue",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "refunds",
+                "source_field": "amount_refunded",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "refunds exposed by Stripe.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "refunds",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "fees",
+                "source_field": "fee_amount",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "fees exposed by Stripe.",
+                "semantic_hints": [
+                    "spend",
+                    "currency"
+                ],
+                "canonical_target": "fees",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "transaction_count",
+                "source_field": "transaction_count",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "transaction count exposed by Stripe.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "transaction_count",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "order_count",
+                "source_field": "order_count",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "order count exposed by Stripe.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "order_count",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "created",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "date exposed by Stripe.",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "charge_id",
+                "source_field": "charge_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "charge id exposed by Stripe.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "charge_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "payment_intent_id",
+                "source_field": "payment_intent_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "payment intent id exposed by Stripe.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "payment_intent_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "client_reference_id",
+                "source_field": "client_reference_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "client reference id exposed by Stripe.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "client_reference_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "payments_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "revenue",
+                    "refunds",
+                    "fees",
+                    "transaction_count",
+                    "order_count"
+                ],
+                "dimensions": [
+                    "date",
+                    "charge_id",
+                    "payment_intent_id",
+                    "client_reference_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "charge_id",
+                        "payment_intent_id",
+                        "client_reference_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 100,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull"
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "revenue",
+                    "refunds",
+                    "fees",
+                    "transaction_count",
+                    "order_count"
+                ],
+                "dimensions": [
+                    "date",
+                    "charge_id",
+                    "payment_intent_id",
+                    "client_reference_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "charge_id",
+                        "payment_intent_id",
+                        "client_reference_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 100,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                }
+            }
+        ]
+    }
+}

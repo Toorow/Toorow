@@ -1,0 +1,130 @@
+/**
+ * procedures.css — page-specific styles for the Procedures Context surface.
+ *
+ * Shell/layout classes (main, panel, page-header, header-actions, primary-button,
+ * secondary-button) already live in application.css and are global. This file
+ * only adds the Procedures-specific pieces: the card grid, the procedure cards,
+ * the method pill, the description clamp, and the card meta lines. It mirrors
+ * knowledge.css (card grid + topic pill) and the Sources inline-note treatment.
+ *
+ * Tokenized: every color references an application.css CSS variable, so the page
+ * is dark-theme safe. The method pill reuses the "info" violet tints
+ * (translucent var(--info)) via color-mix; the neutral variants swap in
+ * var(--ink)/var(--muted) tints so distinct methods read apart without any raw
+ * literals. Numbers/dates use the Geist tabular treatment through the meta rule.
+ */
+
+.procedure-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+@media (max-width: 1080px) {
+  .procedure-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .procedure-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.procedure-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 22px;
+  min-height: 236px;
+}
+
+.procedure-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.procedure-card h2 {
+  margin: 0;
+  font: 600 17px/1.35 "Lexend", sans-serif;
+  color: var(--ink);
+}
+
+.procedure-method {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--info) 28%, var(--surface));
+  background: color-mix(in srgb, var(--info) 8%, var(--surface));
+  color: var(--info);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+/*
+ * Per-method tints. All derived via color-mix over the shared CSS variables so
+ * every variant stays dark-theme safe and free of raw color literals. The
+ * violet "info" default covers the calculation-heavy methods; the neutral --ink
+ * and --muted tints separate the source-selection and override methods.
+ */
+.procedure-method.method-priority {
+  border-color: color-mix(in srgb, var(--ink) 22%, var(--surface));
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  color: var(--ink);
+}
+
+.procedure-method.method-override {
+  border-color: color-mix(in srgb, var(--muted) 34%, var(--surface));
+  background: color-mix(in srgb, var(--muted) 10%, var(--surface));
+  color: var(--muted);
+}
+
+.procedure-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.procedure-meta {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.procedure-meta b {
+  font-weight: 600;
+  color: var(--muted);
+}
+.procedure-meta time {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.procedure-card .secondary-button {
+  margin-top: 14px;
+}
+
+/* Honest empty state — shown only after the real read returns no procedures. */
+.procedure-empty {
+  padding: 40px 28px;
+  text-align: center;
+}
+.procedure-empty p {
+  margin: 0 auto;
+  max-width: 520px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}

@@ -1,0 +1,87 @@
+{
+  "connector": "doubleverify",
+  "api_version": "data-api-v1",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "official_fields.json is a hand-curated snapshot of the DoubleVerify Data API 'Standard' report family (Universal / Display viewability / Video viewability / Fraud-SIVT / Brand suitability / Geo). DV's own developer reference (developer.doubleverify.com Report Data API) is gated behind an email-verification login; the field vocabulary is therefore taken verbatim from the DoubleVerify field catalog published by Supermetrics (which mirrors the Data API's dimension + metric ids), cross-checked against the Adverity, Improvado, Alli and Salesforce/Datorama DoubleVerify connector docs. Every metric+dimension listed is reachable through the Data Request 'metrics'/'dimensions' arrays.",
+    "scope_note": "Media Gardens (social) report families (Meta / TikTok / Snapchat / Twitter-X / YouTube prefixes) and the full DV Authentic Attention product (Ad Focus, Dwell Time, Attention Index) are OUT OF SCOPE for this Standard-report module and are intentionally NOT enumerated -- inventing their field ids without a verifiable source would violate the honesty rule. They are candidates for a follow-up story.",
+    "count_note": "116 fields (72 metrics + 44 dimensions). Rate/mean sections are declared for completeness but marked excluded (see excluded_sections): every DV '*_rate' is a non-additive ratio recomputed at the semantic layer from its numerator/denominator counts (AD-4)."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developer.doubleverify.com/docs/client-integrations/extensions/report-data-api",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "field_vocabulary",
+          "url": "https://docs.supermetrics.com/docs/doubleverify-fields",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "connection_and_report_types",
+          "url": "https://docs.supermetrics.com/docs/doubleverify-connection-guide",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "freshness_and_errors",
+          "url": "https://help.alliplatform.com/data/Working-version/doubleverify",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    }
+  ],
+  "section_tier_map": {
+    "GENERAL": "core",
+    "VIEWABILITY_DISPLAY": "core",
+    "VIEWABILITY_VIDEO": "core",
+    "VIEWABILITY_RATE": "core",
+    "FRAUD": "core",
+    "FRAUD_RATE": "core",
+    "BRAND": "core",
+    "BRAND_RATE": "core",
+    "GEO": "standard",
+    "GEO_RATE": "standard",
+    "AUTHENTIC": "standard",
+    "AUTHENTIC_RATE": "standard",
+    "VIEWTIME": "standard",
+    "AVERAGE": "standard",
+    "TIME": "core",
+    "CAMPAIGN": "core",
+    "BRAND_GROUPING": "standard",
+    "INVENTORY": "standard",
+    "APP": "standard",
+    "CTV": "advanced",
+    "DEVICE": "standard",
+    "GEO_DIM": "standard"
+  },
+  "field_tier_overrides": {
+    "monitored_ads": "core",
+    "measured_impressions": "core",
+    "viewable_impressions": "core",
+    "eligible_impressions": "core",
+    "fraud_sivt_incidents": "core",
+    "brand_suitability_incidents": "core",
+    "date": "core",
+    "advertiser_name": "core",
+    "campaign": "core",
+    "media_property": "core"
+  },
+  "default_tier": "standard",
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {
+    "VIEWABILITY_RATE": "Non-additive ratio (AD-4): every DV viewability *_rate is recomputed at the semantic layer from its numerator/denominator counts (e.g. viewable_rate = viewable_impressions / measured_impressions) and is never stored raw.",
+    "AUTHENTIC_RATE": "Non-additive ratio (AD-4): DV authentic *_rate metrics are recomputed at the semantic layer from their authentic count and monitored_ads; never stored raw.",
+    "FRAUD_RATE": "Non-additive ratio (AD-4): fraud/SIVT *_rate metrics are recomputed at the semantic layer from fraud counts and monitored_ads / evaluations; never stored raw.",
+    "BRAND_RATE": "Non-additive ratio (AD-4): brand-suitability *_rate metrics are recomputed at the semantic layer from incident/suitable counts and monitored_ads; never stored raw.",
+    "GEO_RATE": "Non-additive ratio (AD-4): in/out-of-geo *_rate metrics are recomputed at the semantic layer from geo counts and monitored_ads; never stored raw.",
+    "AVERAGE": "Non-additive mean (AD-4): average_time_s_display_viewable_impressions is a per-impression mean; it is recomputed at the semantic layer from total_viewable_time_s and the viewable-impression count, never stored raw."
+  },
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 20,
+    "structural_note": "The DV Report Data API takes metric + dimension selections in a report query over a date window on the connected DV account. The probe batches up to 20 metric ids per query over a 1-day window, bisecting a rejected batch to isolate the offending field. Live probe deferred until a DV account connects (no test account available, 25.6 record)."
+  }
+}

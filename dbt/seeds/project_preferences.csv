@@ -1,0 +1,2 @@
+project_id,canonical_currency,reporting_timezone,verification_source_type,verification_source_id,lead_event_name
+default,EUR,Europe/Paris,,,

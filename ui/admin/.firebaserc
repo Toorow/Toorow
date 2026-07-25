@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "toorow"
+  },
+  "targets": {
+    "toorow": {
+      "hosting": {
+        "app": [
+          "toorow-app"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

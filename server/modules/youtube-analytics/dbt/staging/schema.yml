@@ -1,0 +1,46 @@
+version: 2
+
+sources:
+  - name: raw_youtube
+    description: "Immutable raw landing zone for YouTube Analytics data (AD-7: append-only)."
+    schema: main
+    tables:
+      - name: raw_youtube_daily
+        description: "Raw YouTube daily metrics (long format: metric/value, optional video breakdown). Append-only (AD-7)."
+
+models:
+  - name: stg_youtube_daily
+    description: >
+      Staging: YouTube channel/video daily metrics (long format).
+      QUALIFY supersede (AD-7): latest pull per grain wins.
+      Grain: (project_id, date, channel_id, video, metric). AD-4: additive only;
+      ratios computed at the semantic layer, never stored.
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: channel_id
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_youtube_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || channel_id || '|' || video || '|' || metric"
+
+  - name: fact_youtube_daily
+    description: >
+      Dedicated long-format daily mart for YouTube. All metrics additive.
+      Ratio metrics recomputed at the semantic layer, never stored here.
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]
+    tests:
+      - unique:
+          name: fact_youtube_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || channel_id || '|' || video || '|' || metric"

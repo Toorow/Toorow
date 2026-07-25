@@ -1,0 +1,12 @@
+[
+  {
+    "connector": "google-analytics",
+    "metric": "sessions",
+    "total_value": 59160.0
+  },
+  {
+    "connector": "meta-ads",
+    "metric": "conversions",
+    "total_value": 1372.0
+  }
+]

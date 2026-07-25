@@ -1,0 +1,15 @@
+{
+  "id": "campaign_overview",
+  "display_name": "Performance campagnes",
+  "metrics": ["cost", "impressions", "clicks", "conversions"],
+  "dimensions": ["date", "campaign_id"],
+  "layout": {
+    "chart_type": "bar",
+    "order_by": "cost DESC",
+    "top_n": 10
+  },
+  "narrative_prompt": "Analyse les performances campagnes Meta Ads. Focus sur le coût et les conversions. Identifie les campagnes sous-performantes.",
+  "date_window": {
+    "default_days": 30
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "connector": "youtube-analytics",
+  "api_version": "YouTube Analytics API v2 (+ Data API v3 for discovery)",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "YouTube Analytics API v2 (reports.query) has a fixed, fully-enumerable metric + dimension vocabulary, transcribed in official_fields.json from https://developers.google.com/youtube/analytics/metrics and /dimensions. No enrichment source (YouTube is not a Supermetrics source). field_discovery.mode=static. The additive core metrics are exposed; ratios, revenue/ads (monetary-scope), playlist/cards/annotations, and the geo/device/traffic/demographic dimensions are cataloged as planned (exhaustive coverage; extraction widens tier by tier).",
+    "central_design_fact": "FULL LIFETIME HISTORY at daily grain (dimensions=day) -- complete from 2013-01-01 (before that, only top-10 videos). The OPPOSITE of Strava/GBP: YouTube is a history-rich, clean daily-additive analytics source, so there is no history cap and a full backfill at connect. Latency: activity finalizes ~2-3 days behind, revenue later -> re-pull a trailing window. Demographics/geo/traffic rows suppressed below privacy thresholds (gaps, not errors).",
+    "ratio_rule": "Ratio metrics (averageViewDuration, averageViewPercentage, cpm, *ClickRate, ...) are NON-ADDITIVE. averageViewDuration is DERIVABLE (estimatedMinutesWatched*60/views) so it is computed at the semantic layer (AD-4), never stored. Non-derivable ratios (averageViewPercentage, cpm) stay planned; when extracted they carry non_additive=true and are never summed.",
+    "monetary_gate": "Revenue + ad metrics (estimatedRevenue, grossRevenue, cpm, adImpressions, monetizedPlaybacks, ...) require the yt-analytics-monetary.readonly scope, requested optionally in the same consent. Cataloged as planned (monetary).",
+    "official_field_count": 49,
+    "official_metrics": 32,
+    "official_dimensions": 17
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.google.com/youtube/analytics/metrics",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        { "purpose": "dimensions", "url": "https://developers.google.com/youtube/analytics/dimensions", "fetched_at": "2026-07-21" },
+        { "purpose": "reports_query", "url": "https://developers.google.com/youtube/analytics/reference/reports/query", "fetched_at": "2026-07-21", "_note": "GET https://youtubeanalytics.googleapis.com/v2/reports?ids=channel==MINE&startDate=&endDate=&metrics=&dimensions=&filters=&sort=&maxResults=&startIndex= -> {columnHeaders[]:{name,columnType,dataType}, rows[[...]]}. Synchronous. Map by columnHeaders order." },
+        { "purpose": "discovery_channel", "url": "https://developers.google.com/youtube/v3/docs/channels/list", "fetched_at": "2026-07-21", "_note": "GET https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true -> channel id + snippet.title (1 quota unit). Reporting-entity discovery." },
+        { "purpose": "scopes_quota", "url": "https://developers.google.com/youtube/analytics/data_model", "fetched_at": "2026-07-21", "_note": "Scopes yt-analytics.readonly (core), yt-analytics-monetary.readonly (revenue/ads), youtube.readonly (Data API). Data API 10k units/day; Analytics API separate pool + per-100s rate cap." }
+      ]
+    }
+  ],
+  "_no_enrichment": "YouTube is NOT a Supermetrics source. The official metrics/dimensions references are the sole authority -- sufficient because the vocabulary is fixed and enumerable.",
+  "section_tier_map": {
+    "VIEWS & ENGAGEMENT": "core",
+    "WATCH TIME": "core",
+    "SUBSCRIBERS": "core",
+    "TIME": "core",
+    "CONTENT": "core",
+    "TOPOLOGY": "core",
+    "GEOGRAPHY": "standard",
+    "DEVICE & OS": "standard",
+    "TRAFFIC SOURCE": "standard",
+    "PLAYBACK": "standard",
+    "DEMOGRAPHICS": "standard",
+    "PLAYLIST": "advanced",
+    "ANNOTATIONS": "advanced",
+    "CARDS": "advanced",
+    "REVENUE": "advanced",
+    "ADS": "advanced",
+    "EVENTS": "core"
+  },
+  "field_tier_overrides": {
+    "average_view_duration": "core",
+    "average_view_percentage": "core"
+  },
+  "default_tier": "standard",
+  "_field_discovery": {
+    "mode": "static",
+    "note": "Fixed metric/dimension vocabulary. Full set committed in api_catalog.json. Enum value sets documented in official_fields.json descriptions + the research dossier annexes."
+  },
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 7,
+    "structural_note": "reports.query(ids=channel==MINE, dimensions=day, metrics=<batch>) over a 1-day window: columnHeaders confirm each requested metric/dimension -> ok|empty. Monetary metrics probed only with the monetary scope. Requires a real connected channel; deferred (no test account 2026-07-21)."
+  },
+  "_verification": {
+    "status": "blocked",
+    "reason_code": "live_evidence_not_ratified",
+    "note": "No YouTube test account (2026-07-21). Ratification deferred: probe channels.list(mine=true) + reports.query for one channel."
+  }
+}

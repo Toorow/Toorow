@@ -1,0 +1,143 @@
+{
+  "api_version": "v1 (searchanalytics)",
+  "catalog_version": "1",
+  "connector": "gsc",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Average position of the site in search results for the row. GSC API field name is 'position'; canonical rename is 'average_position'. Non-additive: must be impression-weighted when aggregating across rows. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+      "exposure": "exposed",
+      "field_id": "average_position",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "QUERY",
+      "source_field": "average_position",
+      "tier": "core"
+    },
+    {
+      "description": "Number of times a user clicked through to the site from a search result.",
+      "exposure": "exposed",
+      "field_id": "clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "QUERY",
+      "source_field": "clicks",
+      "tier": "core"
+    },
+    {
+      "description": "The country from which the search originated, as a 3-letter ISO 3166-1 alpha-3 country code (e.g. 'fra', 'gbr'). Returned as a key when 'country' is in the dimensions list.",
+      "exposure": "exposed",
+      "field_id": "country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEO",
+      "source_field": "country",
+      "tier": "standard"
+    },
+    {
+      "description": "Click-through rate: clicks / impressions, ranging from 0.0 to 1.0. Ratio metric — computed from clicks and impressions; never stored raw (AD-4).",
+      "exclusion_reason": "Ratio metric computed at the semantic layer (AD-4); never stored raw.",
+      "exposure": "excluded",
+      "field_id": "ctr",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "QUERY",
+      "source_field": "ctr",
+      "tier": "core"
+    },
+    {
+      "description": "The date of the data in YYYY-MM-DD format (Pacific Time). Returned as a key when 'date' is in the dimensions list.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "The device category of the user performing the search. One of: DESKTOP, MOBILE, TABLET. Returned as a key when 'device' is in the dimensions list.",
+      "exposure": "exposed",
+      "field_id": "device",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE",
+      "source_field": "device",
+      "tier": "standard"
+    },
+    {
+      "description": "Hourly breakdown key (ISO-8601 timestamp). Only available when dataState='hourly_all' is set in the request. Returned as a key when 'hour' is in the dimensions list.",
+      "exclusion_reason": "Requires dataState=hourly_all which changes the data contract; ad-hoc only, excluded from catalog_daily.",
+      "exposure": "excluded",
+      "field_id": "hour",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "hour",
+      "tier": "advanced"
+    },
+    {
+      "description": "Number of times the site appeared in search results for a given query or row.",
+      "exposure": "exposed",
+      "field_id": "impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "QUERY",
+      "source_field": "impressions",
+      "tier": "core"
+    },
+    {
+      "description": "The final URI of the page that was shown in the search result (landing page URL). Returned as a key when 'page' is in the dimensions list.",
+      "exposure": "exposed",
+      "field_id": "page",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LANDING PAGE",
+      "source_field": "page",
+      "tier": "core"
+    },
+    {
+      "description": "The search query string that users entered. Returned as a key when 'query' is in the dimensions list.",
+      "exposure": "exposed",
+      "field_id": "query",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "QUERY",
+      "source_field": "query",
+      "tier": "core"
+    },
+    {
+      "description": "The specific search result feature that triggered the impression (e.g. RICHRESULT, AMP, WEBLIGHTRESULT). Returned as a key when 'searchAppearance' is in the dimensions list. Cannot be grouped with any other API dimension; daily grain requires per-day single-dim requests.",
+      "exposure": "exposed",
+      "field_id": "search_appearance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SEARCH APPEARANCE",
+      "source_field": "searchAppearance",
+      "tier": "standard"
+    },
+    {
+      "description": "The search surface (type parameter in the request body). One of: web (default), image, video, news, discover, googleNews. Stamped on every raw row during extraction; not a grouping dimension returned in keys[].",
+      "exposure": "exposed",
+      "field_id": "search_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "QUERY",
+      "source_field": "type",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://developers.google.com/webmaster-tools/v1/searchanalytics/query"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://docs.supermetrics.com/docs/google-search-console-fields.md"
+    }
+  ]
+}

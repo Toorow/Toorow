@@ -1,0 +1,181 @@
+version: 2
+
+# Mirror source definition (Story 4.4, AC4).
+#
+# The mirror_* schema in DuckDB (local) / mirror_* dataset in BigQuery (production)
+# is populated exclusively by server/core/mirror_sync.py (AD-8).
+#
+# CI fallback: when SYNC_ENABLED=false (no Postgres available), this source
+# is conditionally disabled. dbt falls back to the seeds/project_preferences.csv
+# seed for dim_project. In normal operation, the mirror is the authoritative source.
+#
+# Story 5.3 extension: add alert_definitions table here once mirror_sync.py default
+# list is extended (no code change to mirror_sync.py required -- HG-8).
+
+sources:
+  - name: mirror
+    schema: mirror   # DuckDB schema; BigQuery dataset = mirror_*
+    description: >
+      Governed read-only mirror of Postgres governance entities (AD-8, Story 4.4).
+      Populated by server/core/mirror_sync.py -- the ONLY Postgres->DuckDB sync path.
+    tables:
+      - name: context_events
+        description: >
+          Postgres app.context_events synced by mirror_sync.py (Story 4.4). Read-only.
+          Contains business context annotations (campaigns, incidents, deployments)
+          and, from Epic 31, first-class declared events (the exogenous half of the
+          MMM dataset -- §10 of epic-31). AD-8: Postgres is the sole writer.
+          Columns: id, project_id, event_date, type, label, description, created_by,
+                   created_at, platform, value, source (platform/value/source added by
+                   migration 055 -- additive/nullable, propagated by the SELECT * sync
+                   with zero mirror_sync code change, HG-8). platform = level 1 of the
+                   platform>type>label event identity; value = optional MMM regressor
+                   magnitude (NULL = unit pulse); source = 'manual' | '<connector>'.
+        # TODO(Story-5.x): add freshness: check if dbt source freshness tests are desired.
+        # Example:
+        # freshness:
+        #   warn_after: {count: 25, period: hour}
+        #   error_after: {count: 49, period: hour}
+        # loaded_at_field: created_at
+
+      - name: project_preferences
+        description: >
+          Postgres app.project_preferences synced by mirror_sync.py. Supersedes
+          seeds/project_preferences.csv (Story 4.4). Read-only.
+          Columns: project_id, canonical_currency, reporting_timezone,
+          verification_source_type, verification_source_id, lead_event_name
+          (Story 17.1, migration 028 — propagated by the SELECT * sync with zero
+          mirror_sync code change), created_at, updated_at.
+        # TODO(Story-5.x): add freshness check.
+
+      - name: connection_ref_dim
+        description: >
+          Subset of app.connection_ref (project_id, connector_name, display_name). No tokens (AD-3).
+          Explicitly limited columns to prevent leakage of nango_connection_id or other sensitive fields.
+          Synced by mirror_sync.py -- column selection is hardcoded in that file.
+
+      - name: alert_definitions
+        description: >
+          Postgres app.alert_definitions synced by mirror_sync.py (Story 5.3, AC2). Read-only.
+          Contains declared business threshold alert rules per project. AD-8: Postgres is the
+          sole writer; mirror is read-only for dbt. Added with zero code change to mirror_sync.py
+          (HG-8 extensibility proof -- only _DEFAULT_TABLES list was updated).
+          Columns: id, project_id, metric, operator, threshold, connector, enabled,
+                   created_by, created_at, updated_at.
+
+      # ---------------------------------------------------------------------------
+      # Story 11.3: Knowledge warehouse mirror (AD-8, DuckDB-first).
+      # Postgres is the sole writer for all four tables below; the mirror.* schema
+      # is read-only from dbt's perspective. BigQuery backend is Phase B (deferred).
+      # ---------------------------------------------------------------------------
+
+      - name: context_topics
+        description: >
+          Postgres app.context_topics synced by mirror_sync.py (Story 11.3). Read-only.
+          Contains team-authored knowledge topics (platform scope when project_id IS NULL,
+          project scope otherwise -- AD-5). AD-8: Postgres is the sole writer; only
+          mirror_sync.py may populate this table in DuckDB/BigQuery.
+          Columns: id, project_id, title, body_md, status, created_by, created_at, updated_at.
+
+      - name: procedures
+        description: >
+          Postgres app.procedures synced by mirror_sync.py (Story 11.3). Read-only.
+          Contains Skill Pack-format procedures (frontmatter YAML + Markdown body).
+          Platform scope when project_id IS NULL, project scope otherwise (AD-5).
+          AD-8: Postgres is the sole writer.
+          Columns: id, project_id, name, description, frontmatter_yaml, body_md,
+                   status, created_by, created_at, updated_at.
+
+      - name: context_graph
+        description: >
+          Postgres app.context_graph synced by mirror_sync.py (Story 11.3). Read-only.
+          Typed edges linking topics, procedures, and schema docs (from_id/from_type ->
+          to_id/to_type via edge_type). AD-8: Postgres is the sole writer.
+          Columns: id, from_id, from_type, to_id, to_type, edge_type, project_id,
+                   created_by, created_at.
+
+      - name: schema_context
+        description: >
+          Postgres app.schema_context synced by mirror_sync.py (Story 11.3). Read-only.
+          Auto-generated schema documentation per relation (columns/description/preview).
+          AD-8 + AD-17: the schema context generator (Story 11.2) is the sole writer;
+          humans never write to this table directly. Mirror is read-only for dbt.
+          Columns: id, project_id, relation, doc_kind, body_md, generated_at, created_at.
+
+      # ---------------------------------------------------------------------------
+      # Story 22.1: Media plan mirror (AD-8, FR38/CAP-26). Postgres is the sole
+      # writer for all four tables; the mirror.* schema is read-only for dbt. The
+      # plan-vs-actual mart (22.4) joins these against fact_daily_kpi -- NO model is
+      # defined here (that is 22.4). BigQuery backend is Phase B (deferred).
+      # ---------------------------------------------------------------------------
+
+      - name: media_plans
+        description: >
+          Postgres app.media_plans synced by mirror_sync.py (Story 22.1). Read-only.
+          Media plan root: top-down investment intent, never mutates facts (AD-4/AD-6).
+          Columns: id, project_id, name, currency, created_by, created_at, updated_at,
+                   archived_at.
+
+      - name: media_plan_versions
+        description: >
+          Postgres app.media_plan_versions synced by mirror_sync.py (Story 22.1). Read-only.
+          Immutable append-only plan versions; is_active marks the single active version
+          per plan so the 22.4 mart filters to it. AD-8: Postgres is the sole writer.
+          Columns: id, plan_id, version_number, status, is_active, source_note,
+                   created_by, created_at.
+
+      - name: media_plan_lines
+        description: >
+          Postgres app.media_plan_lines synced by mirror_sync.py (Story 22.1). Read-only.
+          Version-scoped plan lines; line_key is the stable cross-version identity used by
+          the mapping layer (22.3). AD-8: Postgres is the sole writer.
+          Columns: id, version_id, line_key, label, channel, start_date, end_date,
+                   budget, buy_mode, is_plan_only, sort_order.
+
+      - name: plan_allocation_daily
+        description: >
+          Postgres app.plan_allocation_daily synced by mirror_sync.py (Story 22.1). Read-only.
+          Deterministic daily budget spread (largest-remainder, cent-exact) materialised at
+          publication; SUM(amount) per line == line budget. Joined at the fact_daily_kpi grain
+          by the 22.4 plan-vs-actual mart. AD-8: Postgres is the sole writer.
+          Columns: version_id, line_id, day, amount.
+
+      # ---------------------------------------------------------------------------
+      # Story 22.3: Media plan N:M mapping mirror (AD-8, FR38/CAP-26). Postgres is
+      # the sole writer; the mirror.* schema is read-only for dbt. The 22.4 mart
+      # joins ACTIVE mappings against fact_daily_kpi to ventilate each campaign's
+      # spend across the lines that claim it (SUM(split_weight)=1.0 per campaign).
+      # NO model is defined here (that is 22.4).
+      # ---------------------------------------------------------------------------
+
+      - name: plan_line_mappings
+        description: >
+          Postgres app.plan_line_mappings synced by mirror_sync.py (Story 22.3). Read-only.
+          N:M plan line<->campaign mapping with split weights. Keyed on the stable
+          (plan_id, line_key) so mappings survive re-imports; status='orphaned' marks a
+          line dropped from the active version. campaign_ref = fact_daily_kpi.breakdown_value
+          WHERE breakdown_dimension='campaign_id' (the campaign reference the fact grain
+          exposes). SUM(split_weight)=1.0 per (plan_id, connector, campaign_ref), enforced in
+          the store. AD-8: Postgres is the sole writer.
+          Columns: id, plan_id, line_key, connector, campaign_ref, split_weight, status,
+                   created_by, created_at, updated_at.
+
+      # ---------------------------------------------------------------------------
+      # Story 13.2: FX conflict resolutions mirror (AD-6, AD-8). Postgres is the sole
+      # writer; mirror.* is read-only for dbt. The stg_*_daily.sql staging models JOIN
+      # on this table to prefer the declared source currency when a CURRENCY_CONFLICT
+      # resolution exists: COALESCE(res.resolved_source_currency, raw.cost_source_currency).
+      # NO Python converts currencies (AD-6). Resolution is non-retroactive: it applies
+      # only to the next dbt run / publication, never to committed published outputs.
+      # ---------------------------------------------------------------------------
+
+      - name: fx_conflict_resolutions
+        description: >
+          Postgres app.fx_conflict_resolutions synced by mirror_sync.py (Story 13.2). Read-only.
+          CURRENCY_CONFLICT resolutions: declares which source currency to use per
+          (project_id, target_field, source_module). Consumed by stg_*_daily.sql via LEFT JOIN
+          to override raw.cost_source_currency when a resolution exists. AD-6: no Python
+          conversion; AD-8: Postgres is the sole writer. Non-retroactive: applies to the next
+          dbt materialisation, not to committed published outputs.
+          Columns: id, project_id, target_field, source_module, resolved_source_currency,
+                   decided_by, decided_at, note.

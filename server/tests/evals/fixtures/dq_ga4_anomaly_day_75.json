@@ -1,0 +1,10 @@
+[
+  {
+    "connector": "google-analytics",
+    "date": "2026-07-05",
+    "expected_value": 8067.566666666667,
+    "metric": "sessions",
+    "observed_value": 16170.0,
+    "zscore": 3.6024093345347605
+  }
+]

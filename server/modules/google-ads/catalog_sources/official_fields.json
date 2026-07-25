@@ -1,0 +1,3691 @@
+[
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.absolute_top_impression_percentage' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "absolute_top_impression_percentage",
+    "kind": "metric",
+    "section": "IMPRESSIONS",
+    "source_field": "metrics.absolute_top_impression_percentage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_audibility_invalid_givt_measurable_impressions_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_audibility_invalid_givt_measurable_impressions_rate",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audibility_invalid_givt_measurable_impressions_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_audibility_invalid_measurable_impressions_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_audibility_invalid_measurable_impressions_rate",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audibility_invalid_measurable_impressions_rate"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.active_view_audibility_measurable_impressions' (v24 metrics.proto).",
+    "field_id": "active_view_audibility_measurable_impressions",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audibility_measurable_impressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_audibility_measurable_impressions_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_audibility_measurable_impressions_rate",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audibility_measurable_impressions_rate"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.active_view_audible_impressions' (v24 metrics.proto).",
+    "field_id": "active_view_audible_impressions",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audible_impressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_audible_impressions_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_audible_impressions_rate",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audible_impressions_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_audible_quartile_p100_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_audible_quartile_p100_rate",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audible_quartile_p100_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_audible_quartile_p25_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_audible_quartile_p25_rate",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audible_quartile_p25_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_audible_quartile_p50_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_audible_quartile_p50_rate",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audible_quartile_p50_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_audible_quartile_p75_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_audible_quartile_p75_rate",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audible_quartile_p75_rate"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.active_view_audible_thirty_seconds_impressions' (v24 metrics.proto).",
+    "field_id": "active_view_audible_thirty_seconds_impressions",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audible_thirty_seconds_impressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_audible_thirty_seconds_impressions_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_audible_thirty_seconds_impressions_rate",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audible_thirty_seconds_impressions_rate"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.active_view_audible_two_seconds_impressions' (v24 metrics.proto).",
+    "field_id": "active_view_audible_two_seconds_impressions",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audible_two_seconds_impressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_audible_two_seconds_impressions_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_audible_two_seconds_impressions_rate",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_audible_two_seconds_impressions_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_cpm' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "active_view_cpm",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_cpm"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_ctr' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_ctr",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_ctr"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.active_view_impressions' (v24 metrics.proto).",
+    "field_id": "active_view_impressions",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_impressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_measurability' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_measurability",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_measurability"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.active_view_measurable_cost_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "active_view_measurable_cost_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_measurable_cost_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.active_view_measurable_impressions' (v24 metrics.proto).",
+    "field_id": "active_view_measurable_impressions",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_measurable_impressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.active_view_viewability' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "active_view_viewability",
+    "kind": "metric",
+    "section": "ACTIVE VIEW",
+    "source_field": "metrics.active_view_viewability"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.activity_account_id' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "activity_account_id",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.activity_account_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.activity_city' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "activity_city",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.activity_city"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.activity_country' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "activity_country",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.activity_country"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.activity_rating' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "activity_rating",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.activity_rating"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.activity_state' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "activity_state",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.activity_state"
+  },
+  {
+    "data_type": "enum",
+    "description": "Policy approval status of the ad. Resource attribute 'ad_group_ad.policy_summary.approval_status' (v24 resource protos). DESCRIPTIVE-MUTABLE attribute (story 26.6 Part A): a MUTABLE state/type of the entity. Lands in attributes_json (latest-wins), OUTSIDE segments_json and the dbt supersede grain -- a re-pull with a changed status never forks the grain nor double-counts metrics.",
+    "descriptive_mutable": true,
+    "field_id": "ad_approval_status",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group_ad.policy_summary.approval_status"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.ad_destination_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "ad_destination_type",
+    "kind": "dimension",
+    "section": "NETWORK & DEVICE",
+    "source_field": "segments.ad_destination_type"
+  },
+  {
+    "data_type": "array",
+    "description": "Ad final URLs (repeated; landed as canonical JSON array). Resource attribute 'ad_group_ad.ad.final_urls' (v24 resource protos).",
+    "field_id": "ad_final_urls",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group_ad.ad.final_urls"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.ad_format_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "ad_format_type",
+    "kind": "dimension",
+    "section": "NETWORK & DEVICE",
+    "source_field": "segments.ad_format_type"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.ad_group' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "ad_group",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "segments.ad_group"
+  },
+  {
+    "data_type": "enum",
+    "description": "Status of the ad within its ad group. Resource attribute 'ad_group_ad.status' (v24 resource protos). DESCRIPTIVE-MUTABLE attribute (story 26.6 Part A): a MUTABLE state/type of the entity. Lands in attributes_json (latest-wins), OUTSIDE segments_json and the dbt supersede grain -- a re-pull with a changed status never forks the grain nor double-counts metrics.",
+    "descriptive_mutable": true,
+    "field_id": "ad_group_ad_status",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group_ad.status"
+  },
+  {
+    "data_type": "id",
+    "description": "Ad group ID. Resource attribute 'ad_group.id' (v24 resource protos).",
+    "field_id": "ad_group_id",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group.id"
+  },
+  {
+    "data_type": "string",
+    "description": "Ad group display name. Resource attribute 'ad_group.name' (v24 resource protos).",
+    "field_id": "ad_group_name",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group.name"
+  },
+  {
+    "data_type": "enum",
+    "description": "Ad group status. Resource attribute 'ad_group.status' (v24 resource protos). DESCRIPTIVE-MUTABLE attribute (story 26.6 Part A): a MUTABLE state/type of the entity. Lands in attributes_json (latest-wins), OUTSIDE segments_json and the dbt supersede grain -- a re-pull with a changed status never forks the grain nor double-counts metrics.",
+    "descriptive_mutable": true,
+    "field_id": "ad_group_status",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group.status"
+  },
+  {
+    "data_type": "enum",
+    "description": "Ad group type. Resource attribute 'ad_group.type' (v24 resource protos). DESCRIPTIVE-MUTABLE attribute (story 26.6 Part A): a MUTABLE state/type of the entity. Lands in attributes_json (latest-wins), OUTSIDE segments_json and the dbt supersede grain -- a re-pull with a changed status never forks the grain nor double-counts metrics.",
+    "descriptive_mutable": true,
+    "field_id": "ad_group_type",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group.type"
+  },
+  {
+    "data_type": "id",
+    "description": "Ad ID. Resource attribute 'ad_group_ad.ad.id' (v24 resource protos).",
+    "field_id": "ad_id",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group_ad.ad.id"
+  },
+  {
+    "data_type": "string",
+    "description": "Ad display name. Resource attribute 'ad_group_ad.ad.name' (v24 resource protos).",
+    "field_id": "ad_name",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group_ad.ad.name"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.ad_network_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "ad_network_type",
+    "kind": "dimension",
+    "section": "NETWORK & DEVICE",
+    "source_field": "segments.ad_network_type"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.ad_sub_network_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "ad_sub_network_type",
+    "kind": "dimension",
+    "section": "NETWORK & DEVICE",
+    "source_field": "segments.ad_sub_network_type"
+  },
+  {
+    "data_type": "enum",
+    "description": "Ad type (RESPONSIVE_SEARCH_AD / RESPONSIVE_DISPLAY_AD / VIDEO_AD / ...). Resource attribute 'ad_group_ad.ad.type' (v24 resource protos). DESCRIPTIVE-MUTABLE attribute (story 26.6 Part A): a MUTABLE state/type of the entity. Lands in attributes_json (latest-wins), OUTSIDE segments_json and the dbt supersede grain -- a re-pull with a changed status never forks the grain nor double-counts metrics.",
+    "descriptive_mutable": true,
+    "field_id": "ad_type",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group_ad.ad.type"
+  },
+  {
+    "data_type": "boolean",
+    "description": "Google Ads segment 'segments.ad_using_product_data' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "ad_using_product_data",
+    "kind": "dimension",
+    "section": "ASSET INTERACTION",
+    "source_field": "segments.ad_using_product_data"
+  },
+  {
+    "data_type": "boolean",
+    "description": "Google Ads segment 'segments.ad_using_video' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "ad_using_video",
+    "kind": "dimension",
+    "section": "VIDEO",
+    "source_field": "segments.ad_using_video"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.adjusted_age_range' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "adjusted_age_range",
+    "kind": "dimension",
+    "section": "MISC",
+    "source_field": "segments.adjusted_age_range"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.adjusted_gender' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "adjusted_gender",
+    "kind": "dimension",
+    "section": "MISC",
+    "source_field": "segments.adjusted_gender"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_average_cart_size' (v24 metrics.proto).",
+    "field_id": "all_average_cart_size",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_average_cart_size"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.all_average_order_value_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "all_average_order_value_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_average_order_value_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions' (v24 metrics.proto).",
+    "field_id": "all_conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.all_conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_by_conversion_date' (v24 metrics.proto).",
+    "field_id": "all_conversions_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.all_conversions_by_conversion_date"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_click_to_call' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_click_to_call",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_click_to_call"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_directions' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_directions",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_directions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_interactions_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "all_conversions_from_interactions_rate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.all_conversions_from_interactions_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_interactions_value_per_interaction' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_interactions_value_per_interaction",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.all_conversions_from_interactions_value_per_interaction"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_location_asset_click_to_call' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_location_asset_click_to_call",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_location_asset_click_to_call"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_location_asset_directions' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_location_asset_directions",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_location_asset_directions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_location_asset_menu' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_location_asset_menu",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_location_asset_menu"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_location_asset_order' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_location_asset_order",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_location_asset_order"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_location_asset_other_engagement' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_location_asset_other_engagement",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_location_asset_other_engagement"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_location_asset_store_visits' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_location_asset_store_visits",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_location_asset_store_visits"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_location_asset_website' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_location_asset_website",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_location_asset_website"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_menu' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_menu",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_menu"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_order' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_order",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_order"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_other_engagement' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_other_engagement",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_other_engagement"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_store_visit' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_store_visit",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_store_visit"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_from_store_website' (v24 metrics.proto).",
+    "field_id": "all_conversions_from_store_website",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.all_conversions_from_store_website"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_value' (v24 metrics.proto).",
+    "field_id": "all_conversions_value",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.all_conversions_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_value_by_conversion_date' (v24 metrics.proto).",
+    "field_id": "all_conversions_value_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.all_conversions_value_by_conversion_date"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_conversions_value_per_cost' (v24 metrics.proto).",
+    "field_id": "all_conversions_value_per_cost",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.all_conversions_value_per_cost"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.all_cost_of_goods_sold_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "all_cost_of_goods_sold_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_cost_of_goods_sold_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.all_cross_sell_cost_of_goods_sold_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "all_cross_sell_cost_of_goods_sold_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_cross_sell_cost_of_goods_sold_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.all_cross_sell_gross_profit_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "all_cross_sell_gross_profit_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_cross_sell_gross_profit_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.all_cross_sell_revenue_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "all_cross_sell_revenue_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_cross_sell_revenue_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_cross_sell_units_sold' (v24 metrics.proto).",
+    "field_id": "all_cross_sell_units_sold",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_cross_sell_units_sold"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_gross_profit_margin' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "all_gross_profit_margin",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_gross_profit_margin"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.all_gross_profit_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "all_gross_profit_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_gross_profit_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.all_lead_cost_of_goods_sold_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "all_lead_cost_of_goods_sold_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_lead_cost_of_goods_sold_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.all_lead_gross_profit_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "all_lead_gross_profit_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_lead_gross_profit_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.all_lead_revenue_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "all_lead_revenue_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_lead_revenue_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_lead_units_sold' (v24 metrics.proto).",
+    "field_id": "all_lead_units_sold",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_lead_units_sold"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_new_customer_lifetime_value' (v24 metrics.proto).",
+    "field_id": "all_new_customer_lifetime_value",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_new_customer_lifetime_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_orders' (v24 metrics.proto).",
+    "field_id": "all_orders",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_orders"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.all_revenue_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "all_revenue_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_revenue_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_units_sold' (v24 metrics.proto).",
+    "field_id": "all_units_sold",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.all_units_sold"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.all_value_adjustment' (v24 metrics.proto).",
+    "field_id": "all_value_adjustment",
+    "kind": "metric",
+    "section": "CONVERSION DETAIL",
+    "source_field": "metrics.all_value_adjustment"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.asset_group' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "asset_group",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "segments.asset_group"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.asset_interaction_target' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). Message-typed segment: flattens to sub-fields at query time; primary flattened path is 'segments.asset_interaction_target.asset'.",
+    "field_id": "asset_interaction_target",
+    "kind": "dimension",
+    "section": "ASSET INTERACTION",
+    "source_field": "segments.asset_interaction_target.asset"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.asset_pinned_as_description_position_one_count' (v24 metrics.proto).",
+    "field_id": "asset_pinned_as_description_position_one_count",
+    "kind": "metric",
+    "section": "ASSET INTERACTION",
+    "source_field": "metrics.asset_pinned_as_description_position_one_count"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.asset_pinned_as_description_position_two_count' (v24 metrics.proto).",
+    "field_id": "asset_pinned_as_description_position_two_count",
+    "kind": "metric",
+    "section": "ASSET INTERACTION",
+    "source_field": "metrics.asset_pinned_as_description_position_two_count"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.asset_pinned_as_headline_position_one_count' (v24 metrics.proto).",
+    "field_id": "asset_pinned_as_headline_position_one_count",
+    "kind": "metric",
+    "section": "ASSET INTERACTION",
+    "source_field": "metrics.asset_pinned_as_headline_position_one_count"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.asset_pinned_as_headline_position_three_count' (v24 metrics.proto).",
+    "field_id": "asset_pinned_as_headline_position_three_count",
+    "kind": "metric",
+    "section": "ASSET INTERACTION",
+    "source_field": "metrics.asset_pinned_as_headline_position_three_count"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.asset_pinned_as_headline_position_two_count' (v24 metrics.proto).",
+    "field_id": "asset_pinned_as_headline_position_two_count",
+    "kind": "metric",
+    "section": "ASSET INTERACTION",
+    "source_field": "metrics.asset_pinned_as_headline_position_two_count"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.asset_pinned_total_count' (v24 metrics.proto).",
+    "field_id": "asset_pinned_total_count",
+    "kind": "metric",
+    "section": "ASSET INTERACTION",
+    "source_field": "metrics.asset_pinned_total_count"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.auction_insight_domain' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "auction_insight_domain",
+    "kind": "dimension",
+    "section": "AUCTION INSIGHT",
+    "source_field": "segments.auction_insight_domain"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.auction_insight_search_absolute_top_impression_percentage' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "auction_insight_search_absolute_top_impression_percentage",
+    "kind": "metric",
+    "section": "AUCTION INSIGHT",
+    "source_field": "metrics.auction_insight_search_absolute_top_impression_percentage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.auction_insight_search_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "auction_insight_search_impression_share",
+    "kind": "metric",
+    "section": "AUCTION INSIGHT",
+    "source_field": "metrics.auction_insight_search_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.auction_insight_search_outranking_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "auction_insight_search_outranking_share",
+    "kind": "metric",
+    "section": "AUCTION INSIGHT",
+    "source_field": "metrics.auction_insight_search_outranking_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.auction_insight_search_overlap_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "auction_insight_search_overlap_rate",
+    "kind": "metric",
+    "section": "AUCTION INSIGHT",
+    "source_field": "metrics.auction_insight_search_overlap_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.auction_insight_search_position_above_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "auction_insight_search_position_above_rate",
+    "kind": "metric",
+    "section": "AUCTION INSIGHT",
+    "source_field": "metrics.auction_insight_search_position_above_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.auction_insight_search_top_impression_percentage' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "auction_insight_search_top_impression_percentage",
+    "kind": "metric",
+    "section": "AUCTION INSIGHT",
+    "source_field": "metrics.auction_insight_search_top_impression_percentage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.average_cart_size' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_cart_size",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.average_cart_size"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.average_cost' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_cost",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COST",
+    "source_field": "metrics.average_cost"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.average_cpc' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_cpc",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COST",
+    "source_field": "metrics.average_cpc"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.average_cpe' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_cpe",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COST",
+    "source_field": "metrics.average_cpe"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.average_cpm' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_cpm",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COST",
+    "source_field": "metrics.average_cpm"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.average_impression_frequency_per_user' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_impression_frequency_per_user",
+    "kind": "metric",
+    "section": "REACH & FREQUENCY",
+    "source_field": "metrics.average_impression_frequency_per_user"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.average_order_value_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_order_value_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.average_order_value_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.average_page_views' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_page_views",
+    "kind": "metric",
+    "section": "MISC",
+    "source_field": "metrics.average_page_views"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.average_target_cpa_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_target_cpa_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "BUDGET & BIDDING",
+    "source_field": "metrics.average_target_cpa_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.average_target_roas' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_target_roas",
+    "kind": "metric",
+    "section": "BUDGET & BIDDING",
+    "source_field": "metrics.average_target_roas"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.average_time_on_site' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_time_on_site",
+    "kind": "metric",
+    "section": "MISC",
+    "source_field": "metrics.average_time_on_site"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.average_video_watch_time_duration_millis' (v24 metrics.proto). Duration in milliseconds. Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "average_video_watch_time_duration_millis",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.average_video_watch_time_duration_millis"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.benchmark_average_max_cpc' (v24 metrics.proto).",
+    "field_id": "benchmark_average_max_cpc",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.benchmark_average_max_cpc"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.benchmark_ctr' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "benchmark_ctr",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.benchmark_ctr"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.biddable_app_install_conversions' (v24 metrics.proto).",
+    "field_id": "biddable_app_install_conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.biddable_app_install_conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.biddable_app_post_install_conversions' (v24 metrics.proto).",
+    "field_id": "biddable_app_post_install_conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.biddable_app_post_install_conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.biddable_cohort_app_post_install_conversions' (v24 metrics.proto).",
+    "field_id": "biddable_cohort_app_post_install_conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.biddable_cohort_app_post_install_conversions"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.biddable_indirect_install_first_in_app_conversion_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "biddable_indirect_install_first_in_app_conversion_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.biddable_indirect_install_first_in_app_conversion_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.bounce_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "bounce_rate",
+    "kind": "metric",
+    "section": "MISC",
+    "source_field": "metrics.bounce_rate"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.budget_campaign_association_status' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). Message-typed segment: flattens to sub-fields at query time; primary flattened path is 'segments.budget_campaign_association_status.status'.",
+    "field_id": "budget_campaign_association_status",
+    "kind": "dimension",
+    "section": "BUDGET & BIDDING",
+    "source_field": "segments.budget_campaign_association_status.status"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.campaign' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "campaign",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "segments.campaign"
+  },
+  {
+    "data_type": "enum",
+    "description": "Campaign channel (SEARCH / DISPLAY / SHOPPING / VIDEO / PMAX / ...). Resource attribute 'campaign.advertising_channel_type' (v24 resource protos). DESCRIPTIVE-MUTABLE attribute (story 26.6 Part A): a MUTABLE state/type of the entity. Lands in attributes_json (latest-wins), OUTSIDE segments_json and the dbt supersede grain -- a re-pull with a changed status never forks the grain nor double-counts metrics.",
+    "descriptive_mutable": true,
+    "field_id": "campaign_advertising_channel_type",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "campaign.advertising_channel_type"
+  },
+  {
+    "data_type": "enum",
+    "description": "Bidding strategy type of the campaign. Resource attribute 'campaign.bidding_strategy_type' (v24 resource protos). DESCRIPTIVE-MUTABLE attribute (story 26.6 Part A): a MUTABLE state/type of the entity. Lands in attributes_json (latest-wins), OUTSIDE segments_json and the dbt supersede grain -- a re-pull with a changed status never forks the grain nor double-counts metrics.",
+    "descriptive_mutable": true,
+    "field_id": "campaign_bidding_strategy_type",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "campaign.bidding_strategy_type"
+  },
+  {
+    "data_type": "id",
+    "description": "Campaign ID. Resource attribute 'campaign.id' (v24 resource protos).",
+    "field_id": "campaign_id",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "campaign.id"
+  },
+  {
+    "data_type": "string",
+    "description": "Campaign display name. Resource attribute 'campaign.name' (v24 resource protos).",
+    "field_id": "campaign_name",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "campaign.name"
+  },
+  {
+    "data_type": "enum",
+    "description": "Campaign status (ENABLED / PAUSED / REMOVED). Resource attribute 'campaign.status' (v24 resource protos). DESCRIPTIVE-MUTABLE attribute (story 26.6 Part A): a MUTABLE state/type of the entity. Lands in attributes_json (latest-wins), OUTSIDE segments_json and the dbt supersede grain -- a re-pull with a changed status never forks the grain nor double-counts metrics.",
+    "descriptive_mutable": true,
+    "field_id": "campaign_status",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "campaign.status"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.click_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "click_type",
+    "kind": "dimension",
+    "section": "CLICKS",
+    "source_field": "segments.click_type"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.clicks' (v24 metrics.proto).",
+    "field_id": "clicks",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.clicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.clicks_margin_of_error' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "clicks_margin_of_error",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.clicks_margin_of_error"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.clicks_p_value' (v24 metrics.proto).",
+    "field_id": "clicks_p_value",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.clicks_p_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.clicks_point_estimate' (v24 metrics.proto).",
+    "field_id": "clicks_point_estimate",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.clicks_point_estimate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.clicks_unique_query_clusters' (v24 metrics.proto).",
+    "field_id": "clicks_unique_query_clusters",
+    "kind": "metric",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "metrics.clicks_unique_query_clusters"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.combined_clicks' (v24 metrics.proto).",
+    "field_id": "combined_clicks",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.combined_clicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.combined_clicks_per_query' (v24 metrics.proto).",
+    "field_id": "combined_clicks_per_query",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.combined_clicks_per_query"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.combined_queries' (v24 metrics.proto).",
+    "field_id": "combined_queries",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.combined_queries"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.content_budget_lost_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "content_budget_lost_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.content_budget_lost_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.content_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "content_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.content_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.content_rank_lost_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "content_rank_lost_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.content_rank_lost_impression_share"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.control_clicks' (v24 metrics.proto).",
+    "field_id": "control_clicks",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.control_clicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.control_conversion_value' (v24 metrics.proto).",
+    "field_id": "control_conversion_value",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.control_conversion_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.control_conversion_value_per_cost' (v24 metrics.proto).",
+    "field_id": "control_conversion_value_per_cost",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.control_conversion_value_per_cost"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.control_conversions' (v24 metrics.proto).",
+    "field_id": "control_conversions",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.control_conversions"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.control_cost_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "control_cost_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.control_cost_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.control_cost_per_conversion' (v24 metrics.proto).",
+    "field_id": "control_cost_per_conversion",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.control_cost_per_conversion"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.control_impressions' (v24 metrics.proto).",
+    "field_id": "control_impressions",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.control_impressions"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.conversion_action' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). GRAIN TRAP: restricts rows to those with conversions and splits conversion metrics per action; never mix with plain volume metrics in one stored grain.",
+    "field_id": "conversion_action",
+    "kind": "dimension",
+    "section": "CONVERSION DETAIL",
+    "source_field": "segments.conversion_action"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.conversion_action_category' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). GRAIN TRAP: restricts rows to those with conversions and splits conversion metrics per action; never mix with plain volume metrics in one stored grain.",
+    "field_id": "conversion_action_category",
+    "kind": "dimension",
+    "section": "CONVERSION DETAIL",
+    "source_field": "segments.conversion_action_category"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.conversion_action_name' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). GRAIN TRAP: restricts rows to those with conversions and splits conversion metrics per action; never mix with plain volume metrics in one stored grain.",
+    "field_id": "conversion_action_name",
+    "kind": "dimension",
+    "section": "CONVERSION DETAIL",
+    "source_field": "segments.conversion_action_name"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.conversion_adjustment' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "conversion_adjustment",
+    "kind": "dimension",
+    "section": "CONVERSION DETAIL",
+    "source_field": "segments.conversion_adjustment"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.conversion_attribution_event_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "conversion_attribution_event_type",
+    "kind": "dimension",
+    "section": "CONVERSION DETAIL",
+    "source_field": "segments.conversion_attribution_event_type"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.conversion_lag_bucket' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "conversion_lag_bucket",
+    "kind": "dimension",
+    "section": "CONVERSION DETAIL",
+    "source_field": "segments.conversion_lag_bucket"
+  },
+  {
+    "data_type": "date",
+    "description": "Google Ads metric 'metrics.conversion_last_conversion_date' (v24 metrics.proto).",
+    "field_id": "conversion_last_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.conversion_last_conversion_date"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Google Ads metric 'metrics.conversion_last_received_request_date_time' (v24 metrics.proto).",
+    "field_id": "conversion_last_received_request_date_time",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.conversion_last_received_request_date_time"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.conversion_or_adjustment_lag_bucket' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "conversion_or_adjustment_lag_bucket",
+    "kind": "dimension",
+    "section": "CONVERSION DETAIL",
+    "source_field": "segments.conversion_or_adjustment_lag_bucket"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversion_value_change_point_estimate' (v24 metrics.proto).",
+    "field_id": "conversion_value_change_point_estimate",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.conversion_value_change_point_estimate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversion_value_margin_of_error' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "conversion_value_margin_of_error",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.conversion_value_margin_of_error"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversion_value_p_value' (v24 metrics.proto).",
+    "field_id": "conversion_value_p_value",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.conversion_value_p_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversion_value_per_cost_change_point_estimate' (v24 metrics.proto).",
+    "field_id": "conversion_value_per_cost_change_point_estimate",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.conversion_value_per_cost_change_point_estimate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversion_value_per_cost_margin_of_error' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "conversion_value_per_cost_margin_of_error",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.conversion_value_per_cost_margin_of_error"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversion_value_per_cost_p_value' (v24 metrics.proto).",
+    "field_id": "conversion_value_per_cost_p_value",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.conversion_value_per_cost_p_value"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.conversion_value_rule_primary_dimension' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "conversion_value_rule_primary_dimension",
+    "kind": "dimension",
+    "section": "BUDGET & BIDDING",
+    "source_field": "segments.conversion_value_rule_primary_dimension"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions' (v24 metrics.proto).",
+    "field_id": "conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions_absolute_change_margin_of_error' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "conversions_absolute_change_margin_of_error",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.conversions_absolute_change_margin_of_error"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions_absolute_change_p_value' (v24 metrics.proto).",
+    "field_id": "conversions_absolute_change_p_value",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.conversions_absolute_change_p_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions_absolute_change_point_estimate' (v24 metrics.proto).",
+    "field_id": "conversions_absolute_change_point_estimate",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.conversions_absolute_change_point_estimate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions_by_conversion_date' (v24 metrics.proto).",
+    "field_id": "conversions_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.conversions_by_conversion_date"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions_from_interactions_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "conversions_from_interactions_rate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.conversions_from_interactions_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions_from_interactions_value_per_interaction' (v24 metrics.proto).",
+    "field_id": "conversions_from_interactions_value_per_interaction",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.conversions_from_interactions_value_per_interaction"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions_unique_query_clusters' (v24 metrics.proto).",
+    "field_id": "conversions_unique_query_clusters",
+    "kind": "metric",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "metrics.conversions_unique_query_clusters"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions_value' (v24 metrics.proto).",
+    "field_id": "conversions_value",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.conversions_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions_value_by_conversion_date' (v24 metrics.proto).",
+    "field_id": "conversions_value_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.conversions_value_by_conversion_date"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.conversions_value_per_cost' (v24 metrics.proto).",
+    "field_id": "conversions_value_per_cost",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.conversions_value_per_cost"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_converted_currency_per_platform_comparable_conversion' (v24 metrics.proto).",
+    "field_id": "cost_converted_currency_per_platform_comparable_conversion",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.cost_converted_currency_per_platform_comparable_conversion"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.cost_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "cost_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COST",
+    "source_field": "metrics.cost_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_micros_change_point_estimate' (v24 metrics.proto).",
+    "field_id": "cost_micros_change_point_estimate",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.cost_micros_change_point_estimate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_micros_margin_of_error' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "cost_micros_margin_of_error",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.cost_micros_margin_of_error"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_micros_p_value' (v24 metrics.proto).",
+    "field_id": "cost_micros_p_value",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.cost_micros_p_value"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.cost_of_goods_sold_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "cost_of_goods_sold_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.cost_of_goods_sold_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_per_all_conversions' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "cost_per_all_conversions",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.cost_per_all_conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_per_conversion' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "cost_per_conversion",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.cost_per_conversion"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_per_conversion_change_point_estimate' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "cost_per_conversion_change_point_estimate",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.cost_per_conversion_change_point_estimate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_per_conversion_margin_of_error' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "cost_per_conversion_margin_of_error",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.cost_per_conversion_margin_of_error"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_per_conversion_p_value' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "cost_per_conversion_p_value",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.cost_per_conversion_p_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_per_current_model_attributed_conversion' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "cost_per_current_model_attributed_conversion",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.cost_per_current_model_attributed_conversion"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cost_per_platform_comparable_conversion' (v24 metrics.proto). Monetary DOUBLE in micros on the wire despite the missing _micros suffix (review 26.2 F-2); landed as value/1e6 (platform micros rule; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "cost_per_platform_comparable_conversion",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.cost_per_platform_comparable_conversion"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.coviewed_impressions' (v24 metrics.proto).",
+    "field_id": "coviewed_impressions",
+    "kind": "metric",
+    "section": "REACH & FREQUENCY",
+    "source_field": "metrics.coviewed_impressions"
+  },
+  {
+    "data_type": "id",
+    "description": "Ad group criterion ID (keyword_view PK component). Resource attribute 'ad_group_criterion.criterion_id' (v24 resource protos).",
+    "field_id": "criterion_id",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group_criterion.criterion_id"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cross_device_conversions' (v24 metrics.proto).",
+    "field_id": "cross_device_conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.cross_device_conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cross_device_conversions_by_conversion_date' (v24 metrics.proto).",
+    "field_id": "cross_device_conversions_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.cross_device_conversions_by_conversion_date"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cross_device_conversions_value' (v24 metrics.proto).",
+    "field_id": "cross_device_conversions_value",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.cross_device_conversions_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cross_device_conversions_value_by_conversion_date' (v24 metrics.proto).",
+    "field_id": "cross_device_conversions_value_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.cross_device_conversions_value_by_conversion_date"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.cross_device_conversions_value_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "cross_device_conversions_value_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.cross_device_conversions_value_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.cross_sell_cost_of_goods_sold_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "cross_sell_cost_of_goods_sold_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.cross_sell_cost_of_goods_sold_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.cross_sell_gross_profit_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "cross_sell_gross_profit_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.cross_sell_gross_profit_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.cross_sell_revenue_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "cross_sell_revenue_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.cross_sell_revenue_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.cross_sell_units_sold' (v24 metrics.proto).",
+    "field_id": "cross_sell_units_sold",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.cross_sell_units_sold"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.ctr' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "ctr",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.ctr"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.current_model_attributed_conversions' (v24 metrics.proto).",
+    "field_id": "current_model_attributed_conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.current_model_attributed_conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.current_model_attributed_conversions_from_interactions_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "current_model_attributed_conversions_from_interactions_rate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.current_model_attributed_conversions_from_interactions_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.current_model_attributed_conversions_from_interactions_value_per_interaction' (v24 metrics.proto).",
+    "field_id": "current_model_attributed_conversions_from_interactions_value_per_interaction",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.current_model_attributed_conversions_from_interactions_value_per_interaction"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.current_model_attributed_conversions_value' (v24 metrics.proto).",
+    "field_id": "current_model_attributed_conversions_value",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.current_model_attributed_conversions_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.current_model_attributed_conversions_value_per_cost' (v24 metrics.proto).",
+    "field_id": "current_model_attributed_conversions_value_per_cost",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.current_model_attributed_conversions_value_per_cost"
+  },
+  {
+    "data_type": "string",
+    "description": "Account billing currency (ISO 4217). All *_micros amounts are in this currency. Resource attribute 'customer.currency_code' (v24 resource protos).",
+    "field_id": "customer_currency_code",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "customer.currency_code"
+  },
+  {
+    "data_type": "string",
+    "description": "Reporting customer display name. Resource attribute 'customer.descriptive_name' (v24 resource protos).",
+    "field_id": "customer_descriptive_name",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "customer.descriptive_name"
+  },
+  {
+    "data_type": "id",
+    "description": "Reporting customer (client account) ID. Resource attribute 'customer.id' (v24 resource protos).",
+    "field_id": "customer_id",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "customer.id"
+  },
+  {
+    "data_type": "string",
+    "description": "Account reporting time zone. Daily rows are bucketed in this zone. Resource attribute 'customer.time_zone' (v24 resource protos).",
+    "field_id": "customer_time_zone",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "customer.time_zone"
+  },
+  {
+    "data_type": "date",
+    "description": "Google Ads segment 'segments.date' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). Core date segment: selecting it REQUIRES a finite date range in WHERE (EXPECTED_FILTERS_ON_DATE_RANGE); 37-month lookback cap.",
+    "field_id": "date",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "segments.date"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.day_of_week' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "day_of_week",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "segments.day_of_week"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.device' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "device",
+    "kind": "dimension",
+    "section": "NETWORK & DEVICE",
+    "source_field": "segments.device"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.eligible_impressions_from_location_asset_store_reach' (v24 metrics.proto).",
+    "field_id": "eligible_impressions_from_location_asset_store_reach",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.eligible_impressions_from_location_asset_store_reach"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.engagement_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "engagement_rate",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.engagement_rate"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.engagements' (v24 metrics.proto).",
+    "field_id": "engagements",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.engagements"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.external_activity_id' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "external_activity_id",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.external_activity_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.external_conversion_source' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "external_conversion_source",
+    "kind": "dimension",
+    "section": "CONVERSION DETAIL",
+    "source_field": "segments.external_conversion_source"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.general_invalid_click_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "general_invalid_click_rate",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.general_invalid_click_rate"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.general_invalid_clicks' (v24 metrics.proto).",
+    "field_id": "general_invalid_clicks",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.general_invalid_clicks"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_airport' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_airport",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_airport"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_canton' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_canton",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_canton"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_city' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_city",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_city"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_country' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_country",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_country"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_county' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_county",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_county"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_district' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_district",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_district"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_metro' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_metro",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_metro"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_most_specific_location' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_most_specific_location",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_most_specific_location"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_postal_code' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_postal_code",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_postal_code"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_province' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_province",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_province"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_region' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_region",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_region"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.geo_target_state' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "geo_target_state",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.geo_target_state"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.gmail_forwards' (v24 metrics.proto).",
+    "field_id": "gmail_forwards",
+    "kind": "metric",
+    "section": "GMAIL",
+    "source_field": "metrics.gmail_forwards"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.gmail_saves' (v24 metrics.proto).",
+    "field_id": "gmail_saves",
+    "kind": "metric",
+    "section": "GMAIL",
+    "source_field": "metrics.gmail_saves"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.gmail_secondary_clicks' (v24 metrics.proto).",
+    "field_id": "gmail_secondary_clicks",
+    "kind": "metric",
+    "section": "GMAIL",
+    "source_field": "metrics.gmail_secondary_clicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.gross_profit_margin' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "gross_profit_margin",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.gross_profit_margin"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.gross_profit_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "gross_profit_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.gross_profit_micros"
+  },
+  {
+    "data_type": "enum",
+    "description": "Google Ads metric 'metrics.historical_creative_quality_score' (v24 metrics.proto).",
+    "field_id": "historical_creative_quality_score",
+    "kind": "metric",
+    "section": "QUALITY SCORE",
+    "source_field": "metrics.historical_creative_quality_score"
+  },
+  {
+    "data_type": "enum",
+    "description": "Google Ads metric 'metrics.historical_landing_page_quality_score' (v24 metrics.proto).",
+    "field_id": "historical_landing_page_quality_score",
+    "kind": "metric",
+    "section": "QUALITY SCORE",
+    "source_field": "metrics.historical_landing_page_quality_score"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.historical_quality_score' (v24 metrics.proto).",
+    "field_id": "historical_quality_score",
+    "kind": "metric",
+    "section": "QUALITY SCORE",
+    "source_field": "metrics.historical_quality_score"
+  },
+  {
+    "data_type": "enum",
+    "description": "Google Ads metric 'metrics.historical_search_predicted_ctr' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "historical_search_predicted_ctr",
+    "kind": "metric",
+    "section": "QUALITY SCORE",
+    "source_field": "metrics.historical_search_predicted_ctr"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.hotel_average_lead_value_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "hotel_average_lead_value_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "metrics.hotel_average_lead_value_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads segment 'segments.hotel_booking_window_days' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_booking_window_days",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_booking_window_days"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.hotel_center_id' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_center_id",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_center_id"
+  },
+  {
+    "data_type": "date",
+    "description": "Google Ads segment 'segments.hotel_check_in_date' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_check_in_date",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_check_in_date"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.hotel_check_in_day_of_week' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_check_in_day_of_week",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_check_in_day_of_week"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.hotel_city' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_city",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_city"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads segment 'segments.hotel_class' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_class",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_class"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.hotel_commission_rate_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "hotel_commission_rate_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "metrics.hotel_commission_rate_micros"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.hotel_country' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_country",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_country"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.hotel_date_selection_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_date_selection_type",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_date_selection_type"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.hotel_eligible_impressions' (v24 metrics.proto).",
+    "field_id": "hotel_eligible_impressions",
+    "kind": "metric",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "metrics.hotel_eligible_impressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.hotel_expected_commission_cost' (v24 metrics.proto).",
+    "field_id": "hotel_expected_commission_cost",
+    "kind": "metric",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "metrics.hotel_expected_commission_cost"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads segment 'segments.hotel_length_of_stay' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_length_of_stay",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_length_of_stay"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.hotel_price_bucket' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_price_bucket",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_price_bucket"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.hotel_price_difference_percentage' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "hotel_price_difference_percentage",
+    "kind": "metric",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "metrics.hotel_price_difference_percentage"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.hotel_rate_rule_id' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_rate_rule_id",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_rate_rule_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.hotel_rate_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_rate_type",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_rate_type"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.hotel_state' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hotel_state",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.hotel_state"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads segment 'segments.hour' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "hour",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "segments.hour"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.impressions' (v24 metrics.proto).",
+    "field_id": "impressions",
+    "kind": "metric",
+    "section": "IMPRESSIONS",
+    "source_field": "metrics.impressions"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.impressions_from_store_reach' (v24 metrics.proto).",
+    "field_id": "impressions_from_store_reach",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.impressions_from_store_reach"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.impressions_margin_of_error' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "impressions_margin_of_error",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.impressions_margin_of_error"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.impressions_p_value' (v24 metrics.proto).",
+    "field_id": "impressions_p_value",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.impressions_p_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.impressions_point_estimate' (v24 metrics.proto).",
+    "field_id": "impressions_point_estimate",
+    "kind": "metric",
+    "section": "EXPERIMENT",
+    "source_field": "metrics.impressions_point_estimate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.impressions_unique_query_clusters' (v24 metrics.proto).",
+    "field_id": "impressions_unique_query_clusters",
+    "kind": "metric",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "metrics.impressions_unique_query_clusters"
+  },
+  {
+    "data_type": "array",
+    "description": "Google Ads metric 'metrics.interaction_event_types' (v24 metrics.proto).",
+    "field_id": "interaction_event_types",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.interaction_event_types"
+  },
+  {
+    "data_type": "boolean",
+    "description": "Google Ads segment 'segments.interaction_on_this_extension' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "interaction_on_this_extension",
+    "kind": "dimension",
+    "section": "ASSET INTERACTION",
+    "source_field": "segments.interaction_on_this_extension"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.interaction_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "interaction_rate",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.interaction_rate"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.interactions' (v24 metrics.proto).",
+    "field_id": "interactions",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.interactions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.invalid_click_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "invalid_click_rate",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.invalid_click_rate"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.invalid_clicks' (v24 metrics.proto).",
+    "field_id": "invalid_clicks",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "metrics.invalid_clicks"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.keyword' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). Message-typed segment: flattens to sub-fields at query time; primary flattened path is 'segments.keyword.info.text'. GRAIN TRAP: silently restricts rows to Search keyword-criterion traffic (excludes DSA/Shopping/PMax).",
+    "field_id": "keyword",
+    "kind": "dimension",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "segments.keyword.info.text"
+  },
+  {
+    "data_type": "enum",
+    "description": "Keyword match type (EXACT / PHRASE / BROAD). Resource attribute 'ad_group_criterion.keyword.match_type' (v24 resource protos).",
+    "field_id": "keyword_match_type",
+    "kind": "dimension",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "ad_group_criterion.keyword.match_type"
+  },
+  {
+    "data_type": "enum",
+    "description": "Status of the keyword criterion. Resource attribute 'ad_group_criterion.status' (v24 resource protos). DESCRIPTIVE-MUTABLE attribute (story 26.6 Part A): a MUTABLE state/type of the entity. Lands in attributes_json (latest-wins), OUTSIDE segments_json and the dbt supersede grain -- a re-pull with a changed status never forks the grain nor double-counts metrics.",
+    "descriptive_mutable": true,
+    "field_id": "keyword_status",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "ad_group_criterion.status"
+  },
+  {
+    "data_type": "string",
+    "description": "Keyword text (attribute of the criterion, NOT segments.keyword). Resource attribute 'ad_group_criterion.keyword.text' (v24 resource protos).",
+    "field_id": "keyword_text",
+    "kind": "dimension",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "ad_group_criterion.keyword.text"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.landing_page_source' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "landing_page_source",
+    "kind": "dimension",
+    "section": "MISC",
+    "source_field": "segments.landing_page_source"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.lead_cost_of_goods_sold_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "lead_cost_of_goods_sold_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.lead_cost_of_goods_sold_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.lead_gross_profit_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "lead_gross_profit_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.lead_gross_profit_micros"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.lead_revenue_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "lead_revenue_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.lead_revenue_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.lead_units_sold' (v24 metrics.proto).",
+    "field_id": "lead_units_sold",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.lead_units_sold"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.linked_entities_count' (v24 metrics.proto).",
+    "field_id": "linked_entities_count",
+    "kind": "metric",
+    "section": "ASSET INTERACTION",
+    "source_field": "metrics.linked_entities_count"
+  },
+  {
+    "data_type": "array",
+    "description": "Google Ads metric 'metrics.linked_sample_entities' (v24 metrics.proto).",
+    "field_id": "linked_sample_entities",
+    "kind": "metric",
+    "section": "ASSET INTERACTION",
+    "source_field": "metrics.linked_sample_entities"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.match_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "match_type",
+    "kind": "dimension",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "segments.match_type"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.message_chat_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "message_chat_rate",
+    "kind": "metric",
+    "section": "CALLS & MESSAGE",
+    "source_field": "metrics.message_chat_rate"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.message_chats' (v24 metrics.proto).",
+    "field_id": "message_chats",
+    "kind": "metric",
+    "section": "CALLS & MESSAGE",
+    "source_field": "metrics.message_chats"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.message_impressions' (v24 metrics.proto).",
+    "field_id": "message_impressions",
+    "kind": "metric",
+    "section": "CALLS & MESSAGE",
+    "source_field": "metrics.message_impressions"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.mobile_device_platform' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "mobile_device_platform",
+    "kind": "dimension",
+    "section": "NETWORK & DEVICE",
+    "source_field": "segments.mobile_device_platform"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.mobile_friendly_clicks_percentage' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "mobile_friendly_clicks_percentage",
+    "kind": "metric",
+    "section": "QUALITY SCORE",
+    "source_field": "metrics.mobile_friendly_clicks_percentage"
+  },
+  {
+    "data_type": "date",
+    "description": "Google Ads segment 'segments.month' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). Core date segment: selecting it REQUIRES a finite date range in WHERE (EXPECTED_FILTERS_ON_DATE_RANGE); 37-month lookback cap.",
+    "field_id": "month",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "segments.month"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.month_of_year' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "month_of_year",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "segments.month_of_year"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.new_customer_lifetime_value' (v24 metrics.proto).",
+    "field_id": "new_customer_lifetime_value",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.new_customer_lifetime_value"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.new_versus_returning_customers' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "new_versus_returning_customers",
+    "kind": "dimension",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "segments.new_versus_returning_customers"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.optimization_score_uplift' (v24 metrics.proto).",
+    "field_id": "optimization_score_uplift",
+    "kind": "metric",
+    "section": "QUALITY SCORE",
+    "source_field": "metrics.optimization_score_uplift"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads metric 'metrics.optimization_score_url' (v24 metrics.proto).",
+    "field_id": "optimization_score_url",
+    "kind": "metric",
+    "section": "QUALITY SCORE",
+    "source_field": "metrics.optimization_score_url"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.orders' (v24 metrics.proto).",
+    "field_id": "orders",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.orders"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.organic_clicks' (v24 metrics.proto).",
+    "field_id": "organic_clicks",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.organic_clicks"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.organic_clicks_per_query' (v24 metrics.proto).",
+    "field_id": "organic_clicks_per_query",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.organic_clicks_per_query"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.organic_impressions' (v24 metrics.proto).",
+    "field_id": "organic_impressions",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.organic_impressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.organic_impressions_per_query' (v24 metrics.proto).",
+    "field_id": "organic_impressions_per_query",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.organic_impressions_per_query"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.organic_queries' (v24 metrics.proto).",
+    "field_id": "organic_queries",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.organic_queries"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.partner_hotel_id' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "partner_hotel_id",
+    "kind": "dimension",
+    "section": "HOTEL & TRAVEL",
+    "source_field": "segments.partner_hotel_id"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.percent_new_visitors' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "percent_new_visitors",
+    "kind": "metric",
+    "section": "MISC",
+    "source_field": "metrics.percent_new_visitors"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.phone_calls' (v24 metrics.proto).",
+    "field_id": "phone_calls",
+    "kind": "metric",
+    "section": "CALLS & MESSAGE",
+    "source_field": "metrics.phone_calls"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.phone_impressions' (v24 metrics.proto).",
+    "field_id": "phone_impressions",
+    "kind": "metric",
+    "section": "CALLS & MESSAGE",
+    "source_field": "metrics.phone_impressions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.phone_through_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "phone_through_rate",
+    "kind": "metric",
+    "section": "CALLS & MESSAGE",
+    "source_field": "metrics.phone_through_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.platform_comparable_conversions' (v24 metrics.proto).",
+    "field_id": "platform_comparable_conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.platform_comparable_conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.platform_comparable_conversions_by_conversion_date' (v24 metrics.proto).",
+    "field_id": "platform_comparable_conversions_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.platform_comparable_conversions_by_conversion_date"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.platform_comparable_conversions_from_interactions_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "platform_comparable_conversions_from_interactions_rate",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.platform_comparable_conversions_from_interactions_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.platform_comparable_conversions_from_interactions_value_per_interaction' (v24 metrics.proto).",
+    "field_id": "platform_comparable_conversions_from_interactions_value_per_interaction",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.platform_comparable_conversions_from_interactions_value_per_interaction"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.platform_comparable_conversions_value' (v24 metrics.proto).",
+    "field_id": "platform_comparable_conversions_value",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.platform_comparable_conversions_value"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.platform_comparable_conversions_value_by_conversion_date' (v24 metrics.proto).",
+    "field_id": "platform_comparable_conversions_value_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.platform_comparable_conversions_value_by_conversion_date"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.platform_comparable_conversions_value_per_cost' (v24 metrics.proto).",
+    "field_id": "platform_comparable_conversions_value_per_cost",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.platform_comparable_conversions_value_per_cost"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.primary_impressions' (v24 metrics.proto).",
+    "field_id": "primary_impressions",
+    "kind": "metric",
+    "section": "REACH & FREQUENCY",
+    "source_field": "metrics.primary_impressions"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_aggregator_id' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_aggregator_id",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_aggregator_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_brand' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_brand",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_brand"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_category_level1' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_category_level1",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_category_level1"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_category_level2' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_category_level2",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_category_level2"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_category_level3' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_category_level3",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_category_level3"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_category_level4' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_category_level4",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_category_level4"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_category_level5' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_category_level5",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_category_level5"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_channel' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_channel",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_channel"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_channel_exclusivity' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_channel_exclusivity",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_channel_exclusivity"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_condition' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_condition",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_condition"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_country' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_country",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_country"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_custom_attribute0' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_custom_attribute0",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_custom_attribute0"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_custom_attribute1' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_custom_attribute1",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_custom_attribute1"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_custom_attribute2' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_custom_attribute2",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_custom_attribute2"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_custom_attribute3' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_custom_attribute3",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_custom_attribute3"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_custom_attribute4' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_custom_attribute4",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_custom_attribute4"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_feed_label' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_feed_label",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_feed_label"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_item_id' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_item_id",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_item_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_language' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_language",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_language"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_merchant_id' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_merchant_id",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_merchant_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_brand' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_brand",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_brand"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_category_level1' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_category_level1",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_category_level1"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_category_level2' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_category_level2",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_category_level2"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_category_level3' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_category_level3",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_category_level3"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_category_level4' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_category_level4",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_category_level4"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_category_level5' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_category_level5",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_category_level5"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_condition' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_condition",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_condition"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_custom_attribute0' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_custom_attribute0",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_custom_attribute0"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_custom_attribute1' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_custom_attribute1",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_custom_attribute1"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_custom_attribute2' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_custom_attribute2",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_custom_attribute2"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_custom_attribute3' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_custom_attribute3",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_custom_attribute3"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_custom_attribute4' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_custom_attribute4",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_custom_attribute4"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_item_id' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_item_id",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_item_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_title' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_title",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_title"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_type_l1' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_type_l1",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_type_l1"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_type_l2' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_type_l2",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_type_l2"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_type_l3' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_type_l3",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_type_l3"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_type_l4' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_type_l4",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_type_l4"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_sold_type_l5' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_sold_type_l5",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_sold_type_l5"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_store_id' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_store_id",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_store_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_title' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_title",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_title"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_type_l1' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_type_l1",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_type_l1"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_type_l2' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_type_l2",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_type_l2"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_type_l3' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_type_l3",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_type_l3"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_type_l4' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_type_l4",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_type_l4"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.product_type_l5' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "product_type_l5",
+    "kind": "dimension",
+    "section": "SHOPPING & PRODUCT",
+    "source_field": "segments.product_type_l5"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.publisher_organic_clicks' (v24 metrics.proto).",
+    "field_id": "publisher_organic_clicks",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.publisher_organic_clicks"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.publisher_purchased_clicks' (v24 metrics.proto).",
+    "field_id": "publisher_purchased_clicks",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.publisher_purchased_clicks"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.publisher_unknown_clicks' (v24 metrics.proto).",
+    "field_id": "publisher_unknown_clicks",
+    "kind": "metric",
+    "section": "ORGANIC & COMBINED",
+    "source_field": "metrics.publisher_unknown_clicks"
+  },
+  {
+    "data_type": "int",
+    "description": "Keyword quality score (1-10 attribute; NULL when Google withholds it). Resource attribute 'ad_group_criterion.quality_info.quality_score' (v24 resource protos).",
+    "field_id": "quality_score",
+    "kind": "dimension",
+    "section": "QUALITY SCORE",
+    "source_field": "ad_group_criterion.quality_info.quality_score"
+  },
+  {
+    "data_type": "date",
+    "description": "Google Ads segment 'segments.quarter' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). Core date segment: selecting it REQUIRES a finite date range in WHERE (EXPECTED_FILTERS_ON_DATE_RANGE); 37-month lookback cap.",
+    "field_id": "quarter",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "segments.quarter"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.recommendation_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "recommendation_type",
+    "kind": "dimension",
+    "section": "MISC",
+    "source_field": "segments.recommendation_type"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.relative_ctr' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "relative_ctr",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.relative_ctr"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.results_conversions_purchase' (v24 metrics.proto).",
+    "field_id": "results_conversions_purchase",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.results_conversions_purchase"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.revenue_micros' (v24 metrics.proto). Monetary value in int64 micros (1e-6 of customer_currency_code); landed as value/1e6 (platform micros rule, story 26.2; catalog money_micros declaration -- final unit ratification at the 25.6 live probe).",
+    "field_id": "revenue_micros",
+    "kind": "metric",
+    "physical_type": "money_micros",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.revenue_micros"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_absolute_top_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_absolute_top_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_absolute_top_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_budget_lost_absolute_top_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_budget_lost_absolute_top_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_budget_lost_absolute_top_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_budget_lost_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_budget_lost_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_budget_lost_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_budget_lost_top_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_budget_lost_top_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_budget_lost_top_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_click_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_click_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_click_share"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.search_engine_results_page_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "search_engine_results_page_type",
+    "kind": "dimension",
+    "section": "NETWORK & DEVICE",
+    "source_field": "segments.search_engine_results_page_type"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_exact_match_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_exact_match_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_exact_match_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_rank_lost_absolute_top_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_rank_lost_absolute_top_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_rank_lost_absolute_top_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_rank_lost_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_rank_lost_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_rank_lost_impression_share"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_rank_lost_top_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_rank_lost_top_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_rank_lost_top_impression_share"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.search_subcategory' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "search_subcategory",
+    "kind": "dimension",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "segments.search_subcategory"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.search_term' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "search_term",
+    "kind": "dimension",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "segments.search_term"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.search_term_match_source' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "search_term_match_source",
+    "kind": "dimension",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "segments.search_term_match_source"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.search_term_match_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "search_term_match_type",
+    "kind": "dimension",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "segments.search_term_match_type"
+  },
+  {
+    "data_type": "enum",
+    "description": "Search term targeting status (ADDED / EXCLUDED / NONE / UNKNOWN). Resource attribute 'search_term_view.status' (v24 resource protos). DESCRIPTIVE-MUTABLE attribute (story 26.6 Part A): a MUTABLE state/type of the entity. Lands in attributes_json (latest-wins), OUTSIDE segments_json and the dbt supersede grain -- a re-pull with a changed status never forks the grain nor double-counts metrics.",
+    "descriptive_mutable": true,
+    "field_id": "search_term_status",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "search_term_view.status"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.search_term_targeting_status' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "search_term_targeting_status",
+    "kind": "dimension",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "segments.search_term_targeting_status"
+  },
+  {
+    "data_type": "string",
+    "description": "Search term of the search_term_view row (attribute, NOT segments.search_term). Landed into the raw 'search_term' column (canonical mapping). Low-volume terms are omitted by Google (completeness caveat, dossier section 8). Resource attribute 'search_term_view.search_term' (v24 resource protos).",
+    "field_id": "search_term_text",
+    "kind": "dimension",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "search_term_view.search_term"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.search_top_impression_share' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "search_top_impression_share",
+    "kind": "metric",
+    "section": "IMPRESSION SHARE",
+    "source_field": "metrics.search_top_impression_share"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.search_volume' (v24 metrics.proto).",
+    "field_id": "search_volume",
+    "kind": "metric",
+    "section": "KEYWORD & SEARCH",
+    "source_field": "metrics.search_volume"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.sk_ad_network_ad_event_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "sk_ad_network_ad_event_type",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_ad_event_type"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.sk_ad_network_attribution_credit' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "sk_ad_network_attribution_credit",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_attribution_credit"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.sk_ad_network_coarse_conversion_value' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "sk_ad_network_coarse_conversion_value",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_coarse_conversion_value"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads segment 'segments.sk_ad_network_fine_conversion_value' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "sk_ad_network_fine_conversion_value",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_fine_conversion_value"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.sk_ad_network_installs' (v24 metrics.proto).",
+    "field_id": "sk_ad_network_installs",
+    "kind": "metric",
+    "section": "SKAN",
+    "source_field": "metrics.sk_ad_network_installs"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads segment 'segments.sk_ad_network_postback_sequence_index' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "sk_ad_network_postback_sequence_index",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_postback_sequence_index"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads segment 'segments.sk_ad_network_redistributed_fine_conversion_value' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "sk_ad_network_redistributed_fine_conversion_value",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_redistributed_fine_conversion_value"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.sk_ad_network_source_app' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). Message-typed segment: flattens to sub-fields at query time; primary flattened path is 'segments.sk_ad_network_source_app.sk_ad_network_source_app_id'.",
+    "field_id": "sk_ad_network_source_app",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_source_app.sk_ad_network_source_app_id"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.sk_ad_network_source_domain' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "sk_ad_network_source_domain",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_source_domain"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.sk_ad_network_source_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "sk_ad_network_source_type",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_source_type"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.sk_ad_network_total_conversions' (v24 metrics.proto).",
+    "field_id": "sk_ad_network_total_conversions",
+    "kind": "metric",
+    "section": "SKAN",
+    "source_field": "metrics.sk_ad_network_total_conversions"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.sk_ad_network_user_type' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "sk_ad_network_user_type",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_user_type"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.sk_ad_network_version' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "sk_ad_network_version",
+    "kind": "dimension",
+    "section": "SKAN",
+    "source_field": "segments.sk_ad_network_version"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.slot' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "slot",
+    "kind": "dimension",
+    "section": "NETWORK & DEVICE",
+    "source_field": "segments.slot"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.speed_score' (v24 metrics.proto).",
+    "field_id": "speed_score",
+    "kind": "metric",
+    "section": "QUALITY SCORE",
+    "source_field": "metrics.speed_score"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.store_visits_last_click_model_attributed_conversions' (v24 metrics.proto).",
+    "field_id": "store_visits_last_click_model_attributed_conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.store_visits_last_click_model_attributed_conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.svr' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "svr",
+    "kind": "metric",
+    "section": "MISC",
+    "source_field": "metrics.svr"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.top_impression_percentage' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "top_impression_percentage",
+    "kind": "metric",
+    "section": "IMPRESSIONS",
+    "source_field": "metrics.top_impression_percentage"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.travel_destination_city' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "travel_destination_city",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.travel_destination_city"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.travel_destination_country' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "travel_destination_country",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.travel_destination_country"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.travel_destination_region' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "travel_destination_region",
+    "kind": "dimension",
+    "section": "GEO",
+    "source_field": "segments.travel_destination_region"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.trueview_average_cpv' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "trueview_average_cpv",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.trueview_average_cpv"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.unique_users' (v24 metrics.proto).",
+    "field_id": "unique_users",
+    "kind": "metric",
+    "section": "REACH & FREQUENCY",
+    "source_field": "metrics.unique_users"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.unique_users_five_plus' (v24 metrics.proto).",
+    "field_id": "unique_users_five_plus",
+    "kind": "metric",
+    "section": "REACH & FREQUENCY",
+    "source_field": "metrics.unique_users_five_plus"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.unique_users_four_plus' (v24 metrics.proto).",
+    "field_id": "unique_users_four_plus",
+    "kind": "metric",
+    "section": "REACH & FREQUENCY",
+    "source_field": "metrics.unique_users_four_plus"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.unique_users_ten_plus' (v24 metrics.proto).",
+    "field_id": "unique_users_ten_plus",
+    "kind": "metric",
+    "section": "REACH & FREQUENCY",
+    "source_field": "metrics.unique_users_ten_plus"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.unique_users_three_plus' (v24 metrics.proto).",
+    "field_id": "unique_users_three_plus",
+    "kind": "metric",
+    "section": "REACH & FREQUENCY",
+    "source_field": "metrics.unique_users_three_plus"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.unique_users_two_plus' (v24 metrics.proto).",
+    "field_id": "unique_users_two_plus",
+    "kind": "metric",
+    "section": "REACH & FREQUENCY",
+    "source_field": "metrics.unique_users_two_plus"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.units_sold' (v24 metrics.proto).",
+    "field_id": "units_sold",
+    "kind": "metric",
+    "section": "COMMERCE & PROFIT",
+    "source_field": "metrics.units_sold"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.valid_accelerated_mobile_pages_clicks_percentage' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "valid_accelerated_mobile_pages_clicks_percentage",
+    "kind": "metric",
+    "section": "QUALITY SCORE",
+    "source_field": "metrics.valid_accelerated_mobile_pages_clicks_percentage"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.value_adjustment' (v24 metrics.proto).",
+    "field_id": "value_adjustment",
+    "kind": "metric",
+    "section": "CONVERSION DETAIL",
+    "source_field": "metrics.value_adjustment"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.value_per_all_conversions' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "value_per_all_conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.value_per_all_conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.value_per_all_conversions_by_conversion_date' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "value_per_all_conversions_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.value_per_all_conversions_by_conversion_date"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.value_per_conversion' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "value_per_conversion",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.value_per_conversion"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.value_per_conversions_by_conversion_date' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "value_per_conversions_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.value_per_conversions_by_conversion_date"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.value_per_current_model_attributed_conversion' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "value_per_current_model_attributed_conversion",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.value_per_current_model_attributed_conversion"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.value_per_platform_comparable_conversion' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "value_per_platform_comparable_conversion",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.value_per_platform_comparable_conversion"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.value_per_platform_comparable_conversions_by_conversion_date' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "value_per_platform_comparable_conversions_by_conversion_date",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.value_per_platform_comparable_conversions_by_conversion_date"
+  },
+  {
+    "data_type": "array",
+    "description": "Google Ads segment 'segments.vertical_ads_event_participant_display_names' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_event_participant_display_names",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_event_participant_display_names"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.vertical_ads_hotel_class' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_hotel_class",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_hotel_class"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.vertical_ads_listing' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_listing",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_listing"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.vertical_ads_listing_brand' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_listing_brand",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_listing_brand"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.vertical_ads_listing_city' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_listing_city",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_listing_city"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.vertical_ads_listing_country' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_listing_country",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_listing_country"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.vertical_ads_listing_region' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_listing_region",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_listing_region"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.vertical_ads_listing_user_rating' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_listing_user_rating",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_listing_user_rating"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.vertical_ads_listing_venue' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_listing_venue",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_listing_venue"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.vertical_ads_partner_account' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_partner_account",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_partner_account"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.vertical_ads_vertical' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "vertical_ads_vertical",
+    "kind": "dimension",
+    "section": "VERTICAL ADS",
+    "source_field": "segments.vertical_ads_vertical"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.video_quartile_p100_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "video_quartile_p100_rate",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.video_quartile_p100_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.video_quartile_p25_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "video_quartile_p25_rate",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.video_quartile_p25_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.video_quartile_p50_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "video_quartile_p50_rate",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.video_quartile_p50_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.video_quartile_p75_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "video_quartile_p75_rate",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.video_quartile_p75_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.video_trueview_view_rate' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "video_trueview_view_rate",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.video_trueview_view_rate"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.video_trueview_view_rate_in_feed' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "video_trueview_view_rate_in_feed",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.video_trueview_view_rate_in_feed"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.video_trueview_view_rate_in_stream' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "video_trueview_view_rate_in_stream",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.video_trueview_view_rate_in_stream"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.video_trueview_view_rate_shorts' (v24 metrics.proto). Provider-computed ratio/derived metric: NON-ADDITIVE (AD-4) -- never SUM across rows; prefer semantic-layer computation from stored numerators and denominators.",
+    "field_id": "video_trueview_view_rate_shorts",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.video_trueview_view_rate_shorts"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.video_trueview_views' (v24 metrics.proto).",
+    "field_id": "video_trueview_views",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.video_trueview_views"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads metric 'metrics.video_watch_time_duration_millis' (v24 metrics.proto). Duration in milliseconds.",
+    "field_id": "video_watch_time_duration_millis",
+    "kind": "metric",
+    "section": "VIDEO",
+    "source_field": "metrics.video_watch_time_duration_millis"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.view_through_conversions' (v24 metrics.proto).",
+    "field_id": "view_through_conversions",
+    "kind": "metric",
+    "section": "CONVERSIONS",
+    "source_field": "metrics.view_through_conversions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.view_through_conversions_from_location_asset_click_to_call' (v24 metrics.proto).",
+    "field_id": "view_through_conversions_from_location_asset_click_to_call",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.view_through_conversions_from_location_asset_click_to_call"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.view_through_conversions_from_location_asset_directions' (v24 metrics.proto).",
+    "field_id": "view_through_conversions_from_location_asset_directions",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.view_through_conversions_from_location_asset_directions"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.view_through_conversions_from_location_asset_menu' (v24 metrics.proto).",
+    "field_id": "view_through_conversions_from_location_asset_menu",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.view_through_conversions_from_location_asset_menu"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.view_through_conversions_from_location_asset_order' (v24 metrics.proto).",
+    "field_id": "view_through_conversions_from_location_asset_order",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.view_through_conversions_from_location_asset_order"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.view_through_conversions_from_location_asset_other_engagement' (v24 metrics.proto).",
+    "field_id": "view_through_conversions_from_location_asset_other_engagement",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.view_through_conversions_from_location_asset_other_engagement"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.view_through_conversions_from_location_asset_store_visits' (v24 metrics.proto).",
+    "field_id": "view_through_conversions_from_location_asset_store_visits",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.view_through_conversions_from_location_asset_store_visits"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Google Ads metric 'metrics.view_through_conversions_from_location_asset_website' (v24 metrics.proto).",
+    "field_id": "view_through_conversions_from_location_asset_website",
+    "kind": "metric",
+    "section": "LOCATION ASSETS",
+    "source_field": "metrics.view_through_conversions_from_location_asset_website"
+  },
+  {
+    "data_type": "string",
+    "description": "Google Ads segment 'segments.webpage' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5).",
+    "field_id": "webpage",
+    "kind": "dimension",
+    "section": "STRUCTURE",
+    "source_field": "segments.webpage"
+  },
+  {
+    "data_type": "date",
+    "description": "Google Ads segment 'segments.week' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). Core date segment: selecting it REQUIRES a finite date range in WHERE (EXPECTED_FILTERS_ON_DATE_RANGE); 37-month lookback cap.",
+    "field_id": "week",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "segments.week"
+  },
+  {
+    "data_type": "int",
+    "description": "Google Ads segment 'segments.year' (v24 segments.proto). Selecting it splits the report rows (implicit GROUP BY -- dossier section 1.5). Core date segment: selecting it REQUIRES a finite date range in WHERE (EXPECTED_FILTERS_ON_DATE_RANGE); 37-month lookback cap.",
+    "field_id": "year",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "segments.year"
+  }
+]

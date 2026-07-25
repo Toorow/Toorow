@@ -1,0 +1,124 @@
+{
+    "schema_version":  "1.2",
+    "name":  "generic",
+    "display_name":  "Generic (CSV / URL)",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "files_warehouses",
+        "onboarding_modes": ["managed_feed"],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "auth_type":  "none",
+    "module_kind":  "kpi",
+    "report_profiles":  [
+                            {
+                                "id":  "tabular_daily",
+                                "display_name":  "Tableau quotidien (jour \u003e mesures)",
+                                "metrics":  [
+
+                                            ],
+                                "dimensions":  [
+                                                   "date"
+                                               ],
+                                "extraction_capabilities":  {
+                                                                "row_limit":  null,
+                                                                "filters_supported":  false,
+                                                                "realtime":  false
+                                                            },
+                                "extraction_path":  "custom_pull",
+                                "verification_expected_rows_per_day":  null
+                            }
+                        ],
+    "canonical_metric_mapping":  {
+
+                                 },
+    "canonical_dimension_mapping":  {
+
+                                    },
+    "_error_map_note":  "No error_map declared. The generic module performs no authenticated API call: its only network operation is an SSRF-guarded HTTP fetch (_validate_url_ssrf + httpx.get, follow_redirects=False). Fetch failures raise a French-message RuntimeError (e.g. 'Erreur HTTP 404 lors de la recuperation de ...') or ValueError (SSRF, redirect, unknown scheme, unresolvable host). These are transport-level errors, not provider error codes, so there are no provider-specific codes to map. The RuntimeError/ValueError pattern is intentional and must not be restructured.",
+    "_account_topology_note":  "No account topology: this module has no provider and requires no authentication (auth_type='none'). There is no account hierarchy, discovery call, or account selection step.",
+    "source_capabilities":  {
+                                "contract_version":  "1",
+                                "field_discovery":  {
+                                                        "mode":  "runtime",
+                                                        "allowed_targets":  [
+                                                                                "date",
+                                                                                "cost",
+                                                                                "revenue",
+                                                                                "conversions",
+                                                                                "clicks",
+                                                                                "impressions",
+                                                                                "sessions"
+                                                                            ]
+                                                    },
+                                "fields":  [
+                                               {
+                                                   "field_id":  "date",
+                                                   "source_field":  "runtime_date_column",
+                                                   "kind":  "dimension",
+                                                   "physical_type":  "date",
+                                                   "description":  "date exposed by Generic (CSV / URL).",
+                                                   "semantic_hints":  [
+                                                                          "date"
+                                                                      ],
+                                                   "canonical_target":  "date",
+                                                   "aggregation":  "none",
+                                                   "non_additive":  false
+                                               }
+                                           ],
+                                "reports":  [
+                                                {
+                                                    "id":  "tabular_daily",
+                                                    "selection_mode":  "exact_bundle",
+                                                    "availability":  {
+                                                                         "status":  "unavailable",
+                                                                         "reason_code":  "managed_feed_configuration_required",
+                                                                         "follow_up":  "Complete managed CSV and Excel import support."
+                                                                     },
+                                                    "metrics":  [
+
+                                                                ],
+                                                    "dimensions":  [
+                                                                       "date"
+                                                                   ],
+                                                    "supported_grains":  [
+                                                                             [
+                                                                                 "date"
+                                                                             ]
+                                                                         ],
+                                                    "compatibility":  [
+
+                                                                      ],
+                                                    "filters":  [
+
+                                                                ],
+                                                    "pagination":  {
+                                                                       "mode":  "none",
+                                                                       "completeness":  "unknown",
+                                                                       "max_pages":  null,
+                                                                       "row_limit":  null,
+                                                                       "truncation_signal":  "unknown"
+                                                                   },
+                                                    "quota_cost":  {
+                                                                       "read_points":  0,
+                                                                       "unit":  "request"
+                                                                   },
+                                                    "incremental":  {
+                                                                        "mode":  "date_window",
+                                                                        "cursor_field":  null
+                                                                    },
+                                                    "cadence":  {
+                                                                    "minimum_interval_minutes":  1440,
+                                                                    "supported_modes":  [
+                                                                                            "manual",
+                                                                                            "daily"
+                                                                                        ]
+                                                                }
+                                                }
+                                            ]
+                            }
+}

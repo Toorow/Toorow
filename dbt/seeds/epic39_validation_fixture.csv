@@ -1,0 +1,14 @@
+project_id,date,connector,metric,native_unit,source_currency,report_timezone,value_micros,value_decimal,scenario,notes
+__epic39_validation__,2026-07-01,__epic39_src_a__,revenue,micros,EUR,Europe/Paris,9999999000007,,micros_exactness,near-2^53 non-round micros; sum-then-divide exact where divide-then-sum drifts (07-01 pair drifts)
+__epic39_validation__,2026-07-01,__epic39_src_b__,revenue,micros,EUR,Europe/Paris,5555555000003,,micros_exactness,second non-round micros row on 07-01; the pair 9999999000007+5555555000003 drifts under /1e6-per-row
+__epic39_validation__,2026-07-02,__epic39_src_a__,revenue,micros,EUR,Europe/Paris,7777777000003,,micros_exactness,near-2^53 non-round micros on 07-02
+__epic39_validation__,2026-07-02,__epic39_src_b__,revenue,micros,EUR,Europe/Paris,3333333000007,,micros_exactness,second non-round micros row on 07-02; the pair 7777777000003+3333333000007 drifts under /1e6-per-row
+__epic39_validation__,2026-07-01,__epic39_src_a__,revenue,decimal,EUR,Europe/Paris,,100.00,recon_normalized,reporting-currency (EUR) decimal contribution; NO FX owed (rate 1.0 identity)
+__epic39_validation__,2026-07-01,__epic39_src_b__,revenue,decimal,USD,America/New_York,,100.00,recon_normalized,USD contribution; needs FX (seed USD->EUR=0.92) BEFORE it may be combined with src_a EUR
+__epic39_validation__,2024-08-15,__epic39_src_a__,revenue,decimal,USD,Europe/Paris,,100.00,as_of_fx,past-dated USD figure; converts at the PAST as-of rate (2024-01-02 => 0.90) not today's 0.92
+__epic39_validation__,2026-07-01,__epic39_src_a__,cost,decimal,EUR,Europe/Paris,,50.00,shared_tz,shared-timezone (Europe/Paris) subset -- 39.8 must raise NO offset signal (no false positive)
+__epic39_validation__,2026-07-01,__epic39_src_b__,cost,decimal,EUR,Europe/Paris,,50.00,shared_tz,shared-timezone peer of the row above -- same tz => NO offset advisory
+__epic39_validation__,2026-07-01,__epic39_src_a__,revenue,decimal,GBP,Europe/Paris,,100.00,honesty_missing_fx_pair,HONESTY: GBP has NO pair in fx_rates.csv => MissingFxPair; NEVER a 1.0-defaulted number
+__epic39_validation__,2026-07-01,__epic39_src_b__,revenue,decimal,,Europe/Paris,,100.00,honesty_missing_currency,HONESTY: blank source_currency => CURRENCY_GAP/UNKNOWN_CURRENCY_GAP; value NEVER summed no EUR default
+__epic39_validation__,2020-01-01,__epic39_src_a__,revenue,decimal,USD,Europe/Paris,,100.00,honesty_missing_as_of,HONESTY: date BEFORE the earliest as-of row (2024-01-02) => MissingAsOfRate; no todays-rate substitution
+__epic39_validation__,2026-07-01,__epic39_src_b__,revenue,decimal,USD,,,100.00,honesty_undetermined_tz,HONESTY: blank report_timezone => 39.7 TIMEZONE_GAP; never a silent-UTC assumption

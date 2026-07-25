@@ -1,0 +1,19 @@
+[
+  {"field_id": "board_id", "source_field": "boards.id", "kind": "dimension", "data_type": "string", "description": "Opaque monday board identifier.", "section": "BOARD"},
+  {"field_id": "item_id", "source_field": "items_page.items.id", "kind": "dimension", "data_type": "string", "description": "Opaque monday item identifier.", "section": "ITEM"},
+  {"field_id": "item_name", "source_field": "items_page.items.name", "kind": "dimension", "data_type": "string", "description": "Item display name.", "section": "ITEM", "exposure": "exposed", "tier": "core"},
+  {"field_id": "group_id", "source_field": "items_page.items.group.id", "kind": "dimension", "data_type": "string", "description": "Board group identifier.", "section": "ITEM"},
+  {"field_id": "parent_item_id", "source_field": "items_page.items.parent_item.id", "kind": "dimension", "data_type": "string", "description": "Parent identifier for a subitem.", "section": "ITEM"},
+  {"field_id": "updated_at", "source_field": "items_page.items.updated_at", "kind": "dimension", "data_type": "datetime", "description": "Last item update timestamp.", "section": "ITEM"},
+  {"field_id": "column_values", "source_field": "items_page.items.column_values", "kind": "dimension", "data_type": "json", "description": "Typed board-specific column values with raw JSON preserved.", "section": "DYNAMIC COLUMNS"},
+  {"field_id": "column_id", "source_field": "items_page.items.column_values.id", "kind": "dimension", "data_type": "string", "description": "Runtime board column identifier.", "section": "DYNAMIC COLUMNS"},
+  {"field_id": "column_type", "source_field": "items_page.items.column_values.type", "kind": "dimension", "data_type": "string", "description": "Runtime monday column type.", "section": "DYNAMIC COLUMNS"},
+  {"field_id": "column_raw_value", "source_field": "items_page.items.column_values.value", "kind": "dimension", "data_type": "json", "description": "Uncoerced typed column JSON at item-column grain.", "section": "DYNAMIC COLUMNS"},
+  {"field_id": "column_text", "source_field": "items_page.items.column_values.text", "kind": "dimension", "data_type": "string", "description": "Human-readable column text.", "section": "DYNAMIC COLUMNS", "exposure": "excluded", "exclusion_reason": "internal provenance field, not projected to fact_daily_kpi"},
+  {"field_id": "known_type", "source_field": "items_page.items.column_values.type", "kind": "dimension", "data_type": "boolean", "description": "True when the column type is in the known-type registry.", "section": "DYNAMIC COLUMNS", "exposure": "excluded", "exclusion_reason": "internal provenance flag, not projected to fact_daily_kpi"},
+  {"field_id": "schema_fingerprint", "source_field": "boards.columns", "kind": "dimension", "data_type": "string", "description": "SHA-256 fingerprint of the board column schema at pull time.", "section": "INTERNAL", "exposure": "excluded", "exclusion_reason": "internal lineage field for schema drift detection"},
+  {"field_id": "pull_id", "source_field": null, "kind": "dimension", "data_type": "string", "description": "Opaque pull run identifier for lineage.", "section": "INTERNAL", "exposure": "excluded", "exclusion_reason": "internal lineage field"},
+  {"field_id": "event_date", "source_field": "updates.updated_at", "kind": "dimension", "data_type": "date", "description": "Date of a board change.", "section": "EVENT"},
+  {"field_id": "event_label", "source_field": "updates.id", "kind": "dimension", "data_type": "string", "description": "Stable board-change label.", "section": "EVENT"},
+  {"field_id": "monday_change", "source_field": "updates", "kind": "event", "data_type": "datetime", "description": "Board update or validated webhook change.", "section": "EVENT"}
+]

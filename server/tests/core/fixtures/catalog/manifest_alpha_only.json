@@ -1,0 +1,17 @@
+{
+  "source_capabilities": {
+    "fields": [
+      {
+        "field_id": "alpha_metric",
+        "source_field": "alpha_metric_raw",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "A neutral test metric.",
+        "semantic_hints": ["count"],
+        "canonical_target": "alpha_canonical",
+        "aggregation": "sum",
+        "non_additive": false
+      }
+    ]
+  }
+}

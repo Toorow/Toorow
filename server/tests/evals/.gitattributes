@@ -1,0 +1,6 @@
+# Eval fixtures are hashed byte-for-byte (fixture_sha256 in corpus.yaml) and the corpus
+# ground truth is compared against those exact bytes. Force LF so Windows core.autocrlf
+# does not rewrite them to CRLF on checkout -- CRLF changes the bytes and breaks
+# test_corpus_schema (reads file bytes) even when the content is correct. LF everywhere.
+fixtures/*.json text eol=lf
+corpus.yaml text eol=lf

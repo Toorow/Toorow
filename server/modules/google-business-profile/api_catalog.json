@@ -1,0 +1,265 @@
+{
+  "api_version": "v1 (Performance) + v4 (Reviews, legacy)",
+  "catalog_version": "1",
+  "connector": "google-business-profile",
+  "fields": [
+    {
+      "description": "Business Profile account id (accounts/{account_id}) owning the location. Structural; planned (not extracted into the daily fact by v1).",
+      "exposure": "planned",
+      "field_id": "account_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TOPOLOGY",
+      "source_field": "account_id",
+      "tier": "standard"
+    },
+    {
+      "description": "Location average star rating (reviews.list aggregate). NON-ADDITIVE (an average -- never summed). Planned (v4-gated).",
+      "exposure": "planned",
+      "field_id": "average_rating",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "REVIEWS",
+      "source_field": "averageRating",
+      "tier": "standard"
+    },
+    {
+      "description": "Number of bookings made from the profile via Reserve with Google. Additive daily count.",
+      "exposure": "exposed",
+      "field_id": "business_bookings",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - ACTIONS",
+      "source_field": "BUSINESS_BOOKINGS",
+      "tier": "core"
+    },
+    {
+      "description": "Number of message conversations received on the business profile. Additive daily count.",
+      "exposure": "exposed",
+      "field_id": "business_conversations",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - ACTIONS",
+      "source_field": "BUSINESS_CONVERSATIONS",
+      "tier": "core"
+    },
+    {
+      "description": "Number of times directions to the business location were requested. Additive daily count.",
+      "exposure": "exposed",
+      "field_id": "business_direction_requests",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - ACTIONS",
+      "source_field": "BUSINESS_DIRECTION_REQUESTS",
+      "tier": "core"
+    },
+    {
+      "description": "Number of clicks to view/interact with menu content. Deduplicated per unique user per day. Additive daily count.",
+      "exposure": "exposed",
+      "field_id": "business_food_menu_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - ACTIONS",
+      "source_field": "BUSINESS_FOOD_MENU_CLICKS",
+      "tier": "core"
+    },
+    {
+      "description": "Number of food orders received from the profile. Additive daily count.",
+      "exposure": "exposed",
+      "field_id": "business_food_orders",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - ACTIONS",
+      "source_field": "BUSINESS_FOOD_ORDERS",
+      "tier": "core"
+    },
+    {
+      "description": "Business impressions on Google Maps on Desktop. Deduplicated per unique user per day. Additive daily count (Performance API DailyMetric).",
+      "exposure": "exposed",
+      "field_id": "business_impressions_desktop_maps",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - IMPRESSIONS",
+      "source_field": "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+      "tier": "core"
+    },
+    {
+      "description": "Business impressions on Google Search on Desktop. Deduplicated per unique user per day. Additive daily count.",
+      "exposure": "exposed",
+      "field_id": "business_impressions_desktop_search",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - IMPRESSIONS",
+      "source_field": "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+      "tier": "core"
+    },
+    {
+      "description": "Business impressions on Google Maps on Mobile. Deduplicated per unique user per day. Additive daily count.",
+      "exposure": "exposed",
+      "field_id": "business_impressions_mobile_maps",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - IMPRESSIONS",
+      "source_field": "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+      "tier": "core"
+    },
+    {
+      "description": "Business impressions on Google Search on Mobile. Deduplicated per unique user per day. Additive daily count. Total impressions = sum of the 4 BUSINESS_IMPRESSIONS_* metrics (Google exposes no single combined metric).",
+      "exposure": "exposed",
+      "field_id": "business_impressions_mobile_search",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - IMPRESSIONS",
+      "source_field": "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+      "tier": "core"
+    },
+    {
+      "description": "Number of times the call button was clicked. Additive daily count.",
+      "exposure": "exposed",
+      "field_id": "call_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - ACTIONS",
+      "source_field": "CALL_CLICKS",
+      "tier": "core"
+    },
+    {
+      "description": "Reporting day (YYYY-MM-DD), from the Performance API datedValues[].date. Daily grain. Zero-days may be omitted by the API and are gap-filled to 0 by the connector.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "The reporting entity: Business Profile location id (resource name locations/{location_id}). Stamped on every row; the Performance and Reviews endpoints are scoped by this id. Discovered via Account Management accounts.list -> Business Information accounts.locations.list.",
+      "exposure": "exposed",
+      "field_id": "location_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TOPOLOGY",
+      "source_field": "location_id",
+      "tier": "core"
+    },
+    {
+      "description": "Human-readable location name (Business Information Location.title). Label for the location_id. Planned.",
+      "exposure": "planned",
+      "field_id": "location_title",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TOPOLOGY",
+      "source_field": "title",
+      "tier": "standard"
+    },
+    {
+      "description": "Review free-text body. Planned (v4-gated).",
+      "exposure": "planned",
+      "field_id": "review_comment",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REVIEWS",
+      "source_field": "comment",
+      "tier": "standard"
+    },
+    {
+      "description": "Review creation timestamp (RFC 3339). Planned (v4-gated).",
+      "exposure": "planned",
+      "field_id": "review_create_time",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "REVIEWS",
+      "source_field": "createTime",
+      "tier": "standard"
+    },
+    {
+      "description": "Encrypted unique review id (legacy My Business API v4 accounts.locations.reviews.list). Planned (v4 allowlist-gated).",
+      "exposure": "planned",
+      "field_id": "review_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REVIEWS",
+      "source_field": "reviewId",
+      "tier": "standard"
+    },
+    {
+      "description": "Owner reply text to the review (<=4096 bytes). Planned (v4-gated).",
+      "exposure": "planned",
+      "field_id": "review_reply_comment",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REVIEWS",
+      "source_field": "reviewReply.comment",
+      "tier": "standard"
+    },
+    {
+      "description": "Review star rating enum: STAR_RATING_UNSPECIFIED, ONE, TWO, THREE, FOUR, FIVE. Planned (v4-gated). The derived average rating is NON-ADDITIVE.",
+      "exposure": "planned",
+      "field_id": "review_star_rating",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REVIEWS",
+      "source_field": "starRating",
+      "tier": "standard"
+    },
+    {
+      "description": "Reviewer display name (only when reviewer.isAnonymous=false). Planned (v4-gated).",
+      "exposure": "planned",
+      "field_id": "reviewer_display_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REVIEWS",
+      "source_field": "reviewer.displayName",
+      "tier": "standard"
+    },
+    {
+      "description": "A search term users typed to find the business (searchkeywords.impressions.monthly). MONTHLY granularity only -- a separate monthly fact, never merged with the daily metrics stream. Planned.",
+      "exposure": "planned",
+      "field_id": "search_keyword",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SEARCH KEYWORDS",
+      "source_field": "searchKeyword",
+      "tier": "standard"
+    },
+    {
+      "description": "Monthly impression count for a search keyword. Union insightsValue.{value|threshold}: threshold = a floor for low-volume keywords (e.g. '<15') Google will not report exactly -- model as nullable/threshold-flagged. MONTHLY, additive within a month. Planned.",
+      "exposure": "planned",
+      "field_id": "search_keyword_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "SEARCH KEYWORDS",
+      "source_field": "insightsValue",
+      "tier": "standard"
+    },
+    {
+      "description": "Location total review count (reviews.list aggregate). Point-in-time count. Planned (v4-gated).",
+      "exposure": "planned",
+      "field_id": "total_review_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "REVIEWS",
+      "source_field": "totalReviewCount",
+      "tier": "standard"
+    },
+    {
+      "description": "Number of times the website link was clicked. Additive daily count.",
+      "exposure": "exposed",
+      "field_id": "website_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PERFORMANCE - ACTIONS",
+      "source_field": "WEBSITE_CLICKS",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://developers.google.com/my-business/reference/performance/rest/v1/DailyMetric"
+    }
+  ]
+}

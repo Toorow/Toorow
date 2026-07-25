@@ -1,0 +1,72 @@
+/**
+ * datastream-data.css — page-specific styles for DatastreamDataV3.
+ *
+ * Faithful port of the inline <style> block in
+ *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
+ *     mockups/datastream-data.html
+ *
+ * Most of the sample-timeline system already lives in application.css and is
+ * global: .sample-toolbar, .sample-note, .mask-note, .sample-days,
+ * .sample-day, .sample-day-header, .sample-table (td sizing), .signal-label,
+ * .timeline-marker, .object / .object-logo, .local-tabs, .full-main. This file
+ * adds ONLY the parts the mockup's inline <style> declares on top of that: the
+ * toolbar right-cluster, the sample-note copy color, and the fixed-layout wide
+ * sample table with its per-column widths and right-aligned amount cells.
+ *
+ * Tokenized: colors reference the application.css CSS variables only
+ * (var(--muted) for the note copy). No brand/semantic hex is introduced here.
+ */
+
+/* Toolbar: filters on the left, actions pushed to the right (mockup .right). */
+.sample-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.sample-toolbar .right {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+}
+
+/* Evidence note under the toolbar. */
+.sample-note {
+  margin-bottom: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Wide, sticky-behaving sample table: fixed layout so columns hold their width
+ * and the row stays on one line (white-space: nowrap), scrolling horizontally
+ * inside its day card rather than reflowing. */
+.sample-table {
+  table-layout: fixed;
+}
+.sample-table th,
+.sample-table td {
+  padding-left: 12px;
+  padding-right: 12px;
+  white-space: nowrap;
+}
+.sample-table th.amount,
+.sample-table td.amount {
+  text-align: right;
+}
+.sample-table th:nth-child(1) { width: 76px; }
+.sample-table th:nth-child(2) { width: 210px; }
+.sample-table th:nth-child(3) { width: 124px; }
+.sample-table th:nth-child(4) { width: 100px; }
+.sample-table th:nth-child(5) { width: 124px; }
+.sample-table th:nth-child(6),
+.sample-table th:nth-child(7) { width: 136px; }
+.sample-table th:nth-child(8) { width: 84px; }
+
+/* Sticky wide-table behaviour: the day card clips its own table; when the
+ * table is wider than the card the card scrolls horizontally, keeping the
+ * timeline node and header fixed to the left rail. */
+.sample-day > .table {
+  display: block;
+  overflow-x: auto;
+  border-radius: 0 0 16px 16px;
+}

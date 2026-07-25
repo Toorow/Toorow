@@ -1,0 +1,14 @@
+[
+  {
+    "sessions": 97446.0,
+    "user_type": "new"
+  },
+  {
+    "sessions": 157147.0,
+    "user_type": "returning"
+  },
+  {
+    "sessions": 5182.0,
+    "user_type": "unknown"
+  }
+]

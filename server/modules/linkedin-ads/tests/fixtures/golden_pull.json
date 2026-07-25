@@ -1,0 +1,29 @@
+[
+  {
+    "pivotValues": ["urn:li:sponsoredCampaign:88000001"],
+    "dateRange": {"start": {"year": 2026, "month": 6, "day": 9}, "end": {"year": 2026, "month": 6, "day": 9}},
+    "costInLocalCurrency": "124.62",
+    "impressions": 5442,
+    "clicks": 69,
+    "externalWebsiteConversions": 3,
+    "leadGenerationMailContactInfoShares": 42
+  },
+  {
+    "pivotValues": ["urn:li:sponsoredCampaign:88000002"],
+    "dateRange": {"start": {"year": 2026, "month": 6, "day": 9}, "end": {"year": 2026, "month": 6, "day": 9}},
+    "costInLocalCurrency": "71.4",
+    "impressions": 3264,
+    "clicks": 27,
+    "externalWebsiteConversions": 1,
+    "leadGenerationMailContactInfoShares": 29
+  },
+  {
+    "pivotValues": ["urn:li:sponsoredCampaign:88000003"],
+    "dateRange": {"start": {"year": 2026, "month": 6, "day": 9}, "end": {"year": 2026, "month": 6, "day": 9}},
+    "costInLocalCurrency": "47.99",
+    "impressions": 2069,
+    "clicks": 28,
+    "externalWebsiteConversions": 0,
+    "leadGenerationMailContactInfoShares": 19
+  }
+]

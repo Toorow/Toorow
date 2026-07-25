@@ -1,0 +1,142 @@
+version: 2
+
+sources:
+  - name: raw_meta
+    description: "Immutable raw landing zone for Meta Ads daily insights (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_meta_ads_daily
+        description: >
+          Raw Meta Ads daily insights — one row per date × campaign × adset × ad × pull_id.
+          Append-only (AD-7): each pull run adds a new batch identified by pull_id.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (e.g. '2026-07-01'). Day grain."
+          - name: data_level
+            description: >
+              Report grain that produced this row: CAMPAIGN | ADSET | CREATIVE
+              (review-15-9 F-1). Part of the grain key; each mart series reads ONLY its
+              own data_level so coexisting grains never double-count. Legacy rows land
+              NULL and are COALESCEd to 'CAMPAIGN' in staging (historical pull was
+              campaign-level only).
+          - name: campaign_id
+            description: "Meta campaign ID."
+          - name: cost_source_currency
+            description: >
+              Billing currency for this account's spend (e.g. 'USD', 'EUR').
+              Story 4.2 (AC3): added to raw DDL as VARCHAR DEFAULT 'USD'. Seed data uses USD.
+              The Meta Ads Marketing API returns spend in the account's billing currency
+              (configured in Business Manager). This column enables FX normalization in staging.
+          - name: campaign_name
+            description: "Meta campaign display name."
+          - name: adset_id
+            description: "Meta ad set ID."
+          - name: adset_name
+            description: "Meta ad set display name."
+          - name: ad_id
+            description: "Meta ad ID."
+          - name: creative_id
+            description: "Meta creative ID."
+          - name: spend
+            description: "Ad spend for the day/campaign/adset/ad combination (mapped to canonical 'cost')."
+          - name: impressions
+            description: "Impressions for the day/campaign/adset/ad combination."
+          - name: clicks
+            description: "Clicks for the day/campaign/adset/ad combination."
+          - name: conversions
+            description: >
+              Pixel-attributed conversions for the day/campaign/adset/ad combination.
+              At day grain: additive (AD-4). Cross-source dedup with GA4 conversions is Story 3.7.
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: >
+              Project binding. 'default' for seeded test data; real project IDs for
+              data pulled via the trigger endpoint (AD-14).
+
+models:
+  - name: stg_meta_ads_daily
+    description: >
+      Staging layer: maps raw Meta Ads fields to canonical names (spend -> cost;
+      other metrics pass through). AD-4: only additive metrics (cost, impressions,
+      clicks, conversions) -- no ratio columns.
+      Supersede semantics (AD-7): when multiple pulls cover the same grain
+      (project_id, date, campaign_id, adset_id, ad_id), the QUALIFY clause keeps
+      only the latest pull (ORDER BY pull_id DESC).
+      Story 4.2 (AC3, AC6): cost is now FX-normalized (spend * fx_rate → EUR by default).
+      Source values preserved as cost_source_value + cost_source_currency (HG-2).
+      Timezone policy: date_source = raw date, date = re-labeled project date (identical
+      at day grain — HG-4: no convert_timezone() at day grain).
+      review-15-9 F-1: data_level (CAMPAIGN | ADSET | CREATIVE) is part of the grain key
+      so coexisting report grains never collide; each mart series reads its own data_level.
+    tests:
+      # Grain uniqueness (AI-05): one row per project × date × data_level × campaign ×
+      # adset × ad. review-15-9 F-1: data_level is part of the key so a campaign-grain row
+      # and an adset-grain row for the same campaign_id coexist without colliding. COALESCE
+      # the nullable ids so campaign-grain rows (NULL adset/ad) key cleanly.
+      - unique:
+          name: stg_meta_ads_grain_unique
+          arguments:
+            column_name: >
+              project_id || '|' || date || '|' || data_level || '|' || campaign_id || '|'
+              || COALESCE(adset_id, '_') || '|' || COALESCE(ad_id, '_')
+    columns:
+      - name: date_source
+        description: >
+          Raw source date from Meta Ads API (already in account timezone).
+          Story 4.2 (AC6): preserved as-is for provenance. Identical to date at day grain.
+      - name: date
+        description: "ISO-8601 date string, re-labeled to project timezone at day grain (= date_source)."
+        tests:
+          - not_null
+      - name: data_level
+        description: >
+          Report grain (CAMPAIGN | ADSET | CREATIVE). review-15-9 F-1: each mart breakdown
+          series filters to its own data_level (no grain bleed). NOT NULL after the staging
+          COALESCE(data_level, 'CAMPAIGN') that resolves legacy rows.
+        tests:
+          - not_null
+      - name: campaign_id
+        description: "Meta campaign ID."
+      - name: cost_source_value
+        description: >
+          Raw spend in the account's billing currency (cost_source_currency). AD-6: source value
+          preserved for reconciliation (HG-2). Use this column to verify FX normalization via
+          the test_meta_cost_normalization singular test.
+        tests:
+          - not_null
+      - name: cost_source_currency
+        description: >
+          The billing currency of the raw spend (e.g. 'USD'). Story 4.2 (AC3).
+          When cost_source_currency = canonical_currency (EUR), rate = 1.0 and cost = cost_source_value.
+        tests:
+          - not_null
+      - name: cost
+        description: >
+          Ad spend normalized to project canonical currency (EUR by default) via fx_rates seed.
+          AD-6: normalization happens once, here in dbt staging. No downstream code converts.
+          cost = cost_source_value * fx_rate. When from_currency = to_currency, rate = 1.0.
+        tests:
+          - not_null
+      - name: impressions
+        description: "Impressions (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: clicks
+        description: "Clicks (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: conversions
+        description: "Pixel-attributed conversions (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding for this row. Propagated from raw_meta_ads_daily."

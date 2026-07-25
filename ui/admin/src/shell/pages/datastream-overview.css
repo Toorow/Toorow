@@ -1,0 +1,98 @@
+/**
+ * datastream-overview.css — page-specific styles for DatastreamOverview.
+ *
+ * Faithful port of the inline <style> block in
+ * _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/mockups/datastream-overview.html
+ *
+ * Only the parts NOT already global in application.css live here. The shell
+ * already ships: .full-main, .health-grid, .health-chart, .health-side,
+ * .health-card, .health-bar, .health-svg (+ .grid/.volume-line/.expected-range/
+ * .warning-point/.warning-label), .metric-strip/.metric, .detail-strip/
+ * .detail-cell, .section-header, .signal-label, .local-tabs/.local-tab,
+ * .object/.object-logo, .provider-logo. This file adds only:
+ *   - the health-chart header/body spacing overrides,
+ *   - the .health-legend swatch row,
+ *   - the mockup's .lower-grid / .detail-panel block (kept for parity with the
+ *     mockup <style>, even though this screen renders the .detail-STRIP variant),
+ *   - a self-contained object-header row (the mockup places the .object in the
+ *     topbar; this fragment renders it inline above the local tabs).
+ *
+ * Tokenized: colors reference the application.css CSS variables only. The two
+ * translucent legend swatch fills (rgba(126,107,196,.18) Expected, and the
+ * --success / --warning tokens) are copied verbatim from the mockup.
+ */
+
+/* Object identity header, rendered inline (mockup shows it in the topbar). */
+.ds-object-header {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  padding: 0 32px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Health-chart panel: header has no bottom rule; body owns its own padding. */
+.health-chart .section-header {
+  border-bottom: 0;
+}
+.health-chart-body {
+  padding: 6px 20px 18px;
+}
+
+/* Legend row for the health chart. */
+.health-legend {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.health-legend span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.health-legend i {
+  width: 14px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--success);
+}
+.health-legend span:nth-child(2) i {
+  background: var(--info);
+}
+.health-legend span:nth-child(3) i {
+  background: var(--warning);
+}
+
+/* Lower detail grid / detail panel — carried over from the mockup <style> for
+   parity (this screen renders the .detail-strip variant, but the mockup's page
+   CSS declared these and a sibling detail layout may reuse them). */
+.lower-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 18px;
+}
+.detail-panel {
+  padding: 20px;
+}
+.detail-panel h3 {
+  margin: 0 0 16px;
+  font: 600 16px "Lexend";
+}
+.detail-row {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.detail-row:first-of-type {
+  border-top: 0;
+}
+.detail-row b {
+  font-size: 14px;
+}

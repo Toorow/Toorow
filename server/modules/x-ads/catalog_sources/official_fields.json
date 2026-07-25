@@ -1,0 +1,130 @@
+[
+  {
+    "field_id": "date",
+    "source_field": "start_time",
+    "kind": "dimension",
+    "data_type": "date",
+    "section": "DIMENSION",
+    "description": "UTC interval day."
+  },
+  {
+    "field_id": "account_id",
+    "source_field": "account_id",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Selected ads account."
+  },
+  {
+    "field_id": "campaign_id",
+    "source_field": "CAMPAIGN",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Campaign entity id."
+  },
+  {
+    "field_id": "line_item_id",
+    "source_field": "LINE_ITEM",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Line item entity id."
+  },
+  {
+    "field_id": "promoted_tweet_id",
+    "source_field": "PROMOTED_TWEET",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Promoted post entity id."
+  },
+  {
+    "field_id": "placement",
+    "source_field": "placement",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Ads placement."
+  },
+  {
+    "field_id": "segment_type",
+    "source_field": "segmentation_type",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Selected segmentation."
+  },
+  {
+    "field_id": "segment_value",
+    "source_field": "segment_value",
+    "kind": "dimension",
+    "data_type": "string",
+    "section": "DIMENSION",
+    "description": "Provider segment value."
+  },
+  {
+    "field_id": "impressions",
+    "source_field": "IMPRESSIONS",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Impressions."
+  },
+  {
+    "field_id": "engagements",
+    "source_field": "ENGAGEMENT",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Engagements."
+  },
+  {
+    "field_id": "clicks",
+    "source_field": "CLICKS",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Clicks."
+  },
+  {
+    "field_id": "billed_charge_local_micro",
+    "source_field": "BILLED_CHARGE_LOCAL_MICRO",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Revisable billed charge in local micros."
+  },
+  {
+    "field_id": "conversions",
+    "source_field": "CONVERSIONS",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Conversions."
+  },
+  {
+    "field_id": "reach",
+    "source_field": "REACH",
+    "kind": "metric",
+    "data_type": "integer",
+    "section": "METRIC",
+    "description": "Reach at exact segment grain."
+  },
+  {
+    "field_id": "frequency",
+    "source_field": "FREQUENCY",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Average frequency."
+  },
+  {
+    "field_id": "engagement_rate",
+    "source_field": "ENGAGEMENT_RATE",
+    "kind": "metric",
+    "data_type": "decimal",
+    "section": "METRIC",
+    "description": "Engagement rate."
+  }
+]

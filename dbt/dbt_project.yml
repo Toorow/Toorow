@@ -1,0 +1,81 @@
+# toorow dbt project (minimal scaffold — Story 1.1).
+# Story 1.1 does not run dbt; models are populated from Story 1.4 onward.
+name: "connector"
+version: "1.0.0"
+config-version: 2
+
+# The profile named here is resolved from ~/.dbt/profiles.yml (or DBT_PROFILES_DIR).
+# A committed example lives at profiles/profiles.yml.example — the real
+# profiles.yml is NEVER committed (no secrets in repo).
+profile: "connector"
+
+# Story 3.6 (AI-06 Option A): module-owned dbt staging lives inside each module
+# folder (server/modules/<name>/dbt/) and is auto-included here via relative
+# model-paths. Verified working with dbt-core 1.11.12 (`dbt parse` / `dbt run`).
+# Adding a NEW daily-grain module requires ONE line here (its dbt path) plus the
+# mart UNION -- zero edits under server/core/ (FR2 proof).
+model-paths:
+  - "models"
+  - "../server/modules/google-analytics/dbt"
+  - "../server/modules/meta-ads/dbt"
+  - "../server/modules/gsc/dbt"
+  - "../server/modules/shopify/dbt"
+  - "../server/modules/tiktok-ads/dbt"
+  - "../server/modules/klaviyo/dbt"
+  - "../server/modules/linkedin-ads/dbt"
+  - "../server/modules/stripe/dbt"
+  - "../server/modules/hubspot/dbt"
+  - "../server/modules/cm360/dbt"
+  - "../server/modules/dv360/dbt"
+  - "../server/modules/sa360/dbt"
+  - "../server/modules/x-ads/dbt"
+  - "../server/modules/adobe-analytics/dbt"
+  - "../server/modules/google-sheets/dbt"
+  - "../server/modules/adjust/dbt"
+  - "../server/modules/google-ads/dbt"
+  - "../server/modules/pinterest-ads/dbt"
+  - "../server/modules/microsoft-ads/dbt"
+  - "../server/modules/amazon-ads/dbt"
+  - "../server/modules/amazon-dsp/dbt"
+  - "../server/modules/brevo/dbt"
+  - "../server/modules/linkedin-company-pages/dbt"
+  - "../server/modules/taboola/dbt"
+  - "../server/modules/thetradedesk/dbt"
+  - "../server/modules/piano/dbt"
+  - "../server/modules/woocommerce/dbt"
+  - "../server/modules/square/dbt"
+  - "../server/modules/ias/dbt"
+  - "../server/modules/monday/dbt"
+  - "../server/modules/google-business-profile/dbt"
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Canonical warehouse layout (ARCHITECTURE-SPINE §Deployment):
+#   raw_*    — immutable source landings (AD-7)
+#   marts_*  — semantic marts (never named after a specific module, AD-2)
+#   mirror_* — governed read-only mirror of Postgres governance entities (AD-8)
+#
+# Local fallback (Story 1.4): DuckDB via dbt-duckdb adapter.
+# To switch to BigQuery: change target in ~/.dbt/profiles.yml (or DBT_PROFILES_DIR)
+# to the 'bigquery' target defined in profiles/profiles.yml.example.
+# No SQL model changes are required for the switch.
+models:
+  connector:
+    +materialized: view
+    # Story 3.6 (AI-06): staging models are contributed by module-owned dbt dirs
+    # (server/modules/<name>/dbt/staging/). This config is source-agnostic --
+    # every module's staging/ folder inherits +schema: staging automatically.
+    # Adding a new module needs NO edit here (FR2: zero per-module central config).
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table

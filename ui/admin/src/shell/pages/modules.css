@@ -1,0 +1,72 @@
+/**
+ * modules.css — Data > Modules catalog (activatable alignment modules).
+ * Colors exclusively via application.css CSS variables (dark-theme safe).
+ */
+
+.modules-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 24px;
+}
+
+@media (max-width: 900px) {
+  .modules-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.module-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px;
+}
+
+.module-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.module-card-head h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+}
+
+.module-purpose {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.module-explains {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 0.9375rem;
+}
+
+.module-card-foot {
+  margin-top: auto;
+  padding-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.module-availability {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+/* Muted 'Off' state for the signal-label (family members not yet activated). */
+.signal-label.muted {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+}
+.signal-label.muted .signal-mark {
+  background: var(--muted);
+}

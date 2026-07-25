@@ -1,0 +1,1261 @@
+version: 2
+
+models:
+  - name: fact_daily_kpi
+    description: >
+      Canonical day-grain fact table for all connectors.
+      One row per project_id × date × connector × metric × breakdown_dimension × breakdown_value.
+      AD-4: additive metrics only (sessions, active_users, conversions).
+      Ratios (CVR, sessions_per_user) are computed at query time by the semantic layer (Story 4.1+).
+      AD-7: pull_id propagated from raw load batch for full provenance chain.
+      AD-14: project_id present from P0; real project resolution deferred to Story 2.3.
+    tests:
+      # F-05: grain uniqueness — a duplicate row at the canonical grain means
+      # double-counted KPIs in the widget. With F-03's QUALIFY dedup this must
+      # always hold, even after multiple loader runs.
+      - unique:
+          name: fact_daily_kpi_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || connector || '|' || metric || '|' || breakdown_dimension || '|' || breakdown_value"
+    columns:
+      - name: project_id
+        description: "P0 placeholder: always 'default'. Real project routing from Story 2.3 (AD-14)."
+        tests:
+          - not_null
+
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+
+      - name: connector
+        description: "Connector identifier, e.g. 'google-analytics' or 'meta-ads'."
+        tests:
+          - not_null
+
+      - name: metric
+        description: >
+          Canonical additive metric name. Source-agnostic (Story 3.6): any module
+          may contribute additive metrics (e.g. sessions, active_users, conversions,
+          cost, impressions, clicks). Ratios are forbidden (AD-4) and enforced by
+          the metric_not_ratio gate below rather than an allow-list, so a new
+          module needs no edit here.
+        tests:
+          - not_null
+          - metric_not_ratio:  # AC6 additive-only gate (AD-4), source-agnostic
+              name: fact_kpi_metric_additive_only
+
+      - name: breakdown_dimension
+        description: >
+          Canonical breakdown dimension (e.g. device_category, country, campaign_id,
+          adset_id, ad_id, page, device). Story 8.11 (R5): composite sub-dimension
+          splits use a '>' path separator, e.g. 'country>device'. A composite is one
+          more parallel series that independently totals the day (grain-unique still
+          holds because its dimension+value pair is distinct). Marts needing a day
+          total pick a canonical single dimension via MIN(breakdown_dimension), which
+          never selects a composite -- for GA4 'country' < 'country>device' <
+          'device_category'; for GSC 'country' < 'country>device' < 'device' < 'page' <
+          'query' < 'query>page' (Story 10.5 adds the query and query>page grains; both
+          sort AFTER 'page' so MIN(breakdown_dimension) still selects 'country', never a
+          composite -- consistent with the fact_daily_kpi.sql query>page block comment).
+          AI-51 (Epic 8): the country>device composite is emitted for GA4 (Story 8.11)
+          AND gsc (both land country + device on the same source row). meta-ads is
+          skipped -- it lands neither country nor device (campaign/adset/ad grain only).
+          Epic 10 (story 10.1): GA4 adds a fourth parallel breakdown 'user_type'
+          (values new/returning/unknown, from the newVsReturning dimension). It is
+          additive-only and does NOT change device_category/country totals. The
+          grain-unique SQL expression below covers it automatically (its
+          breakdown_dimension+value pair is distinct). Canonical-dim MIN order:
+          'country' < 'country>device' < 'device_category' < 'user_type', so 'user_type'
+          is NEVER selected by MIN(breakdown_dimension) -- no double count.
+          Epic 10 (story 10.3): GA4 adds two MORE parallel breakdowns from the pages
+          profiles -- 'landing_page' (metric sessions, from landingPage) and 'page'
+          (metric screen_page_views, from pagePath). Both are TOP-N bounded upstream
+          (the pull applies orderBys metric DESC + limit=page_top_n; the long tail is
+          dropped by design, so these partitions do NOT sum to the connector daily
+          total -- documented on the fact_daily_kpi.sql page blocks, NOT asserted as a
+          reconciliation). Both are additive-only and do NOT change the existing
+          totals; the grain-unique SQL below covers them by construction. Full GA4
+          canonical-dim MIN order after 10.3:
+          'country' < 'country>device' < 'device_category' < 'landing_page' < 'page'
+          < 'user_type'. So MIN(breakdown_dimension) STILL selects 'country' -- never
+          'landing_page' or 'page' -- no double count. NB the GA4 'page' partition
+          (connector='google-analytics') is distinct from the GSC 'page' partition
+          (connector='gsc'); fact_daily_kpi keys on connector so they never collide.
+          Non-additive metrics are NEVER composited additively (average_position lives
+          only in the semantic views: semantic_avg_position and, at composite grain,
+          semantic_avg_position_composite -- AI-52).
+        tests:
+          - not_null
+
+      - name: breakdown_value
+        description: >
+          Dimension value, e.g. 'desktop', 'France'. For composite dimensions
+          (Story 8.11) the value is the '>'-joined path in parent>child order,
+          e.g. 'FR>mobile' for breakdown_dimension 'country>device'.
+        tests:
+          - not_null
+
+      - name: value
+        description: "Additive metric value (DOUBLE). AD-4: never a ratio."
+        tests:
+          - not_null
+
+      - name: pull_id
+        description: "Provenance ID (pull_<ULID>). Links back to the raw load batch (AD-7)."
+        tests:
+          - not_null
+          # AC6: provenance integrity — every mart pull_id must be well-formed
+          # (pull_ prefix). Source-agnostic (Story 3.6): staging selects pull_id
+          # straight from each module's own raw table, so a single-raw-table
+          # relationships test cannot span connectors. See test_pull_id_well_formed.sql.
+          - pull_id_well_formed:
+              name: fact_kpi_pull_id_in_raw  # AC6 provenance integrity gate (source-agnostic)
+
+      - name: loaded_at
+        description: "UTC ISO-8601 timestamp of the raw load that produced this row."
+        tests:
+          - not_null
+
+  # Story 12.4: the governed FULL-GRAIN relation. A DISTINCT artifact from
+  # fact_daily_kpi (two relations, one truth): it preserves every selected
+  # dimension at the declared joint grain as its own typed column, plus grain_key
+  # + all source measures + provenance. Materializing it writes NOTHING to
+  # fact_daily_kpi (proven by test_full_grain_isolated_from_fact_kpi.sql).
+  - name: candidate_full_grain
+    description: >
+      Story 12.4 governed full-grain relation. One row per the declared JOINT
+      grain (v1: project_id x date x device_category x country -- the GA4 standard
+      grain), every dimension kept as its own typed column (NEVER a long-format
+      breakdown_dimension/breakdown_value pair), every source measure kept at
+      full grain, a deterministic grain_key for AI-05 uniqueness, and provenance
+      columns (execution_id, pull_id, mapping_version_id, plan_version_id,
+      loaded_at). DISTINCT artifact from fact_daily_kpi: the safe projection
+      derives the canonical fact via server/core/datastream_projection.py compile
+      gates (additive measures + ONE governed dimension), never by projecting the
+      full grain directly into fact_daily_kpi. AD-8: dbt is the only writer.
+    config:
+      materialized: table
+    tests:
+      # AI-05 grain uniqueness at the FULL joint grain key (grain_key). Mirrors
+      # fact_daily_kpi_grain_unique exactly: no two rows share a grain identity,
+      # so the full-grain relation carries explicit grain identity (no grain-bleed).
+      - unique:
+          name: candidate_full_grain_grain_unique
+          arguments:
+            column_name: "grain_key"
+    columns:
+      - name: project_id
+        description: "Project identifier."
+        tests:
+          - not_null
+      - name: connector
+        description: "Connector identifier (source-agnostic column, carried for scope)."
+        tests:
+          - not_null
+      - name: date
+        description: "Grain column: ISO-8601 date at day grain (own typed column)."
+        tests:
+          - not_null
+      - name: device_category
+        description: "Grain column: canonical device category (own typed column, not collapsed)."
+        tests:
+          - not_null
+      - name: country
+        description: "Grain column: ISO country code (own typed column, not collapsed)."
+        tests:
+          - not_null
+      - name: grain_key
+        description: >
+          Deterministic '|'-joined ordered grain values (project_id|date|
+          device_category|country). AI-05 uniqueness key: no two rows share it.
+        tests:
+          - not_null
+          - unique
+      - name: sessions
+        description: "Source measure preserved at full grain (not aggregated away)."
+      - name: active_users
+        description: "Source measure preserved at full grain (not aggregated away)."
+      - name: conversions
+        description: "Source measure preserved at full grain (not aggregated away)."
+      - name: execution_id
+        description: >
+          Provenance: candidate execution id (dse_<ULID>). Populated by the Story
+          12.5 publication-triggered build via the dbt var('execution_id'); honest
+          NULL when built without that variable (pure-dbt v1 / CI). Proven non-NULL
+          after a publication-context build by test_candidate_provenance_complete.sql.
+      - name: pull_id
+        description: "Provenance: raw load batch id (pull_<ULID>)."
+        tests:
+          - not_null
+      - name: mapping_version_id
+        description: >
+          Provenance: the immutable 12.3 mapping version (dmap_<ULID>). Populated by
+          the Story 12.5 publication-triggered build via var('mapping_version_id');
+          honest NULL in the v1 GA4 wiring / CI.
+      - name: plan_version_id
+        description: >
+          Provenance: the 12.2 plan version (dsp_<ULID>). Populated by the Story
+          12.5 publication-triggered build via var('plan_version_id'); honest NULL
+          in the v1 GA4 wiring / CI.
+      - name: loaded_at
+        description: "Provenance: UTC ISO-8601 timestamp of the raw load."
+        tests:
+          - not_null
+
+  # Story 4.1 (AC7): ratio metric semantic views — materialized as VIEW, never as table (HG-3)
+  # These views compute ratio metrics at query time and are NOT stored in fact_daily_kpi (AD-4).
+
+  - name: semantic_ctr
+    description: >
+      Click-Through Rate semantic view (Story 4.1, AC7).
+      CTR = SUM(clicks) / NULLIF(SUM(impressions), 0) per grain.
+      Materialized as VIEW (HG-3: ratio metrics never stored).
+      HG-1: no module-specific strings.
+    config:
+      materialized: view
+    columns:
+      - name: project_id
+        tests:
+          - not_null
+      - name: date
+        tests:
+          - not_null
+      - name: connector
+        tests:
+          - not_null
+      - name: breakdown_dimension
+        tests:
+          - not_null
+      - name: breakdown_value
+        tests:
+          - not_null
+      - name: ctr
+        description: "Click-through rate (clicks/impressions). NULL when no impressions data."
+      - name: pull_id
+        tests:
+          - not_null
+
+  - name: semantic_cpa
+    description: >
+      Cost Per Acquisition semantic view (Story 4.1, AC7).
+      CPA = SUM(cost) / NULLIF(SUM(conversions), 0) per grain.
+      Materialized as VIEW (HG-3: ratio metrics never stored).
+      HG-1: no module-specific strings.
+    config:
+      materialized: view
+    columns:
+      - name: project_id
+        tests:
+          - not_null
+      - name: date
+        tests:
+          - not_null
+      - name: connector
+        tests:
+          - not_null
+      - name: breakdown_dimension
+        tests:
+          - not_null
+      - name: breakdown_value
+        tests:
+          - not_null
+      - name: cpa
+        description: "Cost per acquisition (cost/conversions). NULL when no conversions data."
+      - name: pull_id
+        tests:
+          - not_null
+
+  - name: semantic_roas
+    description: >
+      Return On Ad Spend semantic view (Story 4.1, AC7).
+      ROAS = SUM(revenue) / NULLIF(SUM(cost), 0) per grain.
+      Materialized as VIEW (HG-3: ratio metrics never stored).
+      HG-1: no module-specific strings.
+      NOTE: No module currently supplies 'revenue' metric — roas returns NULL for all rows
+      until a revenue-reporting module is added in a future epic.
+    config:
+      materialized: view
+    columns:
+      - name: project_id
+        tests:
+          - not_null
+      - name: date
+        tests:
+          - not_null
+      - name: connector
+        tests:
+          - not_null
+      - name: breakdown_dimension
+        tests:
+          - not_null
+      - name: breakdown_value
+        tests:
+          - not_null
+      - name: roas
+        description: "Return on ad spend (revenue/cost). NULL when no revenue data or zero cost."
+      - name: pull_id
+        tests:
+          - not_null
+
+  - name: dim_project
+    description: >
+      Project dimension materialised from the governed mirror (Story 4.4, AC5).
+      AD-8: Postgres is the sole writer; dbt reads from mirror.project_preferences only.
+      Materialized as table -- small, stable governance data, joins efficiently.
+      Story 5.3 will extend with alert_definitions count via mirror.alert_definitions.
+      Story 17.1: ajout des 3 colonnes source de vérification (nullable, opt-in).
+      Story 17.2 (dedup_estimate) lira ces colonnes pour identifier la source de vérité
+      par projet et filtrer les leads GA4 sur lead_event_name.
+    config:
+      materialized: table
+    tests:
+      - unique:
+          name: dim_project_project_id_unique
+          arguments:
+            column_name: project_id
+    columns:
+      - name: project_id
+        description: "Project identifier. Primary key."
+        tests:
+          - not_null
+          - unique
+      - name: canonical_currency
+        description: "ISO-4217 currency code for cost normalization (e.g. EUR)."
+        tests:
+          - not_null
+      - name: reporting_timezone
+        description: "IANA timezone name for date-labeling policy (e.g. Europe/Paris)."
+        tests:
+          - not_null
+      - name: verification_source_type
+        description: >
+          Story 17.1: type de source de vérification absolue des conversions.
+          Valeurs : 'ga4' (leads), 'shopify' (ventes), 'stripe' (revenus), NULL (non configuré).
+          NULL = déduplication désactivée pour ce projet (opt-in).
+          Stripe disponible après story 15.7 (préférence déclarative stockable dès maintenant).
+        tests:
+          # review-17-1 F-8: aligné sur la contrainte CHECK de la migration 028 —
+          # le mart porte la même garantie que Postgres (NULLs ignorés par le test).
+          - accepted_values:
+              arguments:
+                values: ["ga4", "shopify", "stripe"]
+      - name: verification_source_id
+        description: >
+          Story 17.1: identifiant du datastream/profil désigné comme source de vérité.
+          Référence applicative (pas de FK SQL) vers app.datastreams.id.
+          NULL si non configuré.
+      - name: lead_event_name
+        description: >
+          Story 17.1: nom de l'événement GA4 représentant un lead
+          (ex: 'generate_lead', 'form_submit', 'trial_signup').
+          Pertinent uniquement quand verification_source_type = 'ga4'.
+          Défaut applicatif : 'generate_lead' (non stocké si non fourni).
+          Story 17.2 filtrera fact_daily_kpi sur ce nom d'événement pour obtenir
+          les leads réels (verified_total).
+          NULL si non configuré.
+      - name: created_at
+        description: "UTC timestamp of project_preferences row creation in Postgres."
+      - name: updated_at
+        description: "UTC timestamp of last update to project_preferences in Postgres."
+
+  - name: metric_baselines
+    description: >
+      Rolling mean and stddev per (project_id, connector, metric, date).
+      Grain: one row per project_id × connector × metric × date (single-dimension totals).
+      Story 5.4 (AD-13): feeds anomalies_daily for z-score anomaly detection.
+      Anti-double-count: uses canonical_dim pattern (same as cross_source_conversions)
+      to pick ONE breakdown_dimension per (project, connector, metric) before aggregating.
+      ANOMALY_BASELINE_WINDOW env var controls trailing window (default 29 = 30-day window).
+    columns:
+      - name: project_id
+        description: "Project identifier."
+        tests:
+          - not_null
+      - name: connector
+        description: "Connector identifier (e.g. google-analytics, meta-ads)."
+        tests:
+          - not_null
+      - name: metric
+        description: "Additive metric name (e.g. sessions, clicks)."
+        tests:
+          - not_null
+      - name: date
+        description: "ISO-8601 date at day grain."
+        tests:
+          - not_null
+      - name: metric_value
+        description: "Observed day-level total for this metric (single-dimension canonical total)."
+        tests:
+          - not_null
+      - name: rolling_mean
+        description: "Trailing rolling average over ANOMALY_BASELINE_WINDOW preceding rows."
+      - name: rolling_stddev
+        description: "Trailing rolling sample stddev. NULL when fewer than 2 data points."
+
+  - name: anomalies_daily
+    description: >
+      Daily z-score anomaly detection per (project_id, connector, metric, date).
+      Story 5.4 (AD-13). Method: z = (observed - rolling_mean) / rolling_stddev.
+      Only rows where |z| >= ANOMALY_Z_THRESHOLD (default 3.0) are included.
+      No black box: formula documented here and in docs/anomaly-detection-method.md (AD-9).
+      Inherits anti-double-count guard from metric_baselines (canonical_dim).
+    columns:
+      - name: project_id
+        description: "Project identifier."
+        tests:
+          - not_null
+      - name: connector
+        description: "Connector identifier."
+        tests:
+          - not_null
+      - name: metric
+        description: "Metric name."
+        tests:
+          - not_null
+      - name: date
+        description: "Anomaly date."
+        tests:
+          - not_null
+      - name: observed_value
+        description: "Observed metric value on the anomaly date."
+        tests:
+          - not_null
+      - name: expected_value
+        description: "Rolling mean (expected value from baseline)."
+      - name: rolling_stddev
+        description: "Rolling sample stddev used for z-score computation."
+      - name: zscore
+        description: "Z-score: (observed - mean) / stddev. NULL excluded by WHERE clause."
+        tests:
+          - not_null
+
+  - name: semantic_avg_position
+    description: >
+      Impression-weighted average position semantic view (Story 6.2, AD-4).
+      THE ONLY correct aggregation path for average_position from GSC.
+      Formula: SUM(average_position * impressions) / SUM(impressions) per grain.
+      Materialized as VIEW (non-additive metrics are NEVER stored pre-aggregated).
+      HG-1: connector='gsc' filter is the only connector-specific string here;
+      the join logic itself is source-agnostic.
+    config:
+      materialized: view
+    columns:
+      - name: project_id
+        description: "Project identifier."
+        tests:
+          - not_null
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: connector
+        description: "Connector identifier — currently 'gsc' only."
+        tests:
+          - not_null
+      - name: breakdown_dimension
+        description: "Canonical breakdown dimension (page, country, device)."
+        tests:
+          - not_null
+      - name: breakdown_value
+        description: "Dimension value."
+        tests:
+          - not_null
+      - name: average_position
+        description: >
+          Impression-weighted average position. THE ONLY correct aggregation of this metric.
+          Formula: SUM(position_i * impressions_i) / SUM(impressions_i).
+          Range: 1.0 (top of SERP) to ~100.0.
+        tests:
+          - value_between:
+              arguments:
+                min_value: 1.0
+                max_value: 100.0
+              config:
+                severity: warn
+      - name: pull_id
+        description: "Provenance ID from the underlying fact_daily_kpi rows."
+      - name: loaded_at
+        description: "UTC load timestamp."
+
+  - name: semantic_avg_position_composite
+    description: >
+      Impression-weighted average_position at the country>device COMPOSITE grain for
+      GSC (AI-52, Epic 8). The correct non-additive companion to AI-51's additive
+      country>device composite in fact_daily_kpi. Formula:
+      SUM(average_position * impressions) / NULLIF(SUM(impressions), 0)
+      GROUP BY project_id, date, country, device.
+      TRUE composite (not a fallback): stg_gsc_daily lands country AND device on the
+      same row, so impressions is a genuine per-(country,device) weight -- computed
+      directly from staging rows, never from mart aggregates (review-6-2 rule).
+      Materialized as VIEW (non-additive metrics are NEVER stored pre-aggregated, HG-3).
+      NULL average_position when a cell's impressions sum to zero (NULLIF, honest).
+    config:
+      materialized: view
+    tests:
+      # Grain uniqueness (AI-05): one row per project x date x connector x composite value.
+      - unique:
+          name: semantic_avg_position_composite_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || connector || '|' || breakdown_dimension || '|' || breakdown_value"
+    columns:
+      - name: project_id
+        description: "Project identifier."
+        tests:
+          - not_null
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: connector
+        description: "Connector identifier -- 'gsc' only."
+        tests:
+          - not_null
+      - name: breakdown_dimension
+        description: >
+          Composite path dimension: 'country>device' (page rolled up) or, since Story 10.5,
+          'query>page' (cannibalisation grain). Mirrors the fact composite encoding.
+        tests:
+          - not_null
+      - name: breakdown_value
+        description: "Composite path value in parent>child order, e.g. 'fra>mobile' or 'chaussures>/sport/'."
+        tests:
+          - not_null
+      - name: country
+        description: >
+          Parent component of the country>device composite (country code), exposed for
+          convenience. NULL for the Story 10.5 'query>page' rows (that grain has no
+          country axis) -- the not_null test is scoped to the country>device rows only.
+        tests:
+          - not_null:
+              config:
+                where: "breakdown_dimension = 'country>device'"
+      - name: device
+        description: >
+          Child component of the country>device composite (device type), exposed for
+          convenience. NULL for the Story 10.5 'query>page' rows -- test scoped accordingly.
+        tests:
+          - not_null:
+              config:
+                where: "breakdown_dimension = 'country>device'"
+      - name: average_position
+        description: >
+          Impression-weighted average position at the country>device grain. THE ONLY
+          correct aggregation of this non-additive metric at composite grain.
+          NULL when the cell's total impressions is zero (NULLIF zero-division guard).
+        tests:
+          - value_between:
+              arguments:
+                min_value: 1.0
+                max_value: 100.0
+              config:
+                severity: warn
+      - name: impressions_weight
+        description: "SUM(impressions) for the cell -- the denominator/weight (also proves the weighting basis)."
+      - name: pull_id
+        description: "Provenance ID from the underlying staging rows."
+      - name: loaded_at
+        description: "UTC load timestamp."
+
+  - name: customer_journeys
+    description: >
+      v1 attribution mart (Epic 16, story 16.2). Two attribution perspectives SIDE BY
+      SIDE derived from the story-16.1 acquisition partitions in fact_daily_kpi:
+      last click (session_source_medium / session_campaign) and first click
+      (first_user_source_medium). READ-ONLY view over fact_daily_kpi -- it lands NO new
+      fact rows and edits NO existing model (fact_daily_kpi / cross_source_conversions /
+      metric_baselines are untouched).
+      GRAIN: one row per project_id x date x attribution_model x breakdown_kind x
+      channel x campaign, with attribution_model in ('last_click','first_click') and
+      breakdown_kind in ('channel','campaign'). A 'channel' row carries the source/medium
+      (campaign NULL); a 'campaign' row carries the campaign name (channel NULL). These
+      are MARGINAL axes -- fact_daily_kpi carries no joint (channel x campaign) partition
+      (a cross-join story 16.1 deliberately did not land), so v1 exposes the same
+      marginals and never invents a (channel, campaign) pair. first_click has NO campaign
+      axis (16.1 landed first_user_source_medium only), so campaign is ALWAYS NULL on
+      first_click rows. Metrics: last_click carries conversions AND sessions; first_click
+      carries conversions ONLY (sessions is NULL on every first_click row -- the first-user
+      axis never carried sessions in 16.1; honest NULL, not zero).
+      share_of_conversions: computed at VIEW TIME as this row's conversions over the
+      SUBTOTAL of its (project_id, date, attribution_model, breakdown_kind) group. Because
+      the acquisition axes are TOP-N BOUNDED upstream (16.1: long tail dropped by design),
+      that subtotal is the TOP-N subtotal -- share_of_conversions is a share of the RANKED
+      TOP-N, NOT of the true GA4 day total (same descriptive "Part" honesty as story 10.4).
+      Shares of a (project, date, model, breakdown_kind) group sum to ~100 (rounding). We
+      do NOT pool channel + campaign into one denominator (that would double-count the
+      model subtotal). AD-9: descriptive shares only -- no attributed_revenue, no causal
+      claim; last and first are presented side by side, NEVER summed. AD-7: pull_id /
+      loaded_at propagated as MAX per group (same convention as fact_daily_kpi).
+      Materialized as VIEW (derived/read-only; no pre-aggregation stored).
+    config:
+      materialized: view
+    tests:
+      # Grain uniqueness (AI-05): one row per project x date x model x kind x channel x
+      # campaign. channel is NULL on 'campaign' rows and campaign is NULL on 'channel'
+      # rows; COALESCE to a sentinel so the concatenated key is stable across NULLs.
+      - unique:
+          name: customer_journeys_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || attribution_model || '|' || breakdown_kind || '|' || COALESCE(channel, '~') || '|' || COALESCE(campaign, '~')"
+    columns:
+      - name: project_id
+        description: "Project identifier."
+        tests:
+          - not_null
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: attribution_model
+        description: "Attribution perspective: 'last_click' (session axis) or 'first_click' (first-user axis). NEVER summed across models."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["last_click", "first_click"]
+      - name: breakdown_kind
+        description: >
+          Axis type of this row: 'channel' (breakdown_value is a source/medium, campaign
+          NULL) or 'campaign' (breakdown_value is a campaign name, channel NULL). first_click
+          emits 'channel' rows only.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["channel", "campaign"]
+      - name: channel
+        description: "Source/medium value on 'channel' rows (e.g. 'google / cpc'); NULL on 'campaign' rows."
+      - name: campaign
+        description: "Campaign name on last_click 'campaign' rows; NULL on 'channel' rows and on ALL first_click rows (no first-user campaign axis in 16.1)."
+      - name: conversions
+        description: "Conversions carried by this axis value (additive, from fact_daily_kpi). A TOP-N-bounded subset of the day total (long tail dropped upstream)."
+      - name: sessions
+        description: "Sessions carried by this axis value. Populated for last_click only; NULL on every first_click row (the first-user axis never carried sessions in 16.1)."
+      - name: share_of_conversions
+        description: >
+          This row's conversions as a percentage (0-100) of its (project, date,
+          attribution_model, breakdown_kind) TOP-N subtotal. Descriptive "Part" of the
+          ranked top-N (story 10.4 honesty), NOT a share of the true GA4 day total. NULL
+          when the group subtotal is zero (NULLIF guard). Sums to ~100 per group (rounding).
+      - name: pull_id
+        description: "Provenance ID (MAX per group) from the underlying fact_daily_kpi acquisition rows (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp (MAX per group) from the underlying fact rows."
+
+  - name: cross_source_conversions
+    description: >
+      Semantic dedup view for cross-source conversion totals (AD-4-conversions, Story 3.7).
+      Implements Rule P (Priority): google-analytics is priority-1 for conversions.
+      Returns at most one row per (project_id, date) — the GA4 value when available,
+      otherwise the Meta Ads value. Per-source values remain independently queryable
+      from fact_daily_kpi WHERE metric = 'conversions'.
+    columns:
+      - name: project_id
+        description: "Project identifier."
+        tests:
+          - not_null
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: conversions_total
+        description: "Deduplicated conversion value from the priority source (Rule P)."
+        tests:
+          - not_null
+      - name: attribution_source
+        description: "Connector that provided the value ('google-analytics' or 'meta-ads')."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from the priority source row."
+        tests:
+          - not_null
+
+  - name: cross_source_revenue
+    description: >
+      Semantic dedup view for cross-source revenue totals (AD-4, Story 15.7). MIROIR EXACT de
+      cross_source_conversions (3.7) applique a 'revenue'. Implements Rule P (Priority):
+      shopify est priorite-1 pour revenue (source de verite ventes e-commerce), stripe priorite-2.
+      Retourne au plus une ligne par (project_id, date) -- la valeur du connecteur gagnant selon
+      metric_source_priority.csv. POURQUOI : revenue est emis par shopify ET stripe ; un paiement
+      Stripe qui regle une commande Shopify mesure la MEME vente -- sommer les deux double-compterait.
+      Les valeurs par source restent independamment interrogeables depuis fact_daily_kpi
+      WHERE metric = 'revenue'. Un projet SaaS pur (stripe seul) prend trivialement stripe ;
+      un projet e-commerce avec les deux voit shopify gagner.
+    columns:
+      - name: project_id
+        description: "Project identifier."
+        tests:
+          - not_null
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: revenue_total
+        description: "Deduplicated revenue value from the priority source (Rule P)."
+        tests:
+          - not_null
+      - name: revenue_source
+        description: "Connector that provided the value ('shopify' or 'stripe')."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from the priority source row."
+        tests:
+          - not_null
+
+  - name: dedup_estimate
+    description: >
+      Estimated deduplication of régie-claimed conversions against a project-designated
+      source of truth (Epic 17, Story 17.2 / CAP-20 / FR23). READ-ONLY view over
+      fact_daily_kpi + dim_project -- it lands NO new fact rows and edits NO existing
+      model (fact_daily_kpi / cross_source_conversions / metric_baselines are strictly
+      UNTOUCHED, AD-4/AD-6; the "totaux inchangés" discipline of review-epic-10). It
+      GENERALISES the Story 3.7 dedup rule (cross_source_conversions picks ONE winning
+      source per day; here each claiming régie's WEIGHTED contribution is estimated
+      against the designated truth) -- it does NOT duplicate or modify 3.7.
+      GRAIN: one row per project_id x date x channel_connector (a régie that claims
+      conversions that day). Per-(project,date) aggregates (verified_total, claimed_total,
+      duplication_rate) are repeated on each channel row so it is self-describing;
+      deduplicated_contribution is the per-channel value.
+      FORMULAS (doc/synthese §2.2): duplication_rate = SUM(claimed) / NULLIF(verified,0);
+      deduplicated_contribution = claimed_channel * verified / NULLIF(SUM(claimed),0).
+      The contributions across channels sum to verified_total when verified is non-NULL
+      (test_dedup_estimate_contribution_reconciliation.sql).
+      OPT-IN: a project with verification_source_type = NULL produces ZERO rows
+      (test_dedup_estimate_opt_in_only.sql) -- dedup is opt-in per project.
+      SOURCE OF TRUTH per dim_project.verification_source_type: 'ga4' -> GA4 conversions on
+      the canonical single dimension (MIN(breakdown_dimension), never the sum of parallel
+      partitions); 'shopify' -> orders_count on 'day_total' (15.4); 'stripe' -> NULL v1
+      (module 15.7 NOT delivered -- documented gap, never an invented number).
+      HONESTY 1 (BLOCKED 16.1 AC10 Phase B): fact_daily_kpi does NOT carry GA4 event NAMES,
+      so verified_total for 'ga4' is the connector TOTAL conversions, NOT filtered to
+      lead_event_name. The per-event lead filter arrives with Story 16.1 AC10 Phase B.
+      lead_event_name is carried into the output for provenance (which event the project
+      designated) but does not yet change the number.
+      HONESTY 2 (anti-double-count, review-1-6): claimed is a régie's total on its ONE
+      canonical partition declared in the conversion_claimants seed (never the sum of its
+      parallel campaign_id/adset_id/ad_id partitions) --
+      test_dedup_estimate_claimed_is_canonical_partition.sql.
+      HONESTY 3 (AD-9 honest degrade): duplication_rate is NULL whenever verified is NULL/0
+      (régies indisponibles / stripe v1 / no truth) -- never a disguised 0% duplication or
+      a masked division by zero (test_dedup_estimate_rate_null_when_unverified.sql).
+      CLAIMANTS ARE DECLARATIVE: the list of conversion-claiming régies lives in
+      dbt/seeds/conversion_claimants.csv (v1 = meta-ads only; GA4 conversions is the TRUTH
+      source, not a claimant). Adding TikTok / LinkedIn / Google Ads is a one-line seed edit.
+      This is an aggregate ESTIMATION (estimate_label = 'estimation' on every row), NOT a
+      user-level join -- the finer user-level reconciliation is Phase B (BigQuery
+      user_pseudo_id, CAP-14/AD-14).
+    config:
+      materialized: view
+    tests:
+      # Grain uniqueness (AI-05): one row per project x date x channel_connector.
+      - unique:
+          name: dedup_estimate_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || channel_connector"
+    columns:
+      - name: project_id
+        description: "Project identifier."
+        tests:
+          - not_null
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: channel_connector
+        description: >
+          Claiming régie connector (e.g. 'meta-ads'), from the conversion_claimants seed.
+          review-17-2 F-3 -- seed semantics vs metric_source_priority.csv: conversion_claimants
+          lists WHO CLAIMS conversions (the régies being deduplicated); metric_source_priority
+          lists WHO WINS as the 3.7 truth. GA4 is priority-1 truth in the latter and
+          DELIBERATELY ABSENT from the former (the truth source is never a claimant) --
+          not an inconsistency.
+        tests:
+          - not_null
+      - name: claimed_conversions
+        description: >
+          Conversions this régie claims on the day, on its ONE canonical breakdown
+          partition (never the sum of its parallel partitions -- HONESTY 2).
+        tests:
+          - not_null
+      - name: verified_total
+        description: >
+          Real conversion volume from the designated source of truth
+          (dim_project.verification_source_type). 'ga4' -> GA4 conversions on the canonical
+          single dimension (TOTAL conversions, NOT filtered to lead_event_name -- HONESTY 1,
+          BLOCKED 16.1 AC10 Phase B); 'shopify' -> orders_count 'day_total'; 'stripe' -> NULL
+          v1 (module 15.7 not delivered). NULL is honest (never an invented number).
+      - name: claimed_total
+        description: "SUM of claimed_conversions over all claiming régies for this (project, date)."
+        tests:
+          - not_null
+      - name: verification_source_type
+        description: "The project's designated truth type ('ga4' | 'shopify' | 'stripe'), from dim_project."
+        tests:
+          - not_null
+      - name: verification_source_id
+        description: "The designated datastream/profile id (provenance). May be NULL if not set."
+      - name: lead_event_name
+        description: >
+          The GA4 lead event the project designated (provenance only). NOT yet used to
+          filter verified_total -- event-name filtering is BLOCKED on 16.1 AC10 Phase B
+          (HONESTY 1). May be NULL for non-ga4 truth types.
+      - name: duplication_rate
+        description: >
+          SUM(claimed) / NULLIF(verified, 0). NULL when verified is NULL/0 (régies
+          indisponibles / stripe v1) -- never a disguised 0 (HONESTY 3, AD-9).
+      - name: deduplicated_contribution
+        description: >
+          claimed_channel * verified / NULLIF(SUM(claimed), 0). The régie's estimated
+          net contribution after removing cross-régie overlap; contributions across
+          channels sum to verified_total (reconciliation test). NULL when verified is
+          NULL or claimed_total is 0.
+      - name: estimate_label
+        description: "Constant 'estimation' (AD-9): this is an aggregate estimate, never an exact measure."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["estimation"]
+      - name: pull_id
+        description: "Provenance ID (MAX per group) from the claimed régie's fact rows (AD-7)."
+        tests:
+          - not_null
+
+  - name: transaction_reconciliation
+    description: >
+      MEASURED Shopify x GA4 sales reconciliation via transaction_id (Epic 17, Story 17.4 /
+      CAP-20 / FR23 -- doc/synthese §3.2). READ-ONLY view: FULL OUTER JOIN of
+      stg_shopify_orders_daily (transaction_id non-NULL) and stg_ga4_transactions_daily
+      (transaction_id non-NULL) by (project_id, date, transaction_id). Lands NO new fact
+      rows and edits NO existing model (fact_daily_kpi / cross_source_conversions /
+      dedup_estimate / customer_journeys are strictly UNTOUCHED, AD-4/AD-6). The transaction
+      grain lives ONLY here + in stg_ga4_transactions_daily -- it NEVER enters fact_daily_kpi
+      (a per-transaction row is a JOIN KEY, not a breakdown partition; lesson epic-10 +
+      decision 15.4).
+      GRAIN (detail): one row per project_id x date x transaction_id, with match_status in
+      ('matched','shopify_only','ga4_only'). The DAILY coverage_rate lives in the separate
+      transaction_reconciliation_daily model (one clean grain per model, AI-05).
+      This is a MEASURED overlap (estimate_label = 'measured_reconciliation'), NOT an
+      attribution (AD-9): "N transactions matched" is a data observation, never a causal
+      claim. F-7: Shopify/GA4 transactions with a NULL id are unreconcilable and excluded
+      from the join (measured separately in the daily rollup, never a fake match bucket).
+    config:
+      materialized: view
+    tests:
+      # Grain uniqueness (AI-05): one row per project x date x transaction_id.
+      - unique:
+          name: transaction_reconciliation_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || transaction_id"
+    columns:
+      - name: project_id
+        description: "Project identifier (COALESCE of both sides for FULL OUTER JOIN rows)."
+        tests:
+          - not_null
+      - name: date
+        description: "ISO-8601 date string at day grain (COALESCE of both sides)."
+        tests:
+          - not_null
+      - name: transaction_id
+        description: "The shared transaction id join key (COALESCE of both sides)."
+        tests:
+          - not_null
+      - name: match_status
+        description: >
+          'matched' (both sides), 'shopify_only' (sale not seen in GA4), or 'ga4_only'
+          (GA4 transaction with no matching Shopify order).
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["matched", "shopify_only", "ga4_only"]
+      - name: shopify_revenue
+        description: "Shopify order revenue for this transaction (NULL on ga4_only rows)."
+      - name: shopify_orders
+        description: "Shopify orders_count for this transaction (NULL on ga4_only rows)."
+      - name: ga4_conversions
+        description: "GA4 conversions for this transaction (NULL on shopify_only rows)."
+      - name: ga4_revenue
+        description: "GA4 purchaseRevenue for this transaction (NULL on shopify_only rows)."
+      - name: estimate_label
+        description: >
+          Constant 'measured_reconciliation' (AD-9): a MEASURED overlap via a real id join,
+          never an attribution or an aggregate estimate (contrast dedup_estimate).
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["measured_reconciliation"]
+      - name: shopify_pull_id
+        description: "Provenance ID from the Shopify side (AD-7). NULL on ga4_only rows."
+      - name: ga4_pull_id
+        description: "Provenance ID from the GA4 side (AD-7). NULL on shopify_only rows."
+
+  - name: transaction_reconciliation_daily
+    description: >
+      Per-(project,date) rollup of the MEASURED Shopify x GA4 transaction reconciliation
+      (Epic 17, Story 17.4 -- doc/synthese §3.2). READ-ONLY view over
+      transaction_reconciliation + stg_shopify_orders_daily. Edits NO existing model
+      (fact_daily_kpi / cross_source_conversions / dedup_estimate UNTOUCHED, AD-4/AD-6).
+      GRAIN: one row per (project_id, date).
+      coverage_rate = matched_count / NULLIF(shopify_orders_with_txn, 0) -- the share of
+      RECONCILABLE Shopify sales that GA4 confirms (doc/synthese §3.2). NULL (never 0) when
+      there are no reconcilable Shopify orders -- honest "cannot measure" (AD-9), never a
+      disguised 0%. F-7 blind spot: shopify_orders_without_txn (orders with NO transaction_id,
+      no any-kind fallback per review-15-4 F-7) is reported SEPARATELY and EXCLUDED from the
+      coverage_rate denominator -- the blind spot is visible, never folded in to flatter the
+      rate. method = 'measured_reconciliation' (the 17.3 card reads it to say "reconciliee
+      par transaction (X%)" vs "estimation aggregee"). MEASURED overlap, NOT an attribution.
+    config:
+      materialized: view
+    tests:
+      # Grain uniqueness (AI-05): one row per project x date.
+      - unique:
+          name: transaction_reconciliation_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date"
+    columns:
+      - name: project_id
+        description: "Project identifier."
+        tests:
+          - not_null
+      - name: date
+        description: "ISO-8601 date string at day grain."
+        tests:
+          - not_null
+      - name: shopify_orders_with_txn
+        description: >
+          review-17-4 F-2 (honest unit): count of DISTINCT reconcilable transaction_ids
+          (matched + shopify_only detail rows), which approximates orders but COLLAPSES
+          when two orders share a representative transaction_id. The reconcilable
+          denominator of coverage_rate -- matched_count counts in the SAME unit, so the
+          ratio is consistent. The true order count is SUM(shopify_orders) on the detail
+          view if ever needed.
+        tests:
+          - not_null
+      - name: ga4_transactions
+        description: "Count of GA4 transactions with an id (matched + ga4_only)."
+        tests:
+          - not_null
+      - name: matched_count
+        description: "Count of transaction_ids present on BOTH sides."
+        tests:
+          - not_null
+      - name: coverage_rate
+        description: >
+          matched_count / NULLIF(shopify_orders_with_txn, 0). NULL when there are no
+          reconcilable Shopify orders (honest "cannot measure", never a disguised 0 -- AD-9).
+      - name: shopify_orders_without_txn
+        description: >
+          F-7 blind spot: Shopify orders with NO transaction_id (unreconcilable, no
+          any-kind fallback). Reported separately; EXCLUDED from the coverage_rate
+          denominator so it never flatters the rate.
+        tests:
+          - not_null
+      - name: method
+        description: >
+          Constant 'measured_reconciliation' (AD-9): distinguishes this MEASURED recovery
+          rate from dedup_estimate's aggregate 'estimation'.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["measured_reconciliation"]
+      - name: shopify_pull_id
+        description: "Provenance ID from the Shopify side (MAX per day, AD-7)."
+      - name: ga4_pull_id
+        description: "Provenance ID from the GA4 side (MAX per day, AD-7)."
+
+  # ===========================================================================
+  # Epic 22, Story 22.4: plan-vs-actual & pacing (CAP-26 / FR38). READ-ONLY
+  # views over the plan mirror + fact_daily_kpi. NO existing model is modified;
+  # fact_daily_kpi / cross_source_* / dedup_estimate are byte-identical with or
+  # without these marts (règle d'or AD-4/AD-6, pattern 12.4/17.2). The plan is a
+  # JOIN layer, never a rewrite. Provenance (plan_version_id + pull_id span) on
+  # every output row (AD-9). NULL is honest everywhere (Pace NULL when alloc-to-
+  # date=0, actual NULL for plan-only lines) -- never a disguised 0.
+  # ===========================================================================
+
+  - name: plan_vs_actual_daily
+    description: >
+      Per-day plan allocation vs ventilated real spend (Story 22.4). READ-ONLY view
+      over the plan mirror (media_plans / media_plan_versions / media_plan_lines /
+      plan_allocation_daily / plan_line_mappings) + fact_daily_kpi. Lands NO fact row
+      and edits NO existing model (fact_daily_kpi / cross_source_* / dedup_estimate
+      strictly UNTOUCHED, règle d'or AD-4/AD-6). Only the ACTIVE version's allocations
+      participate (media_plan_versions.is_active, décision 3). Real spend = fact_daily_kpi
+      rows metric='cost' AND breakdown_dimension='campaign_id' (campaign_ref =
+      breakdown_value -- the campaign reference the fact grain exposes), VENTILATED across
+      the lines that map each campaign by the ACTIVE mappings' split_weight (SUM=1.0 per
+      (plan, connector, campaign_ref), enforced in the store). Σ ventilated over the
+      claiming lines == the campaign's original daily spend EXACTLY (a campaign shared
+      0.5/0.5 contributes 50/50, never 100/100 -- the discriminant a naive JOIN fails;
+      test_plan_vs_actual_ventilation_sum.sql). is_plan_only lines are PRESENT with budget
+      + allocations but actual_amount NULL (never 0 -- décision 7). NEVER aggregates across
+      plans (grain keyed by plan_id, décision 5). Provenance: plan_version_id + actual_pull_id
+      (MAX per line/day, AD-7).
+    config:
+      materialized: view
+    tests:
+      - unique:
+          name: plan_vs_actual_daily_grain_unique
+          arguments:
+            column_name: >
+              project_id || '|' || plan_id || '|' || plan_version_id || '|'
+              || line_key || '|' || day
+    columns:
+      - name: project_id
+        description: "Project identifier (AD-5 scoping)."
+        tests:
+          - not_null
+      - name: plan_id
+        description: "Media plan root id (never aggregated across plans)."
+        tests:
+          - not_null
+      - name: plan_version_id
+        description: "The ACTIVE version whose allocation produced this row (AD-9 provenance)."
+        tests:
+          - not_null
+      - name: line_key
+        description: "Stable cross-version line identity (the mapping key, 22.3)."
+        tests:
+          - not_null
+      - name: day
+        description: "ISO day at fact_daily_kpi grain (union of allocated + spend days)."
+        tests:
+          - not_null
+      - name: label
+        description: "Line label (provenance / display)."
+      - name: channel
+        description: "Line channel/support (nullable -- rolled up as 'sans-canal' downstream)."
+      - name: currency
+        description: "Plan currency (single per plan; multi-currency is Phase B, AD-6)."
+      - name: budget
+        description: "The line's total budget (repeated per day so the row is self-describing)."
+        tests:
+          - not_null
+      - name: line_start_date
+        description: "Line flight start."
+        tests:
+          - not_null
+      - name: line_end_date
+        description: "Line flight end."
+        tests:
+          - not_null
+      - name: is_plan_only
+        description: >
+          TRUE for offline lines (TV, OOH) with no actuals source: budget + allocations
+          present but actual_amount NULL (no pacing, never a misleading 0% -- décision 7).
+        tests:
+          - not_null
+      - name: sort_order
+        description: "Line display order."
+      - name: allocated_amount
+        description: >
+          Planned daily allocation (linear spread, cent-exact) for this line/day. NULL on a
+          spend-but-no-allocation day (surfaced by the FULL OUTER JOIN, never hidden).
+      - name: actual_amount
+        description: >
+          Ventilated real spend for this line/day = Σ(campaign_daily_spend * split_weight)
+          over the campaigns this line maps ACTIVE. NULL when there is no real spend that day
+          (allocation-only day) or the line is plan-only (never 0 -- AD-9).
+      - name: actual_pull_id
+        description: "Provenance ID (MAX) of the fact rows that fed the ventilated spend (AD-7). NULL when no spend."
+
+  - name: plan_pacing_by_line
+    description: >
+      Per-line pacing to-date over plan_vs_actual_daily (Story 22.4). READ-ONLY. GRAIN: one
+      row per (project_id, plan_id, plan_version_id, line_key). TO-DATE ANCHOR (documented
+      choice): as_of_day = MAX(day WHERE actual_amount IS NOT NULL) over the WHOLE plan -- a
+      DETERMINISTIC warehouse-data-driven "today", NOT SQL CURRENT_DATE (which would make
+      tests time-dependent). Pacing compares the real PAST to the active plan (spike §3,
+      décision 3). When the plan has no real spend at all, as_of_day is NULL -> actual_to_date
+      and every ratio are NULL (honest "cannot pace yet", never 0). FORMULAS (ratios at view
+      level, AD-4): consumed_pct = actual_to_date / NULLIF(budget,0); pace =
+      (actual_to_date - allocated_to_date) / NULLIF(allocated_to_date,0) -- NULL when
+      allocated_to_date=0, never 0 (décision 6); remaining_budget = budget - actual_to_date;
+      extrapolated_spend = actual_to_date / NULLIF(days_elapsed,0) * days_total (run-rate,
+      NULL when days_elapsed=0). Worked example 3 000 EUR/30 j, 10 j, 1 250 EUR ->
+      consumed 41,7 %, pace +25 %, remaining 1 750 EUR, extrapolated 3 750 EUR
+      (test_plan_pacing_extrapolation.sql). is_plan_only lines keep budget + allocated_to_date
+      but actual_to_date NULL -> consumed_pct/pace/extrapolated ALL NULL (décision 7,
+      test_plan_pacing_plan_only_actual_null.sql). Provenance: plan_version_id + MIN/MAX/COUNT
+      DISTINCT of the underlying actual_pull_id (AD-9).
+    config:
+      materialized: view
+    tests:
+      - unique:
+          name: plan_pacing_by_line_grain_unique
+          arguments:
+            column_name: "project_id || '|' || plan_id || '|' || plan_version_id || '|' || line_key"
+    columns:
+      - name: project_id
+        tests: [not_null]
+        description: "Project identifier (AD-5)."
+      - name: plan_id
+        tests: [not_null]
+        description: "Media plan root id (never aggregated across plans)."
+      - name: plan_version_id
+        tests: [not_null]
+        description: "Active version (AD-9 provenance)."
+      - name: line_key
+        tests: [not_null]
+        description: "Stable line identity."
+      - name: label
+        description: "Line label."
+      - name: channel
+        description: "Line channel/support (nullable)."
+      - name: currency
+        description: "Plan currency."
+      - name: budget
+        tests: [not_null]
+        description: "Line total budget."
+      - name: line_start_date
+        description: "Line flight start."
+      - name: line_end_date
+        description: "Line flight end."
+      - name: is_plan_only
+        tests: [not_null]
+        description: "TRUE = offline line, no pacing (actual_to_date NULL)."
+      - name: sort_order
+        description: "Display order."
+      - name: as_of_day
+        description: "Plan-wide to-date anchor = newest day with real spend (NULL when no spend)."
+      - name: days_total
+        description: "Line flight length in days (inclusive)."
+      - name: days_elapsed
+        description: "Days of the line up to as_of_day, clamped to the flight window (0 when not started / no spend)."
+      - name: allocated_to_date
+        description: "Σ allocated_amount for day <= as_of_day (planned-to-date)."
+      - name: actual_to_date
+        description: "Σ ventilated actual_amount for day <= as_of_day. NULL (never 0) for plan-only lines / no plan spend (AD-9)."
+      - name: consumed_pct
+        description: "actual_to_date / NULLIF(budget,0). NULL when budget=0 or actual NULL."
+      - name: pace
+        description: "(actual - allocated_to_date) / NULLIF(allocated_to_date,0). NULL (never 0) when allocated_to_date=0 (AD-9)."
+      - name: remaining_budget
+        description: "budget - actual_to_date. NULL when actual NULL (cannot know remainder)."
+      - name: extrapolated_spend
+        description: "actual_to_date / NULLIF(days_elapsed,0) * days_total (run-rate). NULL when days_elapsed=0 or actual NULL."
+      - name: actual_pull_id_min
+        description: "Smallest provenance id feeding this line's ventilated spend (AD-9). NULL when no spend."
+      - name: actual_pull_id_max
+        description: "Largest provenance id feeding this line's ventilated spend (AD-9). NULL when no spend."
+      - name: actual_pull_id_count
+        description: "Count of DISTINCT provenance ids feeding this line's ventilated spend (AD-9)."
+
+  - name: plan_pacing_by_channel
+    description: >
+      Per-channel pacing rollup over plan_pacing_by_line (Story 22.4). READ-ONLY. GRAIN: one
+      row per (project_id, plan_id, plan_version_id, channel) -- a NULL channel rolls up under
+      'sans-canal' so the key is never NULL. Only ADDITIVE columns are summed; consumed_pct /
+      pace are RE-DERIVED from the summed columns at the view level -- NEVER an average of the
+      per-line ratios (AD-4). SUM(actual_to_date) over a channel == Σ of its ventilated line
+      spends ("agrégat support == somme exacte des lignes ventilées", discriminant type 17.3;
+      test_plan_pacing_channel_sum.sql). plan_only lines contribute budget but NOT
+      actual/allocated pacing (their actual is NULL); a fully plan-only channel has
+      actual_to_date NULL -> ratios NULL (never 0). NEVER aggregates across plans (décision 5).
+    config:
+      materialized: view
+    tests:
+      - unique:
+          name: plan_pacing_by_channel_grain_unique
+          arguments:
+            column_name: "project_id || '|' || plan_id || '|' || plan_version_id || '|' || channel"
+    columns:
+      - name: project_id
+        tests: [not_null]
+        description: "Project identifier (AD-5)."
+      - name: plan_id
+        tests: [not_null]
+        description: "Media plan root id."
+      - name: plan_version_id
+        tests: [not_null]
+        description: "Active version (AD-9 provenance)."
+      - name: channel
+        tests: [not_null]
+        description: "Channel/support ('sans-canal' when the line has no channel)."
+      - name: budget
+        tests: [not_null]
+        description: "Σ line budgets in the channel (plan-only included -- a planned channel has a budget)."
+      - name: allocated_to_date
+        description: "Σ allocated_to_date over paceable (non-plan-only) lines."
+      - name: actual_to_date
+        description: "Σ ventilated actual_to_date over paceable lines. NULL when the channel is fully plan-only (AD-9)."
+      - name: remaining_budget
+        description: "budget - actual_to_date. NULL when actual NULL."
+      - name: consumed_pct
+        description: "actual_to_date / NULLIF(budget,0), re-derived at view level (AD-4)."
+      - name: pace
+        description: "(actual - allocated_to_date) / NULLIF(allocated_to_date,0), re-derived (AD-4). NULL when denom 0."
+      - name: extrapolated_spend
+        description: "Σ line extrapolated_spend over paceable lines."
+      - name: plan_only_line_count
+        description: "Count of plan-only lines in the channel (card badge)."
+      - name: paceable_line_count
+        description: "Count of non-plan-only lines in the channel."
+      - name: actual_pull_id_min
+        description: "Smallest provenance id across the channel (AD-9)."
+      - name: actual_pull_id_max
+        description: "Largest provenance id across the channel (AD-9)."
+      - name: actual_pull_id_count
+        description: "Sum of DISTINCT provenance id counts across the channel's lines (AD-9)."
+
+  - name: plan_pacing_by_plan
+    description: >
+      Per-plan pacing rollup over plan_pacing_by_line (Story 22.4). READ-ONLY. GRAIN: one row
+      per (project_id, plan_id, plan_version_id). NEVER aggregates across plans (décision 5): a
+      campaign shared by two concurrent plans is paced INDEPENDENTLY per plan; no cross-plan sum
+      here (that would double-count -- Phase B non-goal). Same additive-rollup + ratios-at-view-
+      level discipline as plan_pacing_by_channel (AD-4); plan-only lines contribute budget but
+      not pacing. Provenance: plan_version_id + MIN/MAX/COUNT DISTINCT of the actual_pull_id span.
+    config:
+      materialized: view
+    tests:
+      - unique:
+          name: plan_pacing_by_plan_grain_unique
+          arguments:
+            column_name: "project_id || '|' || plan_id || '|' || plan_version_id"
+    columns:
+      - name: project_id
+        tests: [not_null]
+        description: "Project identifier (AD-5)."
+      - name: plan_id
+        tests: [not_null]
+        description: "Media plan root id."
+      - name: plan_version_id
+        tests: [not_null]
+        description: "Active version (AD-9 provenance)."
+      - name: currency
+        description: "Plan currency."
+      - name: as_of_day
+        description: "Plan-wide to-date anchor (newest day with real spend; NULL when no spend)."
+      - name: budget
+        tests: [not_null]
+        description: "Σ line budgets in the plan (plan-only included)."
+      - name: allocated_to_date
+        description: "Σ allocated_to_date over paceable lines."
+      - name: actual_to_date
+        description: "Σ ventilated actual_to_date over paceable lines. NULL when the plan has no paceable spend (AD-9)."
+      - name: remaining_budget
+        description: "budget - actual_to_date. NULL when actual NULL."
+      - name: consumed_pct
+        description: "actual_to_date / NULLIF(budget,0), re-derived at view level (AD-4)."
+      - name: pace
+        description: "(actual - allocated_to_date) / NULLIF(allocated_to_date,0), re-derived (AD-4). NULL when denom 0."
+      - name: extrapolated_spend
+        description: "Σ line extrapolated_spend over paceable lines."
+      - name: plan_only_line_count
+        description: "Count of plan-only lines in the plan."
+      - name: paceable_line_count
+        description: "Count of non-plan-only lines in the plan."
+      - name: actual_pull_id_min
+        description: "Smallest provenance id across the plan (AD-9)."
+      - name: actual_pull_id_max
+        description: "Largest provenance id across the plan (AD-9)."
+      - name: actual_pull_id_count
+        description: "Sum of DISTINCT provenance id counts across the plan's lines (AD-9)."

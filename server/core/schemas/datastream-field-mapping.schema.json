@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toorow.dev/schemas/datastream-field-mapping.schema.json",
+  "title": "toorow Datastream field mapping",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mapping_contract_version",
+    "source_schema_hash",
+    "plan_version_id",
+    "grain",
+    "fields",
+    "ambiguities"
+  ],
+  "properties": {
+    "mapping_contract_version": { "const": "1" },
+    "source_schema_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "plan_version_id": { "type": "string", "minLength": 1 },
+    "capability_fingerprint": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "grain": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "fields": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/field_mapping" }
+    },
+    "ambiguities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ambiguity" }
+    }
+  },
+  "$defs": {
+    "field_mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field_id",
+        "physical_type",
+        "profile",
+        "suggestion",
+        "binding"
+      ],
+      "properties": {
+        "field_id": { "type": "string", "minLength": 1 },
+        "physical_type": { "type": "string", "minLength": 1 },
+        "profile": { "$ref": "#/$defs/field_profile" },
+        "suggestion": { "$ref": "#/$defs/field_suggestion" },
+        "binding": { "$ref": "#/$defs/field_binding" }
+      }
+    },
+    "field_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nullable",
+        "unique",
+        "cardinality_signal",
+        "sample_values",
+        "confidence"
+      ],
+      "properties": {
+        "nullable": { "type": "boolean" },
+        "unique": { "type": "boolean" },
+        "cardinality_signal": {
+          "enum": ["low", "medium", "high", "unique", "unknown"]
+        },
+        "sample_values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 10
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "field_suggestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "semantic_role",
+        "aggregation",
+        "non_additive",
+        "currency",
+        "sensitivity",
+        "status",
+        "evidence"
+      ],
+      "properties": {
+        "semantic_role": { "type": "string", "minLength": 1 },
+        "aggregation": {
+          "enum": ["none", "sum", "avg", "min", "max", "count", "custom"]
+        },
+        "non_additive": { "type": "boolean" },
+        "currency": { "type": "string", "minLength": 1 },
+        "sensitivity": {
+          "enum": ["none", "pii", "financial", "credentials", "internal", "unknown"]
+        },
+        "status": { "const": "suggested" },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "field_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_target",
+        "mdm_target",
+        "status",
+        "blocking_reason",
+        "confirmed_by",
+        "confirmed_reason"
+      ],
+      "properties": {
+        "canonical_target": { "type": ["string", "null"] },
+        "mdm_target": {
+          "type": ["string", "null"],
+          "pattern": "^mdm_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "status": {
+          "enum": ["suggested", "confirmed", "resolved", "excluded", "blocking"]
+        },
+        "blocking_reason": { "type": ["string", "null"] },
+        "confirmed_by": { "type": ["string", "null"] },
+        "confirmed_reason": { "type": ["string", "null"] }
+      }
+    },
+    "ambiguity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "path", "field_ids", "candidates", "repair"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "field_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "candidates": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "repair": { "type": "object" }
+      }
+    }
+  }
+}

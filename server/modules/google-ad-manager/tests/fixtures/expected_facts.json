@@ -1,0 +1,11 @@
+[
+  {
+    "pull_id": "pull_google_ad_manager_001",
+    "connector": "google-ad-manager",
+    "date": "2026-07-01",
+    "ad_unit_name": "Homepage_Leaderboard",
+    "impressions": 12000,
+    "clicks": 84,
+    "ad_revenue": 5400000
+  }
+]

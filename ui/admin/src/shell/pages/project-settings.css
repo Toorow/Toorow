@@ -1,0 +1,326 @@
+/**
+ * project-settings.css — page-specific styles for ProjectSettings (v3 shell).
+ *
+ * ⚠️ SPEC-DERIVED, NO MOCKUP — a faithful v3-shell port of the real MUI
+ * ProjectSettingsPage (no validated visual mockup exists for this screen).
+ *
+ * Base shell classes the screen also uses live in application.css and are NOT
+ * redefined here: .full-main, .page-header, .panel, .section-header,
+ * .primary-button / .secondary-button, .action-link, .signal / .signal.running,
+ * .signal-label / .signal-mark, .text-input, .field-hint / .field-error, .mono.
+ * This file only adds the `ps-` prefixed surfaces specific to this page, so
+ * nothing here collides with sibling pages or requires edits to application.css.
+ *
+ * The read-only impact summary (.scope-summary / .scope-row / .scope-key /
+ * .scope-val) follows the create-org ScopeSummary convention but is defined
+ * locally here (those classes are NOT in application.css) so this page is
+ * self-contained and does not depend on create-org.css load order.
+ *
+ * Tokenized: every color references the application.css CSS variables — no hex.
+ * Focus/selected accents derive from var(--rose) / var(--info) via color-mix.
+ * The single translucent scrim ink reads as dimming on both schemes (matches
+ * the create-org focused-dialog convention).
+ */
+
+.projectsettings { max-width: 860px; }
+
+/* ---- Load / error states ------------------------------------------------- */
+.ps-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.ps-inline-error {
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--error) 40%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+}
+.ps-inline-error p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Section stack ------------------------------------------------------- */
+.ps-sections { display: grid; gap: 22px; }
+
+.ps-panel-body {
+  padding: 22px 20px;
+  display: grid;
+  gap: 20px;
+}
+
+/* ---- Fields -------------------------------------------------------------- */
+.ps-field { display: grid; gap: 8px; }
+.ps-field > label {
+  font: 600 13px "Plus Jakarta Sans", sans-serif;
+  color: var(--ink);
+}
+
+/* Read-only identifier row (Project ID). */
+.ps-readonly {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.ps-currency-input {
+  max-width: 160px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ---- Native select (styled to match .text-input) ------------------------- */
+.ps-select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 20px) center, calc(100% - 15px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.ps-select:focus-visible {
+  outline: 2px solid var(--focus, var(--info));
+  outline-offset: 2px;
+  border-color: color-mix(in srgb, var(--rose) 55%, var(--line));
+}
+
+/* ---- Radio cards (geo mode + backfill decision) -------------------------- */
+.ps-radio-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 12px;
+}
+.ps-legend {
+  padding: 0;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ps-radio {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.ps-radio.selected {
+  border-color: color-mix(in srgb, var(--rose) 60%, var(--line));
+  background: var(--rose-soft);
+}
+.ps-radio input[type="radio"] { margin-top: 3px; accent-color: var(--rose); }
+.ps-radio-body { display: grid; gap: 3px; }
+.ps-radio-title { font-size: 14px; font-weight: 600; }
+.ps-radio-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+/* ---- Country selection (chips + autocomplete) ---------------------------- */
+.ps-chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ps-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.ps-chip-remove {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ps-chip-remove:hover { color: var(--ink); background: var(--track); }
+
+.ps-autocomplete { position: relative; }
+.ps-suggestions {
+  position: absolute;
+  z-index: var(--layer-dropdown, 40);
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 18px 46px rgba(17, 17, 17, 0.16);
+  max-height: 280px;
+  overflow: auto;
+}
+.ps-suggestions button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.ps-suggestions button:hover,
+.ps-suggestions button:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+.ps-suggestion-code { color: var(--muted); font-size: 12px; }
+
+/* ---- Save bar ------------------------------------------------------------ */
+.ps-savebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 4px 4px;
+}
+.ps-savebar-status { min-height: 20px; flex: 1 1 auto; }
+.ps-savebar-hint { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.ps-savebar .primary-button[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: saturate(0.7);
+}
+
+/* ---- Geography preview -> confirm dialog --------------------------------- */
+.ps-scrim {
+  position: fixed;
+  z-index: var(--layer-modal, 80);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(35, 32, 40, 0.28);
+}
+.ps-dialog {
+  width: min(640px, calc(100% - 56px));
+  max-height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 28px 90px rgba(17, 17, 17, 0.22);
+}
+.ps-dialog-header {
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.ps-dialog-header h2 { margin: 0; font: 600 20px "Lexend", sans-serif; letter-spacing: -0.01em; }
+.ps-dialog-header p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.ps-dialog-body {
+  padding: 22px 24px;
+  display: grid;
+  gap: 18px;
+  overflow: auto;
+}
+
+/* Read-only impact summary (ScopeSummary convention; defined locally). */
+.ps-dialog-body .scope-summary {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--page);
+}
+.ps-dialog-body .scope-row {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 14px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.ps-dialog-body .scope-row:first-of-type { border-top: 0; }
+.ps-dialog-body .scope-key { color: var(--muted); font-size: 12px; font-weight: 600; }
+.ps-dialog-body .scope-val { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+
+.ps-impact-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.ps-impact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.ps-impact-name { font-size: 13px; overflow-wrap: anywhere; }
+
+.ps-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--line);
+}
+.ps-dialog-footer .primary-button[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: saturate(0.7);
+}
+
+/* ---- Narrow-desktop resilience ------------------------------------------- */
+@media (max-width: 1180px) {
+  .ps-savebar { flex-wrap: wrap; }
+  .ps-dialog-body .scope-row { grid-template-columns: 1fr; gap: 3px; }
+}

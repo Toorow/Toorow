@@ -1,0 +1,525 @@
+{
+  "api_version": "YouTube Analytics API v2 (+ Data API v3 for discovery)",
+  "catalog_version": "1",
+  "connector": "youtube-analytics",
+  "fields": [
+    {
+      "description": "Verified ad impressions served. Additive. Monetary scope. Planned.",
+      "exposure": "planned",
+      "field_id": "ad_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ADS",
+      "source_field": "adImpressions",
+      "tier": "advanced"
+    },
+    {
+      "description": "Ad format that ran (auctionInstream, reservedBumperInstream, ...). Planned (monetary).",
+      "exposure": "planned",
+      "field_id": "ad_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ADS",
+      "source_field": "adType",
+      "tier": "advanced"
+    },
+    {
+      "description": "Viewer age bucket: age13-17, age18-24, age25-34, age35-44, age45-54, age55-64, age65-. Suppressed below privacy thresholds. Planned.",
+      "exposure": "planned",
+      "field_id": "age_group",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEMOGRAPHICS",
+      "source_field": "ageGroup",
+      "tier": "standard"
+    },
+    {
+      "description": "Clicks / clickable impressions. RATIO / non-additive. Planned.",
+      "exposure": "planned",
+      "field_id": "annotation_click_through_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ANNOTATIONS",
+      "source_field": "annotationClickThroughRate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Annotations clicked. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "annotation_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ANNOTATIONS",
+      "source_field": "annotationClicks",
+      "tier": "advanced"
+    },
+    {
+      "description": "Total annotation impressions. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "annotation_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ANNOTATIONS",
+      "source_field": "annotationImpressions",
+      "tier": "advanced"
+    },
+    {
+      "description": "Average seconds watched per playback. RATIO / non-additive = estimatedMinutesWatched*60 / views -- DERIVABLE, computed at the semantic layer (AD-4), never stored raw. Planned/excluded from storage.",
+      "exposure": "planned",
+      "field_id": "average_view_duration",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "WATCH TIME",
+      "source_field": "averageViewDuration",
+      "tier": "core"
+    },
+    {
+      "description": "Average % of a video watched. RATIO / non-additive (needs video length; not derivable from views/minutes). Planned. Cannot combine with the liveOrOnDemand dimension.",
+      "exposure": "planned",
+      "field_id": "average_view_percentage",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "WATCH TIME",
+      "source_field": "averageViewPercentage",
+      "tier": "core"
+    },
+    {
+      "description": "Card click-through rate. RATIO / non-additive. Planned.",
+      "exposure": "planned",
+      "field_id": "card_click_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CARDS",
+      "source_field": "cardClickRate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Card clicks. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "card_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CARDS",
+      "source_field": "cardClicks",
+      "tier": "advanced"
+    },
+    {
+      "description": "Times cards shown. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "card_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CARDS",
+      "source_field": "cardImpressions",
+      "tier": "advanced"
+    },
+    {
+      "description": "The reporting entity: YouTube channel id. Stamped on every row (ids=channel==MINE resolves to the connected channel, discovered via Data API channels.list(mine=true)). In content-owner (MCN) mode the API 'channel' dimension breaks results down by channel.",
+      "exposure": "exposed",
+      "field_id": "channel_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TOPOLOGY",
+      "source_field": "channel_id",
+      "tier": "core"
+    },
+    {
+      "description": "Estimated city (<=250 rows). Planned.",
+      "exposure": "planned",
+      "field_id": "city",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEOGRAPHY",
+      "source_field": "city",
+      "tier": "standard"
+    },
+    {
+      "description": "Number of comments users left. Additive.",
+      "exposure": "exposed",
+      "field_id": "comments",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWS & ENGAGEMENT",
+      "source_field": "comments",
+      "tier": "core"
+    },
+    {
+      "description": "Viewer country, ISO-3166-1 alpha-2 (e.g. US, FR). NOTE: alpha-2, distinct from GA4/GSC governed 'country' vocabulary -- kept as its own field, not mapped onto the governed dimension. Planned.",
+      "exposure": "planned",
+      "field_id": "country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEOGRAPHY",
+      "source_field": "country",
+      "tier": "standard"
+    },
+    {
+      "description": "Gross revenue per 1,000 ad impressions. RATIO / non-additive. Monetary scope. Planned.",
+      "exposure": "planned",
+      "field_id": "cpm",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ADS",
+      "source_field": "cpm",
+      "tier": "advanced"
+    },
+    {
+      "description": "Reporting day (YYYY-MM-DD), from the 'day' dimension. Daily grain. Full lifetime history available from channel creation (complete from 2013-01-01).",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "day",
+      "tier": "core"
+    },
+    {
+      "description": "Device form factor: DESKTOP, GAME_CONSOLE, MOBILE, TABLET, TV, UNKNOWN_PLATFORM. Planned.",
+      "exposure": "planned",
+      "field_id": "device_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE & OS",
+      "source_field": "deviceType",
+      "tier": "standard"
+    },
+    {
+      "description": "Negative ratings (dislikes). Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "dislikes",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWS & ENGAGEMENT",
+      "source_field": "dislikes",
+      "tier": "core"
+    },
+    {
+      "description": "Views that passed the initial engagement threshold. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "engaged_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWS & ENGAGEMENT",
+      "source_field": "engagedViews",
+      "tier": "core"
+    },
+    {
+      "description": "Net revenue from Google-sold ads. Additive. Monetary scope. Planned.",
+      "exposure": "planned",
+      "field_id": "estimated_ad_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "REVENUE",
+      "source_field": "estimatedAdRevenue",
+      "tier": "advanced"
+    },
+    {
+      "description": "Total minutes users watched. Additive.",
+      "exposure": "exposed",
+      "field_id": "estimated_minutes_watched",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "WATCH TIME",
+      "source_field": "estimatedMinutesWatched",
+      "tier": "core"
+    },
+    {
+      "description": "Revenue from YouTube Premium. Additive. Monetary scope. Planned.",
+      "exposure": "planned",
+      "field_id": "estimated_red_partner_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "REVENUE",
+      "source_field": "estimatedRedPartnerRevenue",
+      "tier": "advanced"
+    },
+    {
+      "description": "Total estimated net revenue (ad + non-ad). Additive. Requires the yt-analytics-monetary.readonly scope. Planned (monetary).",
+      "exposure": "planned",
+      "field_id": "estimated_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "REVENUE",
+      "source_field": "estimatedRevenue",
+      "tier": "advanced"
+    },
+    {
+      "description": "Viewer gender: female, male, user_specified. Enum documented-but-unverified. Planned.",
+      "exposure": "planned",
+      "field_id": "gender",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEMOGRAPHICS",
+      "source_field": "gender",
+      "tier": "standard"
+    },
+    {
+      "description": "Estimated gross revenue (USD). Additive. Monetary scope. Planned.",
+      "exposure": "planned",
+      "field_id": "gross_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ADS",
+      "source_field": "grossRevenue",
+      "tier": "advanced"
+    },
+    {
+      "description": "Positive ratings (likes). Additive.",
+      "exposure": "exposed",
+      "field_id": "likes",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWS & ENGAGEMENT",
+      "source_field": "likes",
+      "tier": "core"
+    },
+    {
+      "description": "LIVE vs ON_DEMAND. Cannot be combined with averageViewPercentage. Planned.",
+      "exposure": "planned",
+      "field_id": "live_or_on_demand",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PLAYBACK",
+      "source_field": "liveOrOnDemand",
+      "tier": "standard"
+    },
+    {
+      "description": "Playbacks with >=1 ad impression. Additive. Monetary scope. Planned.",
+      "exposure": "planned",
+      "field_id": "monetized_playbacks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ADS",
+      "source_field": "monetizedPlaybacks",
+      "tier": "advanced"
+    },
+    {
+      "description": "Reporting month (YYYY-MM). Planned.",
+      "exposure": "planned",
+      "field_id": "month",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TIME",
+      "source_field": "month",
+      "tier": "core"
+    },
+    {
+      "description": "Device OS (ANDROID, IOS, WINDOWS, MACINTOSH, ...). Enum documented-but-unverified; re-verify live. Planned.",
+      "exposure": "planned",
+      "field_id": "operating_system",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DEVICE & OS",
+      "source_field": "operatingSystem",
+      "tier": "standard"
+    },
+    {
+      "description": "Where playback occurred: BROWSE, CHANNEL, EMBEDDED, EXTERNAL_APP, MOBILE, SEARCH, WATCH, YT_OTHER. Planned.",
+      "exposure": "planned",
+      "field_id": "playback_location_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PLAYBACK",
+      "source_field": "insightPlaybackLocationType",
+      "tier": "standard"
+    },
+    {
+      "description": "Playlist resource id (group-by + filter). Planned.",
+      "exposure": "planned",
+      "field_id": "playlist",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "playlist",
+      "tier": "core"
+    },
+    {
+      "description": "Minutes watched in playlist context. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "playlist_estimated_minutes_watched",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PLAYLIST",
+      "source_field": "playlistEstimatedMinutesWatched",
+      "tier": "advanced"
+    },
+    {
+      "description": "Net playlist saves. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "playlist_saves",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PLAYLIST",
+      "source_field": "playlistSaves",
+      "tier": "advanced"
+    },
+    {
+      "description": "Times viewers initiated playlist playback. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "playlist_starts",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PLAYLIST",
+      "source_field": "playlistStarts",
+      "tier": "advanced"
+    },
+    {
+      "description": "Views within the playlist context. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "playlist_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PLAYLIST",
+      "source_field": "playlistViews",
+      "tier": "advanced"
+    },
+    {
+      "description": "US state (ISO 3166-2). Planned.",
+      "exposure": "planned",
+      "field_id": "province",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GEOGRAPHY",
+      "source_field": "province",
+      "tier": "standard"
+    },
+    {
+      "description": "Views by YouTube Premium (Red) members. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "red_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWS & ENGAGEMENT",
+      "source_field": "redViews",
+      "tier": "core"
+    },
+    {
+      "description": "Times shared via the Share button. Additive.",
+      "exposure": "exposed",
+      "field_id": "shares",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWS & ENGAGEMENT",
+      "source_field": "shares",
+      "tier": "core"
+    },
+    {
+      "description": "Service used to share a video. Planned.",
+      "exposure": "planned",
+      "field_id": "sharing_service",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TRAFFIC SOURCE",
+      "source_field": "sharingService",
+      "tier": "standard"
+    },
+    {
+      "description": "Subscribed vs not at view time: SUBSCRIBED, UNSUBSCRIBED. Planned.",
+      "exposure": "planned",
+      "field_id": "subscribed_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PLAYBACK",
+      "source_field": "subscribedStatus",
+      "tier": "standard"
+    },
+    {
+      "description": "Times users subscribed. Additive.",
+      "exposure": "exposed",
+      "field_id": "subscribers_gained",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "SUBSCRIBERS",
+      "source_field": "subscribersGained",
+      "tier": "core"
+    },
+    {
+      "description": "Times users unsubscribed. Additive.",
+      "exposure": "exposed",
+      "field_id": "subscribers_lost",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "SUBSCRIBERS",
+      "source_field": "subscribersLost",
+      "tier": "core"
+    },
+    {
+      "description": "Top referrers within a traffic source type. Planned.",
+      "exposure": "planned",
+      "field_id": "traffic_source_detail",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TRAFFIC SOURCE",
+      "source_field": "insightTrafficSourceDetail",
+      "tier": "standard"
+    },
+    {
+      "description": "How users reached the video: ADVERTISING, ANNOTATION, CAMPAIGN_CARD, END_SCREEN, EXT_URL, HASHTAGS, LIVE_REDIRECT, NO_LINK_EMBEDDED, NO_LINK_OTHER, NOTIFICATION, PLAYLIST, PRODUCT_PAGE, PROMOTED, RELATED_VIDEO, SHORTS, SOUND_PAGE, SUBSCRIBER, VIDEO_REMIXES, YT_CHANNEL, YT_OTHER_PAGE, YT_SEARCH. Planned.",
+      "exposure": "planned",
+      "field_id": "traffic_source_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TRAFFIC SOURCE",
+      "source_field": "insightTrafficSourceType",
+      "tier": "standard"
+    },
+    {
+      "description": "Video resource id (group-by + filter).",
+      "exposure": "exposed",
+      "field_id": "video",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CONTENT",
+      "source_field": "video",
+      "tier": "core"
+    },
+    {
+      "description": "Date a video was published on the channel (snippet.publishedAt from the Data API v3 uploads playlist). Maps to canonical event_type video_upload. label = snippet.title.",
+      "exposure": "exposed",
+      "field_id": "video_upload",
+      "kind": "event",
+      "physical_type": "datetime",
+      "section": "EVENTS",
+      "source_field": "snippet.publishedAt",
+      "tier": "core"
+    },
+    {
+      "description": "Times videos added to any playlist. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "videos_added_to_playlists",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PLAYLIST",
+      "source_field": "videosAddedToPlaylists",
+      "tier": "advanced"
+    },
+    {
+      "description": "Times videos removed from any playlist. Additive. Planned.",
+      "exposure": "planned",
+      "field_id": "videos_removed_from_playlists",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PLAYLIST",
+      "source_field": "videosRemovedFromPlaylists",
+      "tier": "advanced"
+    },
+    {
+      "description": "Number of times a video was viewed. Additive.",
+      "exposure": "exposed",
+      "field_id": "views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIEWS & ENGAGEMENT",
+      "source_field": "views",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://developers.google.com/youtube/analytics/metrics"
+    }
+  ]
+}

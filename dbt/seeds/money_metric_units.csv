@@ -1,0 +1,13 @@
+canonical_metric,canonical_native_unit,notes
+ad_revenue,decimal,ARRIVES decimal at the mart TODAY -- only WIRED emitter is adjust (stg_adjust_daily decimal pass-through). GAM declares native=micros on its field but is NOT mart-wired; when a micros source is wired the per-source unit collision (adjust decimal vs GAM micros under the SAME canonical name) must be resolved by adapter normalization AT STAGING so fact_daily_kpi holds ONE unit -- only then flip this to micros
+all_revenue,decimal,ARRIVES decimal at the mart TODAY via adjust -- same per-source collision note as ad_revenue; flip to micros only once every wired emitter normalizes to canonical micros at staging
+revenue,decimal,Incumbent staging-normalized money (AD-6 FX-at-staging) landed decimal into fact_daily_kpi -- adapter native=decimal (x1e6)
+cost,decimal,Incumbent ad-spend money normalized decimal at staging (AD-6) -- adapter native=decimal
+refunds,decimal,Incumbent refund money (decimal) -- adapter native=decimal
+refund_amount,decimal,Shopify/Stripe/WooCommerce refund_amount money (decimal) -- adapter native=decimal
+fees,decimal,Stripe fees money (decimal) -- adapter native=decimal
+conversions_value,decimal,Ads conversion value money (decimal) -- adapter native=decimal
+deal_amount,decimal,HubSpot deal_amount money (decimal) -- adapter native=decimal
+attributed_revenue,decimal,Klaviyo/email attributed_revenue money (decimal) -- adapter native=decimal
+target_revenue,decimal,Google-sheets plan target_revenue money (decimal) -- adapter native=decimal
+budget_declared,decimal,Google-sheets plan budget_declared money (decimal) -- adapter native=decimal

@@ -1,0 +1,5 @@
+[
+  {"date": "2026-06-09", "data_level": "CAMPAIGN", "campaign_id": "88000001", "campaign_group_id": null, "cost": 124.62, "impressions": 5442, "clicks": 69, "conversions": 3, "leads": 42, "cost_source_currency": "EUR"},
+  {"date": "2026-06-09", "data_level": "CAMPAIGN", "campaign_id": "88000002", "campaign_group_id": null, "cost": 71.4, "impressions": 3264, "clicks": 27, "conversions": 1, "leads": 29, "cost_source_currency": "EUR"},
+  {"date": "2026-06-09", "data_level": "CAMPAIGN", "campaign_id": "88000003", "campaign_group_id": null, "cost": 47.99, "impressions": 2069, "clicks": 28, "conversions": 0, "leads": 19, "cost_source_currency": "EUR"}
+]

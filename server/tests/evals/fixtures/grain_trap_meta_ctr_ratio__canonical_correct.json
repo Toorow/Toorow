@@ -1,0 +1,1250 @@
+[
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-11"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-11"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-12"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-12"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-13"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-13"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-14"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-14"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-15"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-15"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-16"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-16"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-17"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-17"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-18"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-18"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-19"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-20"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-21"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-22"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-23"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-24"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-25"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-26"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-27"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-28"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-29"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010201",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300010202",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020101",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020102",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "ad_id",
+    "breakdown_value": "9238512345000300020202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000101",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000102",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000201",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "adset_id",
+    "breakdown_value": "92385123450002000202",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010001",
+    "ctr": 0.027178423236514523,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "23851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010001",
+    "ctr": 0.027136929460580914,
+    "date": "2026-06-30"
+  },
+  {
+    "breakdown_dimension": "campaign_id",
+    "breakdown_value": "923851234500010002",
+    "ctr": 0.053156146179401995,
+    "date": "2026-06-30"
+  }
+]

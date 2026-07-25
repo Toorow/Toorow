@@ -1,0 +1,275 @@
+/**
+ * getting-started.css — page-specific styles for GettingStartedV3.
+ *
+ * Faithful port of the inline <style> block in
+ * _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-22/mockups/key-mise-en-route.html
+ *
+ * Shell/layout classes (frame, sidebar, topbar, main, page-header, panel,
+ * chip, muted, mono, action-link, buttons) live in application.css and are
+ * global. This file only adds the Getting-started page widgets that the mockup
+ * introduces and that application.css does not already provide: the progress
+ * stepper, the two-column task/scope layout, the SetupTaskCard, the
+ * ScopeSummary aside, and the expired-handoff alternate panel.
+ *
+ * Tokenized: every color references an application.css CSS variable. The
+ * mockup's literal warn/success/info state hexes map to --warning / --success /
+ * --info; neutral surfaces map to --surface / --surface-2 / --line / --track /
+ * --muted. Softer state backgrounds (mockup --warn-bg / --success-bg /
+ * --info-bg) are expressed as low-alpha rgb() of the same token hue so they
+ * adapt across light/dark instead of pinning a neutral literal.
+ */
+
+/* Progress stepper — "N of M steps complete" + track + state label. */
+.gs-progress {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 24px 0 28px;
+  flex-wrap: wrap;
+}
+.gs-progress strong {
+  font: 600 15px "Plus Jakarta Sans", sans-serif;
+}
+.gs-progress .count {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.gs-bar {
+  height: 8px;
+  flex: 0 1 360px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--track);
+}
+.gs-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--rose);
+}
+.gs-progress .state {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Two-column layout: task stack + sticky scope aside. */
+.gs-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 24px;
+}
+.gs-stack {
+  display: grid;
+  gap: 14px;
+}
+
+/* SetupTaskCard — number/status column, body, owner column. */
+.gs-card {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 19px 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.gs-card.blocked {
+  border-left: 5px solid var(--warning);
+}
+.gs-card.done {
+  /* completed collapses to the calmest treatment but stays reviewable */
+}
+.gs-num {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.gs-card.done .gs-num {
+  background: rgba(62, 155, 110, 0.16);
+  color: var(--success);
+}
+.gs-state {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.gs-card.done .gs-state {
+  color: var(--success);
+}
+.gs-card.blocked .gs-state {
+  color: var(--warning);
+}
+.gs-card h2 {
+  margin: 2px 0 0;
+  font: 600 19px "Lexend", Arial, sans-serif;
+}
+.gs-card p {
+  margin: 0;
+}
+.gs-meta {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.gs-owner {
+  text-align: right;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.gs-owner strong {
+  display: block;
+  color: var(--ink);
+}
+.gs-actions {
+  display: flex;
+  gap: 9px;
+  margin-top: 13px;
+  flex-wrap: wrap;
+}
+.gs-actions button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gs-actions button.primary {
+  border-color: var(--rose);
+  background: var(--rose);
+  color: var(--ink);
+}
+.gs-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ScopeSummary — sticky read-only scope aside. */
+.gs-scope {
+  position: sticky;
+  top: 20px;
+  align-self: start;
+  padding: 19px 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.gs-scope h2 {
+  margin: 2px 0 0;
+  font: 600 19px "Lexend", Arial, sans-serif;
+}
+.gs-scope dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  margin: 16px 0 0;
+}
+.gs-scope dt {
+  color: var(--muted);
+}
+.gs-scope dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+}
+.gs-notice {
+  margin-top: 16px;
+  padding: 12px 13px;
+  border-radius: 12px;
+  background: rgba(232, 161, 61, 0.16);
+  font-size: 13px;
+}
+
+/* Expired-handoff alternate panel. */
+.gs-alternate {
+  margin-top: 24px;
+  padding: 19px 20px;
+  border: 1px solid var(--warning);
+  border-radius: 16px;
+  background: rgba(232, 161, 61, 0.08);
+}
+.gs-alternate-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: center;
+}
+.gs-alternate h2 {
+  margin: 8px 0 0;
+  font: 600 19px "Lexend", Arial, sans-serif;
+}
+.gs-alternate p {
+  margin: 6px 0 0;
+}
+.gs-alternate .gs-id {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.gs-alternate button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Live-region status line for handoff announcements. */
+.gs-status {
+  min-height: 22px;
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.gs-error {
+  margin: 0 0 16px;
+  padding: 12px 13px;
+  border: 1px solid var(--error);
+  border-radius: 12px;
+  color: var(--error);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .gs-layout {
+    grid-template-columns: 1fr;
+  }
+  .gs-scope {
+    position: static;
+  }
+  .gs-card {
+    grid-template-columns: 34px 1fr;
+  }
+  .gs-owner {
+    grid-column: 2;
+    text-align: left;
+  }
+  .gs-alternate-grid {
+    grid-template-columns: 1fr;
+  }
+  .gs-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .gs-actions button {
+    width: 100%;
+  }
+}

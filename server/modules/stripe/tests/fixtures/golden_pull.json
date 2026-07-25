@@ -1,0 +1,78 @@
+[
+  {
+    "object": "charge",
+    "id": "ch_5000000001",
+    "created": 1782900900,
+    "amount": 12850,
+    "amount_refunded": 0,
+    "currency": "eur",
+    "payment_intent": "pi_5000000001",
+    "metadata": {
+      "client_reference_id": "1000000001"
+    },
+    "balance_transaction": {
+      "object": "balance_transaction",
+      "fee": 398
+    }
+  },
+  {
+    "object": "charge",
+    "id": "ch_5000000002",
+    "created": 1782931200,
+    "amount": 6400,
+    "amount_refunded": 0,
+    "currency": "eur",
+    "payment_intent": "pi_5000000002",
+    "metadata": {
+      "client_reference_id": "1000000002"
+    },
+    "balance_transaction": {
+      "object": "balance_transaction",
+      "fee": 211
+    }
+  },
+  {
+    "object": "charge",
+    "id": "ch_5000000003",
+    "created": 1782983100,
+    "amount": 21090,
+    "amount_refunded": 4218,
+    "currency": "eur",
+    "payment_intent": "pi_5000000003",
+    "metadata": {
+      "client_reference_id": "1000000003"
+    },
+    "balance_transaction": {
+      "object": "balance_transaction",
+      "fee": 637
+    }
+  },
+  {
+    "object": "charge",
+    "id": "ch_5000000004",
+    "created": 1783002600,
+    "amount": 3999,
+    "amount_refunded": 0,
+    "currency": "eur",
+    "payment_intent": "pi_5000000004",
+    "metadata": {},
+    "balance_transaction": {
+      "object": "balance_transaction",
+      "fee": 141
+    }
+  },
+  {
+    "object": "charge",
+    "id": "ch_5000000005",
+    "created": 1783065600,
+    "amount": 15000,
+    "amount_refunded": 15000,
+    "currency": "jpy",
+    "payment_intent": "pi_5000000005",
+    "metadata": {},
+    "balance_transaction": {
+      "object": "balance_transaction",
+      "fee": 450
+    }
+  }
+]

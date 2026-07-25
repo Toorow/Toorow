@@ -1,0 +1,408 @@
+/**
+ * reports.css — page-specific styles for the Analyze › Reports surface.
+ *
+ * Restyle onto the validated "v3" design system. Shell/layout classes
+ * (panel, page-header, header-actions, selector, buttons, signal-label,
+ * signal-mark, provider-logo, sr-only, table) live in application.css and are
+ * global. This file only adds the pieces the Reports page needs beyond the
+ * shell: the reports table cell layouts, the toggle control, the expandable
+ * data-chain drawer, and the chain rows (metric → target field → datastreams).
+ *
+ * COLORS ONLY via application.css CSS variables so the page works in dark
+ * theme. Numbers use the Geist tabular numeric treatment (.number, and the
+ * chain hero) exactly like the reference pages.
+ */
+
+/* -------------------------------------------------------------------------- */
+/* Reports table                                                              */
+/* -------------------------------------------------------------------------- */
+
+.reports-panel {
+  overflow: hidden;
+}
+.reports-panel-header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.reports-panel-header h2 {
+  margin: 0;
+  font: 600 19px "Lexend", sans-serif;
+}
+.reports-panel-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reports-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.reports-table th {
+  height: 42px;
+  padding: 0 16px;
+  background: var(--page);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+.reports-table td {
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.reports-table tr.report-row:first-child td {
+  border-top: 0;
+}
+
+.report-name strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+.report-module {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Actions cell alignment. */
+.report-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Enable toggle (accessible switch, tokenized — no MUI Switch)               */
+/* -------------------------------------------------------------------------- */
+
+.report-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 40px;
+  height: 22px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.report-toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  transition: transform 140ms ease;
+}
+.report-toggle[aria-checked="true"] {
+  background: var(--rose);
+  border-color: var(--rose);
+}
+.report-toggle[aria-checked="true"]::after {
+  transform: translateX(18px);
+}
+.report-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Compact chain-toggle button in the row. */
+.chain-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chain-toggle .caret {
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform 140ms ease;
+}
+.chain-toggle[aria-expanded="true"] .caret {
+  transform: rotate(90deg);
+}
+
+/* Expanded data-chain drawer row. */
+.chain-drawer-cell {
+  padding: 0 16px 18px;
+  background: var(--page);
+  border-top: 0;
+}
+.chain-drawer-label {
+  display: block;
+  margin: 14px 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* -------------------------------------------------------------------------- */
+/* ReportChainPanel                                                           */
+/* -------------------------------------------------------------------------- */
+
+.chain-panel {
+  margin-top: 4px;
+}
+
+.chain-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.chain-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.chain-hero .count {
+  font: 800 26px "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: lining-nums tabular-nums;
+  line-height: 1;
+  color: var(--ink);
+}
+.chain-hero .count-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chain-table {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.chain-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.chain-metric-row {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.chain-metric-row:last-child {
+  border-bottom: 0;
+}
+
+.chain-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+.chain-arrow {
+  color: var(--muted);
+  opacity: 0.6;
+  padding: 0 2px;
+  user-select: none;
+}
+
+/* Metric token (canonical name). */
+.metric-token {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--surface-2);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+/* Target field chip. */
+.field-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--info) 8%, var(--surface));
+}
+.field-chip code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink);
+}
+.field-chip .field-display {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Datastream pill. */
+.ds-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ds-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 12px;
+}
+.ds-pill.disabled {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+.ds-pill .ds-name {
+  font-weight: 500;
+}
+
+/* Extract verdict badge. */
+.extract-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.extract-badge.none {
+  color: var(--muted);
+}
+.extract-badge.ok {
+  color: var(--success);
+}
+.extract-badge.partial {
+  color: var(--warning);
+}
+.extract-badge.failed {
+  color: var(--error);
+}
+.extract-badge .mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* Inline "missing" pills within the chain flow. */
+.chain-flag {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-style: italic;
+}
+.chain-flag.error {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--error) 24%, var(--surface));
+}
+.chain-flag.warning {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warning) 24%, var(--surface));
+}
+
+/* Metric definition + unit under a chain row. */
+.metric-def {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin: 6px 0 0 2px;
+}
+.metric-def .def-text {
+  color: var(--muted);
+  font-size: 12px;
+}
+.metric-def .def-unit {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Actionable warning row for non-ok statuses. */
+.metric-warning {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.metric-warning.warning {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+  border-left: 2px solid var(--warning);
+}
+.metric-warning.error {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+  border-left: 2px solid var(--error);
+}
+
+/* LLM commentary guidelines passthrough. */
+.chain-guidelines {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.chain-guidelines .label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.chain-guidelines p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Loading / error states. */
+.chain-loading {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.reports-alert {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--error) 28%, var(--surface));
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+  color: var(--error);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.reports-loading {
+  display: flex;
+  justify-content: center;
+  padding: 40px;
+  color: var(--muted);
+  font-size: 14px;
+}

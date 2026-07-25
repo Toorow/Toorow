@@ -1,0 +1,459 @@
+{
+  "schema_version": "1.2",
+  "name": "doubleverify",
+  "display_name": "DoubleVerify",
+  "public_catalog": {
+    "visibility": "public",
+    "category": "analytics_product",
+    "onboarding_modes": ["connector_pull"],
+    "verification": {
+      "status": "blocked",
+      "reason_code": "live_evidence_not_ratified",
+      "follow_up": "Ratify and run the independent connector evidence contract."
+    }
+  },
+  "module_kind": "kpi",
+  "auth_type": "api_key",
+  "report_profiles": [
+    {
+      "id": "viewability_daily",
+      "display_name": "Viewability (daily)",
+      "metrics": [
+        "monitored_ads",
+        "measured_impressions",
+        "viewable_impressions",
+        "eligible_impressions",
+        "video_viewable_impressions"
+      ],
+      "dimensions": ["date", "advertiser_name", "campaign"],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "verification_expected_rows_per_day": null,
+      "_research_notes": "DV Data API 'Display viewability' + 'Video viewability' report types (Standard family). Counts only -- every *_rate is a non-additive ratio and is NOT stored (AD-4); viewable_rate is recomputed at the semantic layer as viewable_impressions / measured_impressions. Source: Supermetrics DoubleVerify field catalog (https://docs.supermetrics.com/docs/doubleverify-fields). Exact request/response JSON is behind the DV developer login -- to confirm in the live-integration pass (AI-13)."
+    },
+    {
+      "id": "fraud_sivt_daily",
+      "display_name": "Fraud & SIVT (daily)",
+      "metrics": [
+        "monitored_ads",
+        "fraud_sivt_incidents",
+        "fraud_sivt_free_ads"
+      ],
+      "dimensions": ["date", "advertiser_name", "campaign"],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "verification_expected_rows_per_day": null,
+      "_research_notes": "DV Data API 'Fraud/SIVT' report type. fraud_sivt_rate / fraud_sivt_free_rate are non-additive ratios (not stored, AD-4). Source: Supermetrics DoubleVerify field catalog."
+    },
+    {
+      "id": "brand_suitability_daily",
+      "display_name": "Brand Suitability (daily)",
+      "metrics": [
+        "monitored_ads",
+        "brand_suitability_incidents",
+        "brand_suitable_ads"
+      ],
+      "dimensions": ["date", "advertiser_name", "campaign"],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "verification_expected_rows_per_day": null,
+      "_research_notes": "DV Data API 'Brand suitability' report type. brand_suitable_rate / brand_suitability_incident_rate are non-additive ratios (not stored, AD-4). Source: Supermetrics DoubleVerify field catalog."
+    },
+    {
+      "id": "catalog_daily",
+      "display_name": "Catalog-driven daily (any selected field)",
+      "metrics": [
+        "monitored_ads",
+        "measured_impressions",
+        "viewable_impressions"
+      ],
+      "dimensions": ["date", "advertiser_name", "campaign", "media_property"],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "verification_expected_rows_per_day": null,
+      "_research_notes": "Catalog-driven profile: any non-excluded catalog field is selectable at execution. The DV Data Request 'dimensions' + 'metrics' arrays (by field id) are built from the selection at request-build time. Rate/attention sections are excluded from the catalog (see api_catalog.json exclusion_reason). Source: DV Data API report request contract (dimensions + metrics by id)."
+    }
+  ],
+  "canonical_metric_mapping": {
+    "monitored_ads": "monitored_ads",
+    "measured_impressions": "measured_impressions",
+    "viewable_impressions": "viewable_impressions",
+    "eligible_impressions": "eligible_impressions",
+    "video_viewable_impressions": "video_viewable_impressions",
+    "fraud_sivt_incidents": "fraud_sivt_incidents",
+    "fraud_sivt_free_ads": "fraud_sivt_free_ads",
+    "brand_suitability_incidents": "brand_suitability_incidents",
+    "brand_suitable_ads": "brand_suitable_ads",
+    "authentic_ads": "authentic_ads"
+  },
+  "canonical_dimension_mapping": {
+    "advertiser_name": "advertiser_name",
+    "campaign": "campaign",
+    "media_property": "media_property",
+    "media_type": "media_type",
+    "delivery_country": "delivery_country",
+    "device_delivery_type": "device_delivery_type"
+  },
+  "error_map": {
+    "401": "auth_expired",
+    "403": "permission_denied",
+    "400": "invalid_request",
+    "404": "invalid_request",
+    "429": "provider_transient",
+    "500": "provider_transient",
+    "503": "provider_transient",
+    "_error_map_note": "DoubleVerify's Data API error reference is gated behind the developer-portal login, so no enumerated application-level sub-code set is verifiable at authoring time. This map is therefore keyed on HTTP status only; the pure-HTTP taxonomy in core.pull_errors.classify_http_error already resolves the actionable classes (401->auth_expired token/hash invalid, 403->permission_denied Reporting Program not attached, 400->invalid_request bad dimension/metric combination or removed field, 404->invalid_request unknown/expired request id past the 30-day window, 5xx->provider_transient). The one confirmed provider-specific error is the free-text message 'There is a problem with the selected combination of dimensions and/or metrics' returned on an invalid combo (HTTP 400 -> invalid_request), which needs no numeric-code refinement. A future story can add sub-code keying once the portal error reference is accessible in a live pass (AI-13)."
+  },
+  "_account_topology_note": "DoubleVerify access is scoped by 'Reporting Programs' selected at Access-Token-Hash creation time in DV Pinnacle (Analytics -> Data API -> Create token). One token may cover one or many Reporting Programs, but DV exposes NO endpoint to enumerate the reachable programs or accounts -- advertiser, campaign, placement, media_property are report DIMENSIONS, not list endpoints. There is therefore nothing to discover programmatically: no discover_accounts is implemented and no *_ACCOUNT_ID env var is used. Accounts/advertisers are discovered empirically by selecting advertiser_name / campaign as dimensions in a report and reading the distinct values (the pattern Adverity/Improvado/Supermetrics also use). The token IS the account selector. Source: Supermetrics DoubleVerify connection guide (https://docs.supermetrics.com/docs/doubleverify-connection-guide); DV developer Report Data API.",
+  "quota": {
+    "window_seconds": 60,
+    "budget_points": 60,
+    "read_cost": 1,
+    "write_cost": 1,
+    "_research_notes": "No request/rate limit is published by DoubleVerify or its integration partners ('No documented request limits' -- Supermetrics). Reporting is asynchronous (submit -> poll status -> download CSV), so the implicit throttle is the poll loop rather than a per-second cap. This conservative 60 req/min budget is a placeholder; the real backstop is the 429 -> RateLimitError handler. Recalibrate against live response headers in the live-integration pass (AI-13)."
+  },
+  "freshness_policy": {
+    "earliest_queryable_offset_days": 1,
+    "stable_offset_days": 3,
+    "refresh_time": "06:00 CST",
+    "_research_notes": "DV data refreshes at 06:00 CST and same-day data cannot be pulled (T-1 is the earliest queryable day; T-3 is treated as stable). Media Gardens (social) report families lag further and per-channel and are out of scope for this Standard-report module. Sources: Alli DoubleVerify doc; Salesforce/Datorama DoubleVerify connector ('Data Lagging: 1 Day')."
+  },
+  "widget_ref": "ui://core/daily-report",
+  "_auth_note": "DoubleVerify authenticates with a static, long-lived 'Access Token Hash' minted in the DV Pinnacle UI (there is NO OAuth flow, token endpoint, or refresh). The hash is sent as 'Authorization: Bearer <hash>'. Per AD-3 the secret transits ONLY via Nango (get_fresh_token(connection_id, provider='doubleverify')) and is never stored or logged by this module. Sources: Improvado DoubleVerify doc; Supermetrics DoubleVerify connection guide.",
+  "source_capabilities": {
+    "contract_version": "1",
+    "field_discovery": {
+      "mode": "static",
+      "allowed_targets": []
+    },
+    "fields": [
+      {
+        "field_id": "monitored_ads",
+        "source_field": "monitored_ads",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Total ads monitored by DoubleVerify.",
+        "semantic_hints": ["count"],
+        "canonical_target": "monitored_ads",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "measured_impressions",
+        "source_field": "measured_impressions",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Impressions successfully measured for viewability.",
+        "semantic_hints": ["count", "impressions"],
+        "canonical_target": "measured_impressions",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "viewable_impressions",
+        "source_field": "viewable_impressions",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Impressions that met the MRC viewability standard.",
+        "semantic_hints": ["count", "impressions"],
+        "canonical_target": "viewable_impressions",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "eligible_impressions",
+        "source_field": "eligible_impressions",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Impressions eligible for measurement.",
+        "semantic_hints": ["count", "impressions"],
+        "canonical_target": "eligible_impressions",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "video_viewable_impressions",
+        "source_field": "video_viewable_impressions",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Video impressions that met the viewability standard.",
+        "semantic_hints": ["count", "impressions", "video"],
+        "canonical_target": "video_viewable_impressions",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "fraud_sivt_incidents",
+        "source_field": "fraud_sivt_incidents",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Impressions flagged as fraud / sophisticated invalid traffic (SIVT).",
+        "semantic_hints": ["count", "fraud"],
+        "canonical_target": "fraud_sivt_incidents",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "fraud_sivt_free_ads",
+        "source_field": "fraud_sivt_free_ads",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Ads that were free of fraud / SIVT.",
+        "semantic_hints": ["count", "fraud"],
+        "canonical_target": "fraud_sivt_free_ads",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "brand_suitability_incidents",
+        "source_field": "brand_suitability_incidents",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Impressions flagged for a brand-suitability incident.",
+        "semantic_hints": ["count", "brand_safety"],
+        "canonical_target": "brand_suitability_incidents",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "brand_suitable_ads",
+        "source_field": "brand_suitable_ads",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Ads that ran in brand-suitable environments.",
+        "semantic_hints": ["count", "brand_safety"],
+        "canonical_target": "brand_suitable_ads",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "authentic_ads",
+        "source_field": "authentic_ads",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "DV Authentic Ads: fraud/SIVT-free, brand-suitable, viewable, and in-geo.",
+        "semantic_hints": ["count", "authentic"],
+        "canonical_target": "authentic_ads",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "date",
+        "source_field": "date",
+        "kind": "dimension",
+        "physical_type": "date",
+        "description": "Calendar date of the measured activity.",
+        "semantic_hints": ["date"],
+        "canonical_target": "date",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "advertiser_name",
+        "source_field": "advertiser_name",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Advertiser the campaign belongs to.",
+        "semantic_hints": ["attribution"],
+        "canonical_target": "advertiser_name",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "campaign",
+        "source_field": "campaign",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Campaign name.",
+        "semantic_hints": ["attribution"],
+        "canonical_target": "campaign",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "media_property",
+        "source_field": "media_property",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Media property (site/app) where the ad was served.",
+        "semantic_hints": ["inventory"],
+        "canonical_target": "media_property",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "media_type",
+        "source_field": "media_type",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Media type (display, video, ...).",
+        "semantic_hints": ["inventory"],
+        "canonical_target": "media_type",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "delivery_country",
+        "source_field": "delivery_country",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Country where the ad was delivered.",
+        "semantic_hints": ["geo"],
+        "canonical_target": "delivery_country",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "device_delivery_type",
+        "source_field": "device_delivery_type",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Device / environment on which the ad was delivered.",
+        "semantic_hints": ["device"],
+        "canonical_target": "device_delivery_type",
+        "aggregation": "none",
+        "non_additive": false
+      }
+    ],
+    "reports": [
+      {
+        "id": "viewability_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "unavailable",
+          "reason_code": "profile_behavior_unproven",
+          "follow_up": "Complete profile-isolated DoubleVerify report dispatch and the live-integration pass."
+        },
+        "metrics": [
+          "monitored_ads",
+          "measured_impressions",
+          "viewable_impressions",
+          "eligible_impressions",
+          "video_viewable_impressions"
+        ],
+        "dimensions": ["date", "advertiser_name", "campaign"],
+        "supported_grains": [["date", "advertiser_name", "campaign"]],
+        "compatibility": [],
+        "filters": [
+          { "field_id": "date", "operators": ["gte", "lte"] }
+        ],
+        "pagination": {
+          "mode": "none",
+          "completeness": "unknown",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "unknown"
+        },
+        "quota_cost": { "read_points": 1, "unit": "request" },
+        "incremental": { "mode": "date_window", "cursor_field": null },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": ["manual", "daily"]
+        }
+      },
+      {
+        "id": "fraud_sivt_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "unavailable",
+          "reason_code": "profile_behavior_unproven",
+          "follow_up": "Complete profile-isolated DoubleVerify report dispatch and the live-integration pass."
+        },
+        "metrics": ["monitored_ads", "fraud_sivt_incidents", "fraud_sivt_free_ads"],
+        "dimensions": ["date", "advertiser_name", "campaign"],
+        "supported_grains": [["date", "advertiser_name", "campaign"]],
+        "compatibility": [],
+        "filters": [
+          { "field_id": "date", "operators": ["gte", "lte"] }
+        ],
+        "pagination": {
+          "mode": "none",
+          "completeness": "unknown",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "unknown"
+        },
+        "quota_cost": { "read_points": 1, "unit": "request" },
+        "incremental": { "mode": "date_window", "cursor_field": null },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": ["manual", "daily"]
+        }
+      },
+      {
+        "id": "brand_suitability_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "unavailable",
+          "reason_code": "profile_behavior_unproven",
+          "follow_up": "Complete profile-isolated DoubleVerify report dispatch and the live-integration pass."
+        },
+        "metrics": ["monitored_ads", "brand_suitability_incidents", "brand_suitable_ads"],
+        "dimensions": ["date", "advertiser_name", "campaign"],
+        "supported_grains": [["date", "advertiser_name", "campaign"]],
+        "compatibility": [],
+        "filters": [
+          { "field_id": "date", "operators": ["gte", "lte"] }
+        ],
+        "pagination": {
+          "mode": "none",
+          "completeness": "unknown",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "unknown"
+        },
+        "quota_cost": { "read_points": 1, "unit": "request" },
+        "incremental": { "mode": "date_window", "cursor_field": null },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": ["manual", "daily"]
+        }
+      },
+      {
+        "id": "catalog_daily",
+        "selection_mode": "catalog_driven",
+        "availability": { "status": "selectable" },
+        "metrics": ["monitored_ads", "measured_impressions", "viewable_impressions"],
+        "dimensions": ["date", "advertiser_name", "campaign", "media_property"],
+        "supported_grains": [
+          ["date", "advertiser_name", "campaign"],
+          ["date", "media_property"]
+        ],
+        "compatibility": [],
+        "filters": [
+          { "field_id": "date", "operators": ["gte", "lte"] }
+        ],
+        "pagination": {
+          "mode": "none",
+          "completeness": "unknown",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "unknown"
+        },
+        "quota_cost": { "read_points": 1, "unit": "request" },
+        "incremental": { "mode": "date_window", "cursor_field": null },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": ["manual", "daily"]
+        },
+        "dispatch": { "callable": "pull_catalog_daily" }
+      }
+    ]
+  }
+}

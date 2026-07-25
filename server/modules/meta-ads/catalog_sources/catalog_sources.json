@@ -1,0 +1,198 @@
+{
+  "connector": "meta-ads",
+  "api_version": "v23.0",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "official_fields.json is produced by build_official_fields.py (committed alongside, deterministic). ROOT scalar fields come from the Meta Marketing API /insights reference; BREAKDOWN dimensions from the Insights breakdowns reference; action-family metrics are EXPANDED from the ads-action-stats action_type list.",
+    "expansion_rule": "For each EXPANDED AdsActionStats family F (actions, action_values, cost_per_action_type, conversions, conversion_values, cost_per_conversion) and each official action_type A, a flattened metric id is emitted as '<F>_<A>' with A's dots normalised to underscores (e.g. actions_offsite_conversion_fb_pixel_purchase). This mirrors how the Graph API returns these arrays keyed by action_type and how Supermetrics flattens the same arrays, which is why the merged counts converge on the same order of magnitude as their 537 metrics / 254 dimensions catalog. Long-tail families (unique_actions, ROAS variants, outbound-click variants, ...) are emitted only as their raw json array field, not itemised per action_type.",
+    "count_divergence": "Metric total (~574) lands on the order of the Supermetrics 537 figure. Dimension total (55) is intentionally below their 254: Supermetrics counts every breakdown VALUE permutation (per-country, per-age-bucket, per-placement, per-asset) as a distinct dimension column, whereas this catalog declares each breakdown ONCE as a parameterised dimension. Enumerating breakdown values is out of scope (they are query parameters, not catalog fields) and would be non-deterministic against the account's data."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/insights/",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "root_insights_fields",
+          "url": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/insights/",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "insights_breakdowns",
+          "url": "https://developers.facebook.com/docs/marketing-api/insights/breakdowns",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "action_type_list",
+          "url": "https://developers.facebook.com/docs/marketing-api/reference/ads-action-stats/",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "error_codes",
+          "url": "https://developers.facebook.com/docs/graph-api/guides/error-handling/",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "file": "supermetrics.md",
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/facebook-ads-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/facebook-ads-fields.md -o server/modules/meta-ads/catalog_sources/supermetrics.md   # DO NOT COMMIT this file (enrichment snapshot only)"
+    }
+  ],
+  "section_tier_map": {
+    "COST": "core",
+    "CLICKS": "core",
+    "IMPRESSION": "core",
+    "PERFORMANCE": "core",
+    "CAMPAIGN DETAILS": "core",
+    "TIME": "core",
+    "ACTION": "standard",
+    "CONVERSION": "standard",
+    "ENGAGEMENT": "standard",
+    "TARGETING": "standard",
+    "PLACEMENT": "standard",
+    "ATTRIBUTION": "standard",
+    "VIDEO": "advanced",
+    "CREATIVE ASSET": "advanced",
+    "APP": "advanced"
+  },
+  "field_tier_overrides": {
+    "spend": "core",
+    "impressions": "core",
+    "clicks": "core",
+    "reach": "core",
+    "frequency": "core",
+    "ctr": "core",
+    "cpc": "core",
+    "cpm": "core",
+    "conversions": "core",
+    "actions": "core",
+    "action_values": "core"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "fields_param",
+    "batch_size": 20,
+    "structural_note": "Meta insights takes a comma-joined fields= param over a time_range on the selected ad account. The probe batches up to 20 fields per request over a 1-day window; a batch that returns an invalid_request (Graph OAuthException on an unknown field) is bisected so the exact rejected field is captured."
+  },
+  "breakdown_compatibility": {
+    "_note": "Story 25.8: consumed at request-build time by pull_catalog_daily. Maps each catalog dimension whose section is a real Insights breakdown (TARGETING / PLACEMENT / ATTRIBUTION / some CONVERSION) to the Meta `breakdowns` param name (source_field == breakdown token). Structure/grain dimensions (CAMPAIGN DETAILS + TIME: campaign_id, adset_id, ad_id, date, account_*, ...) go in the `fields` param, NOT breakdowns, and are omitted here. Incompatible combos are refused BEFORE the API call (invalid_request).",
+    "_source": "https://developers.facebook.com/docs/marketing-api/insights/breakdowns/",
+    "breakdown_fields": [
+      "age",
+      "gender",
+      "country",
+      "region",
+      "dma",
+      "frequency_value",
+      "publisher_platform",
+      "platform_position",
+      "device_platform",
+      "impression_device",
+      "place_page_id",
+      "product_id",
+      "action_type",
+      "action_device",
+      "action_destination",
+      "action_reaction",
+      "action_video_type",
+      "action_video_sound",
+      "action_target_id",
+      "action_canvas_component_name",
+      "action_carousel_card_id",
+      "action_carousel_card_name",
+      "user_segment_key",
+      "skan_campaign_id",
+      "skan_conversion_id"
+    ],
+    "max_breakdowns": 4,
+    "incompatible_pairs": [
+      [
+        "age",
+        "country"
+      ],
+      [
+        "age",
+        "region"
+      ],
+      [
+        "age",
+        "dma"
+      ],
+      [
+        "gender",
+        "country"
+      ],
+      [
+        "gender",
+        "region"
+      ],
+      [
+        "gender",
+        "dma"
+      ],
+      [
+        "country",
+        "region"
+      ],
+      [
+        "country",
+        "dma"
+      ],
+      [
+        "region",
+        "dma"
+      ],
+      [
+        "product_id",
+        "age"
+      ],
+      [
+        "product_id",
+        "gender"
+      ],
+      [
+        "product_id",
+        "country"
+      ],
+      [
+        "product_id",
+        "region"
+      ],
+      [
+        "product_id",
+        "dma"
+      ],
+      [
+        "product_id",
+        "publisher_platform"
+      ],
+      [
+        "product_id",
+        "platform_position"
+      ],
+      [
+        "product_id",
+        "device_platform"
+      ],
+      [
+        "product_id",
+        "impression_device"
+      ]
+    ]
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {
+    "CREATIVE ASSET": "Asset-level breakdowns (image_asset, body_asset, ...) require the asset-level Insights request shape (breakdowns on creative assets return one row per asset variant) which pull_catalog_daily does not build; excluded until the asset request shape is implemented.",
+    "VIDEO": "Video engagement families (video_p25/50/75/100_watched_actions, ...) are returned as nested action-array shapes with a distinct parsing contract not yet implemented in _parse_catalog_row.",
+    "APP": "App-event breakdowns (app_id) need an app-scoped Insights request shape not built by pull_catalog_daily."
+  },
+  "_exposure_note": "Story 25.8: after catalog_driven execution exists, exposure = reachable through pull_catalog_daily. The generator marks a field `exposed` when it is a scalar Insights root field OR an action-family expansion OR a declared breakdown (all reachable). The families below stay `excluded` WITH an exclusion_reason because pull_catalog_daily does not implement their request shape."
+}

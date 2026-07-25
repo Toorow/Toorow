@@ -1,0 +1,596 @@
+{
+  "schema_version": "1.2",
+  "name": "cm360",
+  "display_name": "Campaign Manager 360",
+  "public_catalog": {
+    "visibility": "public",
+    "category": "paid_media",
+    "onboarding_modes": [
+      "connector_pull"
+    ],
+    "verification": {
+      "status": "blocked",
+      "reason_code": "live_evidence_not_ratified",
+      "follow_up": "Probe an authorized CM360 profile and advertiser across discovery, bounded query, saved-report resume, compatibility, pagination and errors."
+    }
+  },
+  "auth_type": "google_direct",
+  "module_kind": "kpi",
+  "provider_api_version": "dfareporting-v5",
+  "provider_api_base": "https://dfareporting.googleapis.com/dfareporting/v5",
+  "_provider_api_note": "CM360 v5 is pinned here and in the generated source ledger. reportData.query is bounded to 60 seconds; saved reports use core.async_reports for persisted resume and deduplication.",
+  "auth": {
+    "type": "google_direct",
+    "auth_path": "google_direct",
+    "scope": "https://www.googleapis.com/auth/dfareporting"
+  },
+  "account_topology": {
+    "levels": [
+      "user_profile",
+      "account_or_subaccount",
+      "advertiser"
+    ],
+    "selection_level": "advertiser",
+    "discovery": {
+      "callable": "discover_accounts"
+    },
+    "selection": {
+      "required": true,
+      "opaque": true
+    }
+  },
+  "report_profiles": [
+    {
+      "id": "standard_daily",
+      "display_name": "Standard delivery (daily)",
+      "metrics": [
+        "impressions",
+        "clicks",
+        "cost"
+      ],
+      "dimensions": [
+        "date",
+        "advertiser_id",
+        "campaign_id",
+        "placement_id",
+        "creative_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "floodlight_daily",
+      "display_name": "Floodlight conversions (daily)",
+      "metrics": [
+        "conversions",
+        "conversion_value"
+      ],
+      "dimensions": [
+        "date",
+        "advertiser_id",
+        "campaign_id",
+        "floodlight_activity_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "reach",
+      "display_name": "Reach and frequency",
+      "metrics": [
+        "unique_reach",
+        "average_frequency"
+      ],
+      "dimensions": [
+        "date",
+        "advertiser_id",
+        "campaign_id",
+        "country"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "path_to_conversion",
+      "display_name": "Path to conversion",
+      "metrics": [],
+      "dimensions": [
+        "date",
+        "advertiser_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "availability": {
+        "status": "unavailable",
+        "reason_code": "dedicated_grain_required",
+        "follow_up": "Implement a dedicated path-to-conversion landing and bounded extraction contract."
+      },
+      "extraction_path": "custom_pull"
+    }
+  ],
+  "canonical_metric_mapping": {
+    "impressions": "impressions",
+    "clicks": "clicks",
+    "cost": "cost",
+    "conversions": "conversions",
+    "conversion_value": "conversions_value",
+    "unique_reach": {
+      "canonical": "unique_reach",
+      "aggregation_rule": "max",
+      "non_additive": true
+    },
+    "average_frequency": {
+      "canonical": "average_frequency",
+      "aggregation_rule": "impression_weighted",
+      "non_additive": true
+    }
+  },
+  "canonical_dimension_mapping": {
+    "date": "date",
+    "advertiser_id": "advertiser_id",
+    "campaign_id": "campaign_id",
+    "placement_id": "placement_id",
+    "creative_id": "creative_id",
+    "floodlight_activity_id": "floodlight_activity_id",
+    "country": "country"
+  },
+  "error_map": {
+    "401:authError": "auth_expired",
+    "403:insufficientPermissions": "permission_denied",
+    "403:dailyLimitExceeded": "provider_transient",
+    "400:invalid": "invalid_request",
+    "404:notFound": "invalid_request",
+    "409:conflict": "provider_transient"
+  },
+  "quota": {
+    "window_seconds": 60,
+    "budget_points": 120,
+    "read_cost": 1,
+    "write_cost": 1
+  },
+  "source_capabilities": {
+    "contract_version": "1",
+    "field_discovery": {
+      "mode": "static",
+      "allowed_targets": []
+    },
+    "fields": [
+      {
+        "field_id": "date",
+        "source_field": "date",
+        "kind": "dimension",
+        "physical_type": "date",
+        "description": "CM360 reporting day.",
+        "semantic_hints": [
+          "date"
+        ],
+        "canonical_target": "date",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "advertiser_id",
+        "source_field": "dfa:advertiser",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Selected advertiser identifier.",
+        "semantic_hints": [
+          "advertiser",
+          "identifier"
+        ],
+        "canonical_target": "advertiser_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "campaign_id",
+        "source_field": "dfa:campaign",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Campaign identifier.",
+        "semantic_hints": [
+          "campaign",
+          "identifier"
+        ],
+        "canonical_target": "campaign_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "placement_id",
+        "source_field": "dfa:placement",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Placement identifier.",
+        "semantic_hints": [
+          "placement",
+          "identifier"
+        ],
+        "canonical_target": "placement_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "creative_id",
+        "source_field": "dfa:creative",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Creative identifier.",
+        "semantic_hints": [
+          "creative",
+          "identifier"
+        ],
+        "canonical_target": "creative_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "floodlight_activity_id",
+        "source_field": "dfa:activity",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Floodlight activity identifier.",
+        "semantic_hints": [
+          "floodlight",
+          "identifier"
+        ],
+        "canonical_target": "floodlight_activity_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "country",
+        "source_field": "dfa:country",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Provider country value; sentinels are preserved.",
+        "semantic_hints": [
+          "country"
+        ],
+        "canonical_target": "country",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "impressions",
+        "source_field": "dfa:impressions",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Served impressions.",
+        "semantic_hints": [
+          "delivery"
+        ],
+        "canonical_target": "impressions",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "clicks",
+        "source_field": "dfa:clicks",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Recorded clicks.",
+        "semantic_hints": [
+          "delivery"
+        ],
+        "canonical_target": "clicks",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "cost",
+        "source_field": "dfa:mediaCost",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "Media cost in report currency.",
+        "semantic_hints": [
+          "cost",
+          "currency"
+        ],
+        "canonical_target": "cost",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "conversions",
+        "source_field": "dfa:totalConversions",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "Floodlight attributed conversions.",
+        "semantic_hints": [
+          "conversion",
+          "attribution"
+        ],
+        "canonical_target": "conversions",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "conversion_value",
+        "source_field": "dfa:totalConversionsRevenue",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "Floodlight conversion value.",
+        "semantic_hints": [
+          "conversion",
+          "currency"
+        ],
+        "canonical_target": "conversions_value",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "unique_reach",
+        "source_field": "dfa:uniqueReachImpressions",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Unique reach at the exact provider grain.",
+        "semantic_hints": [
+          "reach",
+          "non_additive"
+        ],
+        "canonical_target": "unique_reach",
+        "aggregation": "max",
+        "non_additive": true
+      },
+      {
+        "field_id": "average_frequency",
+        "source_field": "dfa:averageFrequency",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "Average frequency at the exact provider grain.",
+        "semantic_hints": [
+          "frequency",
+          "ratio",
+          "non_additive"
+        ],
+        "canonical_target": "average_frequency",
+        "aggregation": "impression_weighted",
+        "non_additive": true
+      }
+    ],
+    "reports": [
+      {
+        "id": "standard_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "impressions",
+          "clicks",
+          "cost"
+        ],
+        "dimensions": [
+          "date",
+          "advertiser_id",
+          "campaign_id",
+          "placement_id",
+          "creative_id"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "advertiser_id",
+            "campaign_id",
+            "placement_id",
+            "creative_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "cursor",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "page"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_standard_daily"
+        }
+      },
+      {
+        "id": "floodlight_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "conversions",
+          "conversion_value"
+        ],
+        "dimensions": [
+          "date",
+          "advertiser_id",
+          "campaign_id",
+          "floodlight_activity_id"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "advertiser_id",
+            "campaign_id",
+            "floodlight_activity_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "cursor",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "page"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_floodlight_daily"
+        }
+      },
+      {
+        "id": "reach",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "unique_reach",
+          "average_frequency"
+        ],
+        "dimensions": [
+          "date",
+          "advertiser_id",
+          "campaign_id",
+          "country"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "advertiser_id",
+            "campaign_id",
+            "country"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "cursor",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "page"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_reach"
+        }
+      },
+      {
+        "id": "path_to_conversion",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "unavailable",
+          "reason_code": "dedicated_grain_required",
+          "follow_up": "Implement a dedicated path-to-conversion landing and bounded extraction contract."
+        },
+        "metrics": [],
+        "dimensions": [
+          "date",
+          "advertiser_id"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "advertiser_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [],
+        "pagination": {
+          "mode": "none",
+          "completeness": "unknown",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "unknown"
+        },
+        "quota_cost": {
+          "read_points": 0,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "full_refresh",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual"
+          ]
+        }
+      }
+    ]
+  }
+}

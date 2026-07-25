@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: raw_doubleverify
+    description: "Immutable raw landing zone for DoubleVerify data (AD-7: append-only)."
+    schema: main
+    tables:
+      - name: raw_doubleverify_daily
+        description: "Raw DoubleVerify daily measurement data (long format). Append-only (AD-7)."
+
+models:
+  - name: stg_doubleverify_daily
+    description: >
+      Staging: DoubleVerify long-format rows at the (date, metric, breakdown) grain.
+      QUALIFY supersede (AD-7): latest pull per grain wins. Only additive count
+      metrics are present -- every *_rate is dropped upstream (AD-4).
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_doubleverify_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || metric || '|' || breakdown_dimension || '|' || breakdown_value"

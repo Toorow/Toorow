@@ -1,0 +1,132 @@
+version: 2
+
+sources:
+  - name: raw_google_ads
+    description: "Immutable raw landing zone for Google Ads GAQL daily data (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_google_ads_daily
+        description: >
+          Raw Google Ads daily data, LONG format (Story 26.2): one row per
+          grain x metric x pull_id. Append-only (AD-7): each pull run adds a
+          new batch identified by pull_id. The catalog_daily profile can land
+          ANY cataloged metric here (metric, value_num), which is why the
+          landing is long, not wide. *_micros amounts are converted to
+          currency units at landing (value/1e6, platform micros rule).
+        columns:
+          - name: date
+            description: "ISO-8601 date string (segments.date; account time zone). Day grain."
+          - name: data_level
+            description: >
+              Report grain that produced this row: CAMPAIGN | AD_GROUP | AD |
+              KEYWORD | SEARCH_TERM (story 3.6 lesson). Part of the grain key
+              so coexisting grains never double-count inside one series.
+          - name: customer_id
+            description: "Reporting customer (client account) CID."
+          - name: campaign_id
+            description: "Campaign ID ('' on rows whose grain does not carry it)."
+          - name: campaign_name
+            description: "Campaign display name."
+          - name: ad_group_id
+            description: "Ad group ID ('' above ad group grain)."
+          - name: ad_group_name
+            description: "Ad group display name."
+          - name: ad_id
+            description: "Ad ID ('' above ad grain)."
+          - name: criterion_id
+            description: "Ad group criterion ID (keyword grain only)."
+          - name: keyword_text
+            description: "Keyword text (keyword grain only)."
+          - name: search_term
+            description: "Search term (search_term grain only; canonical mapping of search_term_view.search_term)."
+          - name: segments_json
+            description: >
+              Canonical sorted-key JSON of the selected ROW-BEARING dimensions
+              (GAQL segments like device/network/geo). NULL when none were
+              selected. Part of the supersede grain.
+          - name: attributes_json
+            description: >
+              Story 26.6 Part A: canonical sorted-key JSON of the selected
+              DESCRIPTIVE-MUTABLE attributes (status/type enums declared
+              descriptive_mutable in the catalog: campaign_status,
+              ad_group_status, campaign_advertising_channel_type, ...).
+              LATEST-WINS, like campaign_name. NULL when none were selected.
+              DELIBERATELY NOT part of the supersede grain -- a re-pull with a
+              changed status never forks the grain nor double-counts metrics.
+          - name: metric
+            description: >
+              Canonical metric id (catalog field_id after manifest rename,
+              e.g. 'cost' for metrics.cost_micros). Long-format contract.
+          - name: value_num
+            description: >
+              Metric value. Monetary metrics are ALWAYS in currency units
+              (micros/1e6 applied once in transform()). Ratio metrics selected
+              via catalog_daily are RAW day-grain values: NON-ADDITIVE (AD-4),
+              never SUM them.
+          - name: cost_source_currency
+            description: "Account billing currency (customer.currency_code) when selected; NULL otherwise."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: "Project binding (AD-14). 'default' for seeded test data."
+
+models:
+  - name: stg_google_ads_daily
+    description: >
+      Staging layer for the Google Ads LONG landing (Story 26.2). Supersede
+      semantics (AD-7): QUALIFY keeps only the latest pull per grain
+      (project_id, date, data_level, customer_id, campaign_id, ad_group_id,
+      ad_id, criterion_id, search_term, segments_json, metric). Story 26.6 Part
+      A: attributes_json (descriptive-mutable status/type enums) is EXCLUDED
+      from that grain and carries latest-wins, so a re-pull with a changed
+      status keeps ONE row per grain (no double-count). AD-4: ratio metrics
+      land raw and are never summed; monetary values are in currency units
+      (micros rule applied at landing).
+    tests:
+      # AI-05 grain uniqueness: a duplicate grain row means double-counted
+      # KPIs downstream. The QUALIFY dedup must always hold. COALESCE the
+      # nullable segments_json so rows without segments key cleanly.
+      - unique:
+          name: stg_google_ads_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || data_level || '|' || customer_id || '|' || campaign_id || '|' || ad_group_id || '|' || ad_id || '|' || criterion_id || '|' || search_term || '|' || COALESCE(segments_json, '') || '|' || metric"
+    columns:
+      - name: date
+        description: "ISO-8601 date string. Day grain."
+        tests:
+          - not_null
+      - name: data_level
+        description: "Report grain marker (part of the grain key)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["CAMPAIGN", "AD_GROUP", "AD", "KEYWORD", "SEARCH_TERM"]
+      - name: customer_id
+        description: "Reporting customer CID."
+        tests:
+          - not_null
+      - name: metric
+        description: "Canonical metric id (long format)."
+        tests:
+          - not_null
+      - name: value_num
+        description: "Metric value (currency units for monetary metrics)."
+        tests:
+          - not_null
+      - name: attributes_json
+        description: >
+          Latest-wins descriptive-mutable attributes (status/type enums). NOT
+          part of the grain (story 26.6 Part A). Nullable.
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding for this row. Propagated from raw_google_ads_daily."
+        tests:
+          - not_null

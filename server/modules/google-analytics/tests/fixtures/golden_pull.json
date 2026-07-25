@@ -1,0 +1,52 @@
+[
+  {
+    "pull_id": "pull_test_001",
+    "connector": "google-analytics",
+    "date": "2026-07-01",
+    "deviceCategory": "desktop",
+    "country": "France",
+    "activeUsers": 1200,
+    "sessions": 1450,
+    "conversions": 32
+  },
+  {
+    "pull_id": "pull_test_001",
+    "connector": "google-analytics",
+    "date": "2026-07-01",
+    "deviceCategory": "mobile",
+    "country": "France",
+    "activeUsers": 850,
+    "sessions": 920,
+    "conversions": 18
+  },
+  {
+    "pull_id": "pull_test_002",
+    "connector": "google-analytics",
+    "date": "2026-07-02",
+    "deviceCategory": "desktop",
+    "country": "Germany",
+    "activeUsers": 430,
+    "sessions": 510,
+    "conversions": 11
+  },
+  {
+    "pull_id": "pull_test_002",
+    "connector": "google-analytics",
+    "date": "2026-07-02",
+    "deviceCategory": "tablet",
+    "country": "Spain",
+    "activeUsers": 210,
+    "sessions": 240,
+    "conversions": 5
+  },
+  {
+    "pull_id": "pull_test_003",
+    "connector": "google-analytics",
+    "date": "2026-07-03",
+    "deviceCategory": "mobile",
+    "country": "United Kingdom",
+    "activeUsers": 670,
+    "sessions": 730,
+    "conversions": 22
+  }
+]

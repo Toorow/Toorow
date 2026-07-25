@@ -1,0 +1,36 @@
+[
+  {
+    "pull_id": "pull_strava_001",
+    "connector": "strava",
+    "date": "2026-07-20",
+    "is_own_club": true,
+    "club_id": 108605,
+    "club_name": "Toorow Running Club",
+    "member_count": 1284,
+    "following_count": 37,
+    "sport_type": "running",
+    "club_city": "Paris",
+    "club_state": "Ile-de-France",
+    "club_country": "France",
+    "is_private": false,
+    "is_verified": true,
+    "club_url": "toorow-running"
+  },
+  {
+    "pull_id": "pull_strava_001",
+    "connector": "strava",
+    "date": "2026-07-20",
+    "is_own_club": false,
+    "club_id": 42033,
+    "club_name": "Rival Runners Collective",
+    "member_count": 5821,
+    "following_count": 12,
+    "sport_type": "running",
+    "club_city": "Lyon",
+    "club_state": "Auvergne-Rhone-Alpes",
+    "club_country": "France",
+    "is_private": false,
+    "is_verified": false,
+    "club_url": "rival-runners"
+  }
+]

@@ -1,0 +1,57 @@
+{
+  "connector": "x-ads",
+  "api_version": "ads-api-v12",
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://docs.x.com/x-ads-api/analytics",
+      "fetched_at": "2026-07-22"
+    }
+  ],
+  "section_tier_map": {
+    "DIMENSION": "core",
+    "METRIC": "core"
+  },
+  "default_tier": "standard",
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {
+    "VIDEO_VIEWS": {
+      "reason": "deferred — video-completion metrics (VIDEO_25_PERCENTILE_VIEWS, VIDEO_50_PERCENTILE_VIEWS, VIDEO_75_PERCENTILE_VIEWS, VIDEO_100_PERCENTILE_VIEWS, VIDEO_TOTAL_VIEWS) require a video-creative entity type not in scope for the initial v12 catalog. Will be added when a video-specific profile is introduced.",
+      "status": "deferred",
+      "story_ref": null
+    },
+    "MEDIA_VIEWS": {
+      "reason": "deferred — MEDIA_VIEWS and MEDIA_ENGAGEMENTS are sub-groupings of video/GIF placements and share the same entity-type prerequisite as VIDEO_VIEWS. Excluded alongside VIDEO_VIEWS for scope consistency.",
+      "status": "deferred",
+      "story_ref": null
+    },
+    "MEDIA_ENGAGEMENTS": {
+      "reason": "deferred — see MEDIA_VIEWS above.",
+      "status": "deferred",
+      "story_ref": null
+    },
+    "WEB_CONVERSIONS": {
+      "reason": "deferred — WEB_CONVERSIONS sub-metrics (app installs, site visits, add-to-cart, purchase, sign-up) require the advertiser to have a Website Tag or App SDK installed and events configured. The generic CONVERSIONS field (included) covers the aggregate. Fine-grained web conversion metrics will be added when the conversion-tracking profile is introduced.",
+      "status": "deferred",
+      "story_ref": null
+    },
+    "MOBILE_CONVERSION": {
+      "reason": "deferred — MOBILE_CONVERSION_* metrics (installs, re-engagements, add-to-cart, etc.) require a mobile app measurement partner (MMP) integration. No MMP scope is in the current story. Excluded until an app-attribution profile is introduced.",
+      "status": "deferred",
+      "story_ref": null
+    },
+    "CARD_ENGAGEMENTS": {
+      "reason": "deferred — card-specific engagement metrics (URL_CLICKS_FOR_CARD, CARD_LIKES, CARD_RETWEETS) are only available for card-creative line items. No card-creative entity type is in scope for v1. Excluded until a card-creative profile is added.",
+      "status": "deferred",
+      "story_ref": null
+    },
+    "PROMOTED_TWEET_FULL_ENTITY_ANALYTICS": {
+      "reason": "deferred — PROMOTED_TWEET is currently exposed as a dimension only (promoted_tweet_id in promoted_post_daily profile). Full entity-level analytics for promoted tweets with all metric groups would require a dedicated entity analytics path. Deferred pending promoted-tweet analytics profile story.",
+      "status": "deferred",
+      "story_ref": null
+    }
+  }
+}

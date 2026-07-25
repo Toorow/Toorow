@@ -1,0 +1,150 @@
+/**
+ * data-quality.css — page-specific styles for DataQualityPage (Governance ›
+ * Data quality), following the sources.css / project-mapping.css conventions.
+ *
+ * Shell/layout classes (page-header, header-actions, panel, secondary-button,
+ * quiet-button, selector, signal-label, signal-mark, table-scroll, sr-only)
+ * live in application.css and are global. This file only adds the data-quality
+ * pieces: the monitor-card grid, the issues/freshness panel headers, the
+ * freshness table cell layout, the monitor-definition strip, and the cache
+ * section spacing.
+ *
+ * Tokenized: every color references an application.css CSS variable, so the
+ * surface flips correctly in dark mode. Numbers use the Geist tabular treatment
+ * via the .dq-num / .dq-table rules, mirroring the reference stylesheets.
+ */
+
+/* --- Vertical rhythm between the stacked sections (page-header already
+   provides its own trailing margin via application.css). --- */
+.dq-monitors,
+.dq-panel,
+.dq-definitions,
+.dq-cache-section {
+  margin-bottom: 24px;
+}
+.dq-cache-section {
+  margin-bottom: 0;
+}
+
+/* --- Monitor KPI cards: responsive row that wraps like the mockup. --- */
+.dq-monitors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.dq-monitors > [role="listitem"] {
+  flex: 1 1 200px;
+  min-width: 200px;
+  display: flex;
+}
+.dq-monitors > [role="listitem"] > * {
+  width: 100%;
+}
+
+/* --- Panel header (issues / freshness), mirroring source-panel-header. --- */
+.dq-panel {
+  overflow: hidden;
+}
+.dq-panel-header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.dq-panel-header h2 {
+  margin: 0;
+  font: 600 19px "Lexend", sans-serif;
+}
+.dq-panel-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- Freshness table --- */
+.dq-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.dq-table th {
+  height: 42px;
+  padding: 0 20px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+.dq-table td {
+  height: 60px;
+  padding: 0 20px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.dq-table td strong {
+  display: block;
+  font-weight: 600;
+}
+.dq-table .dq-num {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.dq-table th.dq-num {
+  font-family: inherit;
+}
+
+/* Loading + empty affordances inside a panel. */
+.dq-table-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+}
+.dq-empty {
+  margin: 0;
+  padding: 28px 20px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.dq-error {
+  color: var(--error);
+}
+
+/* --- Monitor definitions strip --- */
+.dq-definitions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.dq-definition {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+.dq-definition strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+.dq-definition span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* --- Cache section heading --- */
+.dq-section-title {
+  margin: 0 0 14px;
+  font: 600 19px "Lexend", sans-serif;
+}

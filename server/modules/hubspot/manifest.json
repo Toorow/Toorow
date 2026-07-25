@@ -1,0 +1,371 @@
+{
+    "schema_version": "1.2",
+    "name": "hubspot",
+    "display_name": "HubSpot CRM",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "crm",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "module_kind": "kpi",
+    "auth_type": "oauth2",
+    "error_map": {
+        "401:EXPIRED_AUTHENTICATION": "auth_expired",
+        "401:INVALID_AUTHENTICATION": "auth_expired",
+        "401:AUTHENTICATION_ERROR": "auth_expired",
+        "403:MISSING_SCOPES": "permission_denied",
+        "403:BANNED": "auth_revoked",
+        "403:PORTAL_AUTHENTICATION_FAILED": "permission_denied",
+        "400:VALIDATION_ERROR": "invalid_request",
+        "500:INTERNAL_ERROR": "provider_transient",
+        "502:INTERNAL_ERROR": "provider_transient",
+        "503:INTERNAL_ERROR": "provider_transient",
+        "423:LOCKED": "provider_transient",
+        "477:MIGRATION_IN_PROGRESS": "provider_transient"
+    },
+    "_error_map_note": "Story 33.2: connector-local normalization copies HubSpot category to code before core classification while preserving the original sanitized payload. Category-specific manifest entries therefore fire; malformed/category-free responses retain HTTP-status fallback. This normalization feeds core _extract_provider_code through the conventional code field.",
+    "_account_topology_note": "Story 33.2: one OAuth connection resolves one portal. /account-info/2026-03/details supplies portal id, timezone, company currency, additional currencies and data-hosting location through connection configuration; this is identity/configuration evidence, not multi-account topology.",
+    "report_profiles": [
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven daily (any selected field)",
+            "metrics": [
+                "new_contacts",
+                "deals_created",
+                "deals_closed",
+                "deal_amount"
+            ],
+            "dimensions": [
+                "date"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "contacts_daily",
+            "display_name": "Contacts crees par jour (daily)",
+            "metrics": [
+                "new_contacts"
+            ],
+            "dimensions": [
+                "date"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": 1,
+            "_ai_53_notes": "AI-53 VERIFIE le 2026-07-19 : HubSpot CRM v3 ne fournit PAS d'agregat daily natif. La granularite journaliere est obtenue par le Search API (POST /crm/v3/objects/contacts/search) en filtrant sur la propriete 'createdate' (fenetre demi-ouverte GTE/LT) et en aggregant le compte de resultats cote serveur (nombre de contacts crees dans la journee). La pagination utilise le curseur 'after' (max 200 objets/page, limite 10 000 resultats/query -- AI-53 verifie le 2026-07-19). Source : https://developers.hubspot.com/docs/api/crm/contacts et https://developers.hubspot.com/docs/api/crm/search"
+        },
+        {
+            "id": "deals_daily",
+            "display_name": "Deals crees et fermes par jour (daily)",
+            "metrics": [
+                "deals_created",
+                "deals_closed",
+                "deal_amount"
+            ],
+            "dimensions": [
+                "date"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": 2,
+            "_ai_53_notes": "AI-53 VERIFIE le 2026-07-19 : HubSpot CRM v3 ne fournit PAS d'agregat daily natif pour les deals. Deux pulls distincts sont necessaires : (1) deals crees dans la journee -> fenetre createdate GTE/LT ; (2) deals fermes (won) dans la journee -> fenetre closedate GTE/LT + hs_is_closed_won=true. La propriete 'amount_in_home_currency' porte la valeur normalisee; la devise societe vient des metadonnees du portail. Champs principaux : dealname, amount, closedate, dealstage, pipeline, createdate, hubspot_owner_id. Pagination curseur 'after' identique aux contacts. Source : https://developers.hubspot.com/docs/api/crm/deals et https://developers.hubspot.com/docs/api/crm/search"
+        }
+    ],
+    "canonical_metric_mapping": {
+        "new_contacts": "new_contacts",
+        "deals_created": "deals_created",
+        "deals_closed": "deals_closed",
+        "deal_amount": "deal_amount"
+    },
+    "canonical_dimension_mapping": {
+        "date": "date",
+        "dealstage": "dealstage",
+        "pipeline": "pipeline"
+    },
+    "quota": {
+        "window_seconds": 1,
+        "budget_points": 5,
+        "read_cost": 1,
+        "write_cost": 3,
+        "_ai_53_notes": "AI-53 VERIFIE le 2026-07-19 : HubSpot CRM v3 applique un rate limit de 5 requetes par seconde par compte (toutes categories confondues). Source : https://developers.hubspot.com/docs/api/crm/search ('Rate limits: 5 requests per second per account'). Le profil retenu (window 1s / 5pts / read_cost=1) modelise directement cette limite. En cas de depassement, l'API retourne HTTP 429 avec header 'Retry-After'. La limite daily (si existante) n'est pas documentee explicitement ; a confirmer en passe live (Phase B, AI-13). Backstop : handler 429 -> RateLimitError('hubspot', retry_after)."
+    },
+    "_crm_isolation_rule": "REGLE CRITIQUE AD-4 (Story 15.5) : les metriques HubSpot CRM (new_contacts, deals_created, deals_closed, deal_amount) sont des indicateurs CRM PURS -- ils mesurent la realite du pipeline commercial et non des conversions revendiquees par des regies. ILS NE SONT JAMAIS SOMMES avec les metriques marketing existantes (conversions GA4/Meta/TikTok, revenue Shopify/Stripe) dans un total croise. Usage legitime : reconciliation leads CRM vs leads declares par les regies (pipeline de validation), carte CRM distincte. Toute agregation croisee est INTERDITE sans une regle declarative explicite (AD-4 / cross_source). La discipline est DECLARATIVE (pattern manifesté ici) + testee dbt de facon non-tautologique.",
+    "_auth_notes": "AI-53 VERIFIE le 2026-07-19 : HubSpot propose deux modes d'auth : OAuth2 (apps publiques, consentement utilisateur) et Private App Token (apps internes, token statique). Pour une integration multi-tenant (toorow), OAuth2 est le mode RECOMMANDE par HubSpot (https://developers.hubspot.com/docs/guides/apps/authentication/oauth). Les tokens transitent UNIQUEMENT via Nango (AD-3) -- jamais hardcodes ni loggues dans notre code. Scopes requis : crm.objects.contacts.read, crm.objects.deals.read. Le provider Nango 'hubspot' supporte OAuth2 nativement.",
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "new_contacts",
+                "source_field": "new_contacts",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "new contacts exposed by HubSpot CRM.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "new_contacts",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "createdate/closedate",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "date exposed by HubSpot CRM.",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "deals_created",
+                "source_field": "deals_created",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "deals created exposed by HubSpot CRM.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "deals_created",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "deals_closed",
+                "source_field": "deals_closed",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "deals closed exposed by HubSpot CRM.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "deals_closed",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "deal_amount",
+                "source_field": "deal_amount",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "deal amount exposed by HubSpot CRM.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "deal_amount",
+                "aggregation": "sum",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "new_contacts",
+                    "deals_created",
+                    "deals_closed",
+                    "deal_amount"
+                ],
+                "dimensions": [
+                    "date"
+                ],
+                "supported_grains": [
+                    [
+                        "date"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 3,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                }
+            },
+            {
+                "id": "contacts_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "new_contacts"
+                ],
+                "dimensions": [
+                    "date"
+                ],
+                "supported_grains": [
+                    [
+                        "date"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_contacts_daily"
+                }
+            },
+            {
+                "id": "deals_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "deals_created",
+                    "deals_closed",
+                    "deal_amount"
+                ],
+                "dimensions": [
+                    "date"
+                ],
+                "supported_grains": [
+                    [
+                        "date"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "cursor",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_deals_daily"
+                }
+            }
+        ]
+    },
+    "provider_api_version": "v3",
+    "provider_api_hosts": {
+        "crm": "https://api.hubapi.com",
+        "account_info": "https://api.hubapi.com"
+    },
+    "_provider_api_note": "Story 33.2: CRM v3 is the single selected production Search API. The dated 2026-03 path builder is contract-tested but is not mixed into a pull until live portal parity evidence is ratified. Account identity/configuration uses /account-info/2026-03/details independently.",
+    "refetch": {
+        "nightly_days": 3,
+        "weekly_days": 14,
+        "monthly_days": 45
+    }
+}

@@ -1,0 +1,67 @@
+[
+  {
+    "dimensions": {
+      "campaign_id": "1770000000000000001",
+      "stat_time_day": "2026-07-01 00:00:00"
+    },
+    "metrics": {
+      "campaign_name": "Toorow - Notoriete FR",
+      "spend": "128.50",
+      "impressions": "25700",
+      "clicks": "411",
+      "conversions": "23"
+    }
+  },
+  {
+    "dimensions": {
+      "campaign_id": "1770000000000000002",
+      "stat_time_day": "2026-07-01 00:00:00"
+    },
+    "metrics": {
+      "campaign_name": "Toorow - Conversion Web",
+      "spend": "64.00",
+      "impressions": "9800",
+      "clicks": "176",
+      "conversions": "12"
+    }
+  },
+  {
+    "dimensions": {
+      "campaign_id": "1770000000000000003",
+      "stat_time_day": "2026-07-02 00:00:00"
+    },
+    "metrics": {
+      "campaign_name": "Toorow - Retargeting Panier",
+      "spend": "210.90",
+      "impressions": "31200",
+      "clicks": "624",
+      "conversions": "41"
+    }
+  },
+  {
+    "dimensions": {
+      "campaign_id": "1770000000000000001",
+      "stat_time_day": "2026-07-02 00:00:00"
+    },
+    "metrics": {
+      "campaign_name": "Toorow - Notoriete FR",
+      "spend": "95.40",
+      "impressions": "19100",
+      "clicks": "268",
+      "conversions": "9"
+    }
+  },
+  {
+    "dimensions": {
+      "campaign_id": "1770000000000000002",
+      "stat_time_day": "2026-07-03 00:00:00"
+    },
+    "metrics": {
+      "campaign_name": "-",
+      "spend": "40.00",
+      "impressions": "6400",
+      "clicks": "88",
+      "conversions": "4"
+    }
+  }
+]

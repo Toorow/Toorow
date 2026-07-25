@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Report Definition",
+  "type": "object",
+  "required": ["id", "display_name", "metrics", "dimensions", "layout", "narrative_prompt", "date_window"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "description": "Unique snake_case or kebab-case report identifier, scoped to the module"
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Human-readable French-first label shown in the admin console"
+    },
+    "metrics": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Canonical metric names — each MUST exist in the dbt semantic dictionary"
+    },
+    "dimensions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Canonical dimension names — each MUST exist in the dbt semantic dictionary"
+    },
+    "layout": {
+      "type": "object",
+      "required": ["chart_type", "order_by"],
+      "properties": {
+        "chart_type": {
+          "type": "string",
+          "enum": ["line", "bar", "heatmap", "table", "small_multiples"],
+          "description": "Hint consumed by the module's widget renderer — no rendering logic in the schema"
+        },
+        "order_by": {
+          "type": "string",
+          "description": "Canonical metric or dimension to sort by (e.g. 'date', 'sessions DESC')"
+        },
+        "top_n": {
+          "type": "integer",
+          "description": "Optional: limit rows to top N (useful for page/campaign breakdowns)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "narrative_prompt": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Domain-specific prompt fragment injected into the LLM summary for this report. Must be ≤200 chars. Sets the expert 'voice' (e.g. 'Analyse en termes SEO: mouvements de position…')."
+    },
+    "date_window": {
+      "type": "object",
+      "required": ["default_days"],
+      "properties": {
+        "default_days": {
+          "type": "integer",
+          "description": "Default lookback in days when no explicit date_range is given (e.g. 30, 90)"
+        },
+        "min_days": { "type": "integer" },
+        "max_days": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "connectors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional: list of connector names to include. Defaults to the report's own module. Use for cross-source reports."
+    }
+  },
+  "additionalProperties": false
+}

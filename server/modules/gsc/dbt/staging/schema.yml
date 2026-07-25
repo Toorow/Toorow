@@ -1,0 +1,261 @@
+version: 2
+
+sources:
+  - name: raw_gsc
+    description: "Immutable raw landing zone for GSC Search Analytics daily data (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_gsc_daily
+        description: >
+          Raw GSC Search Analytics daily data — one row per date × page × country × device × pull_id.
+          Append-only (AD-7): each pull run adds a new batch identified by pull_id.
+          average_position stored RAW per row (NOT pre-aggregated) with impressions as weight.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (e.g. '2026-07-01'). Day grain."
+          - name: page
+            description: "Page URL from GSC Search Analytics."
+          - name: query
+            description: >
+              Search query string from GSC (Story 10.5). NULLABLE: only the
+              query_page_daily profile lands a non-null query; page/country/device
+              profiles leave it NULL. stg_gsc_query_page_daily filters query IS NOT NULL.
+          - name: search_type
+            description: >
+              GSC 'type' request parameter (GSC full coverage, migration 043):
+              web / image / video / news / discover / googleNews. NULLABLE: legacy
+              rows are NULL == 'web'. Non-web rows are staged exclusively by
+              stg_gsc_surface_daily; web staging models filter (NULL OR 'web').
+          - name: search_appearance
+            description: >
+              GSC searchAppearance dimension value (e.g. RICHRESULT, AMP_BLUE_LINK).
+              NULLABLE: only the search_appearance_daily profile lands it (per-day
+              pull loop — the API forbids combining searchAppearance with other
+              dimensions). Staged by stg_gsc_search_appearance_daily.
+          - name: hour
+            description: >
+              GSC hour dimension key (ISO-8601 timestamp, requires dataState=hourly_all).
+              NULLABLE: ad-hoc hourly pulls only. Excluded from every daily staging
+              model (partial data by definition).
+          - name: country
+            description: "Country code from GSC (e.g. 'fra', 'gbr'). Normalized at ingest."
+          - name: device
+            description: "Device type: mobile, desktop, tablet (normalized to lowercase from MOBILE/DESKTOP/TABLET)."
+          - name: clicks
+            description: "Click count for the day/page/country/device combination. Additive (AD-4)."
+          - name: impressions
+            description: "Impression count. Additive (AD-4). Also serves as weight for average_position aggregation."
+          - name: average_position
+            description: >
+              Raw per-row average search position from GSC (GSC field 'position').
+              NON-ADDITIVE (AD-4). Never SUM this directly. Use semantic_avg_position view.
+              Impression-weighted aggregation: SUM(position * impressions) / SUM(impressions).
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: >
+              Project binding. 'default' for seeded test data; real project IDs for
+              data pulled via the trigger endpoint (AD-14).
+
+models:
+  - name: stg_gsc_daily
+    description: >
+      Staging layer: maps raw GSC Search Analytics fields to canonical names.
+      average_position stored raw (non-additive per AD-4); impressions is the weight.
+      Supersede semantics (AD-7): QUALIFY keeps only the latest pull per grain
+      (project_id, date, page, country, device).
+      Device values normalized to lowercase at connector ingest.
+      GRAIN ISOLATION (GSC full coverage): web search type only — filters out
+      query-grain rows (query IS NULL), non-web surfaces (search_type NULL or 'web'),
+      searchAppearance rows and hourly rows, which each have their own staging model
+      or are excluded by design.
+    columns:
+      - name: date
+        description: "ISO-8601 date string. Day grain."
+        tests:
+          - not_null
+      - name: page
+        description: "Page URL."
+        tests:
+          - not_null
+      - name: country
+        description: "Country code."
+      - name: device
+        description: "Device type (mobile/desktop/tablet)."
+      - name: clicks
+        description: "Clicks (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: impressions
+        description: "Impressions (additive metric, AD-4). Also the weight for average_position aggregation."
+        tests:
+          - not_null
+      - name: average_position
+        description: >
+          Raw per-row average position from GSC. NON-ADDITIVE (AD-4).
+          Use semantic_avg_position view for aggregation. NEVER SUM directly.
+        tests:
+          - not_null
+          - value_between:
+              arguments:
+                min_value: 1.0
+                max_value: 100.0
+              config:
+                severity: warn
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding for this row. Propagated from raw_gsc_daily."
+
+  - name: stg_gsc_surface_daily
+    description: >
+      Staging layer: GSC non-web search surfaces (discover / googleNews / news /
+      image / video), landed via the API 'type' parameter (GSC full coverage).
+      Grain (project_id, date, search_type, page). Different data universe from
+      web search — never mixed with stg_gsc_daily totals. average_position stored
+      raw (non-additive, AD-4); impressions is the weight. Supersede semantics
+      (AD-7): QUALIFY keeps only the latest pull per grain.
+    tests:
+      - unique:
+          name: stg_gsc_surface_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || search_type || '|' || page"
+    columns:
+      - name: date
+        description: "ISO-8601 date string. Day grain."
+        tests:
+          - not_null
+      - name: search_type
+        description: "GSC search surface: image / video / news / discover / googleNews (web excluded)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["image", "video", "news", "discover", "googleNews"]
+      - name: page
+        description: "Page URL."
+        tests:
+          - not_null
+      - name: clicks
+        description: "Clicks (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: impressions
+        description: "Impressions (additive metric, AD-4). Weight for average_position."
+        tests:
+          - not_null
+      - name: average_position
+        description: >
+          Raw per-row average position. NON-ADDITIVE (AD-4). For Discover the value
+          is not a meaningful rank — prefer clicks/impressions on that surface.
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding for this row. Propagated from raw_gsc_daily."
+
+  - name: stg_gsc_search_appearance_daily
+    description: >
+      Staging layer: GSC searchAppearance buckets (RICHRESULT, AMP_BLUE_LINK, ...).
+      Grain (project_id, date, search_appearance); web type only. Daily grain is
+      reconstructed by the connector's per-day pull loop (the API forbids grouping
+      searchAppearance with other dimensions). Appearance buckets overlap web
+      totals partially BY DESIGN — never reconciled against day totals.
+      average_position stored raw (non-additive, AD-4). Supersede semantics (AD-7).
+    tests:
+      - unique:
+          name: stg_gsc_search_appearance_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || search_appearance"
+    columns:
+      - name: date
+        description: "ISO-8601 date string (stamped by the per-day pull loop)."
+        tests:
+          - not_null
+      - name: search_appearance
+        description: "GSC search-appearance enum value."
+        tests:
+          - not_null
+      - name: clicks
+        description: "Clicks (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: impressions
+        description: "Impressions (additive metric, AD-4). Weight for average_position."
+        tests:
+          - not_null
+      - name: average_position
+        description: "Raw per-row average position. NON-ADDITIVE (AD-4)."
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding for this row. Propagated from raw_gsc_daily."
+
+  - name: stg_gsc_query_page_daily
+    description: >
+      Staging layer: GSC query x page JOINT grain (Story 10.5 — cannibalisation).
+      Same raw source as stg_gsc_daily, filtered to query IS NOT NULL. Grain
+      (project_id, date, query, page). average_position stored raw (non-additive, AD-4);
+      impressions is the weight. Supersede semantics (AD-7): QUALIFY keeps only the
+      latest pull per grain.
+    tests:
+      # AI-05 grain uniqueness: a duplicate (project_id, date, query, page) row means
+      # double-counted cannibalisation shares. The QUALIFY dedup must always hold.
+      - unique:
+          name: stg_gsc_query_page_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || query || '|' || page"
+    columns:
+      - name: date
+        description: "ISO-8601 date string. Day grain."
+        tests:
+          - not_null
+      - name: query
+        description: "Search query string (non-null on this model)."
+        tests:
+          - not_null
+      - name: page
+        description: "Page URL."
+        tests:
+          - not_null
+      - name: clicks
+        description: "Clicks (additive metric, AD-4)."
+        tests:
+          - not_null
+      - name: impressions
+        description: "Impressions (additive metric, AD-4). Weight for average_position."
+        tests:
+          - not_null
+      - name: average_position
+        description: >
+          Raw per-(query,page) average position from GSC. NON-ADDITIVE (AD-4).
+          Impression-weighted per page by the cannibalisation resolver. NEVER SUM directly.
+        tests:
+          - not_null
+          - value_between:
+              arguments:
+                min_value: 1.0
+                max_value: 100.0
+              config:
+                severity: warn
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding for this row. Propagated from raw_gsc_daily."

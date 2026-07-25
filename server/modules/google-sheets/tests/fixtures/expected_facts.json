@@ -1,0 +1,72 @@
+[
+  {
+    "date": "2026-07-17",
+    "sheet_row_id": "Meta Ads",
+    "budget_declared": 4816.16,
+    "target_revenue": 16469.09,
+    "target_conversions": 128.4
+  },
+  {
+    "date": "2026-07-17",
+    "sheet_row_id": "Google Ads",
+    "budget_declared": 3776.55,
+    "target_revenue": 14602.15,
+    "target_conversions": 100.3
+  },
+  {
+    "date": "2026-07-17",
+    "sheet_row_id": "TikTok Ads",
+    "budget_declared": 1548.32,
+    "target_revenue": 4202.93,
+    "target_conversions": 38.6
+  },
+  {
+    "date": "2026-07-17",
+    "sheet_row_id": "LinkedIn Ads",
+    "budget_declared": 1962.19,
+    "target_revenue": 10271.23,
+    "target_conversions": 26.8
+  },
+  {
+    "date": "2026-07-17",
+    "sheet_row_id": "Email (Klaviyo)",
+    "budget_declared": 871.98,
+    "target_revenue": 4987.95,
+    "target_conversions": 74.0
+  },
+  {
+    "date": "2026-07-18",
+    "sheet_row_id": "Meta Ads",
+    "budget_declared": 4816.16,
+    "target_revenue": 16469.09,
+    "target_conversions": 128.4
+  },
+  {
+    "date": "2026-07-18",
+    "sheet_row_id": "Google Ads",
+    "budget_declared": 3776.55,
+    "target_revenue": 14602.15,
+    "target_conversions": 100.3
+  },
+  {
+    "date": "2026-07-18",
+    "sheet_row_id": "TikTok Ads",
+    "budget_declared": 1548.32,
+    "target_revenue": 4202.93,
+    "target_conversions": 38.6
+  },
+  {
+    "date": "2026-07-18",
+    "sheet_row_id": "LinkedIn Ads",
+    "budget_declared": 1962.19,
+    "target_revenue": 10271.23,
+    "target_conversions": 26.8
+  },
+  {
+    "date": "2026-07-18",
+    "sheet_row_id": "Email (Klaviyo)",
+    "budget_declared": 871.98,
+    "target_revenue": 4987.95,
+    "target_conversions": 74.0
+  }
+]

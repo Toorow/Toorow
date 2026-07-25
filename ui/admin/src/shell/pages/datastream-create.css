@@ -1,0 +1,288 @@
+/**
+ * datastream-create.css — page-specific styles for DatastreamCreateV3.
+ *
+ * Faithful port of the wizard/dialog surfaces the "Add Datastream" mockup uses:
+ *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
+ *     mockups/datastream-create.html
+ * The mockup pulls these classes from its sibling `workflow-surfaces.css`
+ * (dialog stage/scrim, focused dialog, step line, source choice grid, and the
+ * organization-usable connection picker). None of those live in application.css,
+ * so they are ported here verbatim in structure. The base shell classes the
+ * mockup also uses — .page-header, .panel, .data-summary/.summary-card,
+ * .primary-button/.secondary-button, .provider-logo, .signal-label/.signal-mark
+ * (incl. .info), .icon-button, .action-link — already exist in application.css
+ * and are NOT redefined here.
+ *
+ * Tokenized: colors reference the application.css CSS variables only. Brand
+ * accents (the rose focus glow and the dark-rose "Selected" label) are derived
+ * from var(--rose) via color-mix — no hardcoded brand/semantic hex. The faint
+ * panel wash (#fbfbfc) now routes through var(--surface-2) so it flips in dark;
+ * dialog/card surfaces use var(--surface). The modal scrim/shadow inks
+ * (rgba(35,32,40,…) / rgba(17,17,17,…)) are neutral scrim/shadow ink and are left
+ * as-is (they read as dimming/elevation on both themes).
+ */
+
+/* ---- Full-bleed stage: neutralize the shell .main padding around it -------
+   The shell renders content inside <main className="main"> (padding:32px 40px
+   40px; overflow:auto). This screen is a full-bleed dialog stage whose scrim is
+   inset:0, so it must occupy the whole main box — same intent as the sibling
+   .full-main pages. Scoped via :has so no change to application.css is needed. */
+.main:has(> .dialog-stage) { padding: 0; overflow: visible; }
+
+/* ---- Dialog stage: dimmed page behind a centered focused dialog ---------- */
+.dialog-stage { position: relative; min-height: 828px; }
+.dialog-stage-background {
+  min-height: 828px;
+  padding: 32px;
+  opacity: .34;
+  filter: saturate(.7);
+  pointer-events: none;
+}
+.dialog-scrim {
+  position: absolute;
+  z-index: var(--layer-modal);
+  inset: 0;
+  display: grid;
+  place-items: start center;
+  padding: 28px;
+  background: rgba(35, 32, 40, .18);
+}
+.focused-dialog {
+  width: min(960px, calc(100% - 56px));
+  overflow: hidden;
+  border: 1px solid rgba(17, 17, 17, .08);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 28px 90px rgba(17, 17, 17, .22);
+}
+.dialog-header {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--line);
+}
+.dialog-header h1 { margin: 0; font: 600 20px "Lexend", sans-serif; }
+.dialog-body { padding: 26px 28px 24px; }
+
+/* ---- Step line ----------------------------------------------------------- */
+.step-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+.step-line strong { font: 600 18px "Lexend", sans-serif; }
+.step-line span { color: var(--muted); font-size: 13px; }
+
+/* ---- Source choice grid -------------------------------------------------- */
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.source-choice {
+  display: block;
+  width: 100%;
+  min-height: 158px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.source-choice.selected {
+  border-color: var(--rose);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rose) 13%, transparent);
+}
+.choice-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--page);
+}
+.choice-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.source-choice strong { display: block; font: 600 15px "Lexend", sans-serif; }
+.source-choice p { margin: 7px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+/* ---- Dialog footer ------------------------------------------------------- */
+.dialog-footer {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  border-top: 1px solid var(--line);
+}
+.dialog-footer > span { color: var(--muted); font-size: 13px; }
+.dialog-actions { display: flex; align-items: center; gap: 10px; }
+
+/* ---- Organization-usable connection picker ------------------------------- */
+.connection-picker {
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-2);
+}
+.connection-picker-toggle {
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  text-align: left;
+  cursor: pointer;
+}
+.connection-picker-toggle strong { display: block; font: 600 14px "Lexend", sans-serif; }
+.connection-picker-toggle small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.connection-picker-count {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
+}
+.connection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+.connection-card {
+  min-height: 108px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+.connection-card.selected {
+  border-color: var(--rose);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rose) 12%, transparent);
+}
+.connection-card > .provider-logo { width: 34px; height: 34px; padding: 7px; border-radius: 9px; }
+.connection-copy { min-width: 0; }
+.connection-copy strong,
+.connection-copy span,
+.connection-copy small { display: block; }
+.connection-copy strong { font: 600 14px "Lexend", sans-serif; }
+.connection-copy span { margin-top: 3px; font-size: 13px; font-weight: 700; }
+.connection-copy small { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.connection-state {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+}
+.connection-state b { font-size: 12px; }
+.connection-card.selected .connection-state b { color: color-mix(in srgb, var(--rose) 55%, var(--ink)); }
+
+/* ---- Narrow-desktop resilience (mirrors the mockup breakpoint) ----------- */
+@media (max-width: 1180px) {
+  .connection-grid { grid-template-columns: 1fr; }
+  .focused-dialog { width: calc(100% - 36px); }
+}
+
+/* ---- Brand-aware source: tracked-brand selection (epic 40, 40.2) --------- */
+.brand-scope {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.brand-scope-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.brand-scope-head strong { display: block; font-size: 0.9375rem; }
+.brand-scope-head small { display: block; margin-top: 3px; color: var(--muted); line-height: 1.5; }
+.brand-list { display: flex; flex-direction: column; gap: 8px; }
+.brand-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--page);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.brand-row.selected { border-color: color-mix(in srgb, var(--rose) 55%, var(--line)); background: var(--rose-soft); }
+.brand-check {
+  width: 18px; height: 18px; border-radius: 5px;
+  border: 1.5px solid color-mix(in srgb, var(--ink) 30%, var(--line));
+  background: var(--surface);
+}
+.brand-check.on { background: var(--rose); border-color: var(--rose); position: relative; }
+.brand-check.on::after {
+  content: "✓"; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 0.75rem; font-weight: 700;
+}
+.brand-identity { display: flex; align-items: center; gap: 10px; }
+.brand-identity strong { font-size: 0.9375rem; }
+.brand-binding {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.signal-label.rose { color: var(--rose); background: var(--rose-soft); }
+.signal-label.rose .signal-mark { background: var(--rose); }
+.signal-label.muted { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); }
+.signal-label.muted .signal-mark { background: var(--muted); }
+.brand-add { display: flex; gap: 10px; margin-top: 12px; }
+.brand-add-input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--page);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+}
+.brand-add-input::placeholder { color: var(--muted); }
+.brand-note { margin: 10px 0 0; color: var(--muted); font-size: 0.8125rem; line-height: 1.5; }

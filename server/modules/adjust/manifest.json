@@ -1,0 +1,387 @@
+{
+    "schema_version": "1.2",
+    "name": "adjust",
+    "display_name": "Adjust",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "analytics_product",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "module_kind": "kpi",
+    "auth_type": "api_key",
+    "report_profiles": [
+        {
+            "id": "network_daily",
+            "display_name": "Network Performance (daily)",
+            "metrics": [
+                "cost",
+                "installs",
+                "clicks",
+                "impressions",
+                "sessions",
+                "revenue",
+                "ad_revenue",
+                "all_revenue"
+            ],
+            "dimensions": [
+                "date",
+                "app_token",
+                "app",
+                "network",
+                "campaign_id_network",
+                "campaign_network",
+                "currency_code"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null,
+            "_api_notes": "VERIFIE le 2026-07-21 (doc officielle) : endpoint GET https://automate.adjust.com/reports-service/report (Report Service API, JSON). Params: dimensions= et metrics= (CSV), date_period=YYYY-MM-DD:YYYY-MM-DD, utc_offset, app_token__in (filtre de scope), sandbox. Le grain jour vient de la dimension 'day'. Les valeurs de metriques arrivent en CHAINES dans rows[] (ex: \"64\") et en nombres dans totals{}. Source : https://dev.adjust.com/en/api/rs-api/reports"
+        }
+    ],
+    "canonical_metric_mapping": {
+        "cost": "cost",
+        "installs": "installs",
+        "clicks": "clicks",
+        "impressions": "impressions",
+        "sessions": "sessions",
+        "revenue": "revenue",
+        "ad_revenue": "ad_revenue",
+        "all_revenue": "all_revenue"
+    },
+    "canonical_dimension_mapping": {
+        "day": "date",
+        "app_token": "app_token",
+        "app": "app",
+        "network": "network",
+        "campaign_id_network": "campaign_id",
+        "campaign_network": "campaign_name",
+        "currency_code": "cost_source_currency"
+    },
+    "error_map": {
+        "401": "auth_expired",
+        "403": "permission_denied",
+        "400": "invalid_request",
+        "503": "provider_transient",
+        "504": "provider_transient",
+        "_error_map_note": "Adjust Report Service API documents HTTP statuses only (200/204/400/401/403/429/503/504 -- https://dev.adjust.com/en/api/rs-api/reports Response codes) and publishes NO finite enumeration of provider sub-codes in error bodies. This map is therefore keyed on HTTP status alone (no ':provider_code' refinement); the pure-HTTP classification in core.pull_errors._base_class_for_status already lands 401->auth_expired, 403->permission_denied, 400->invalid_request, 5xx->provider_transient (503/504 included). 429 raises core.quota.RateLimitError (breaker path). A later story can add '<status>:<code>' keys if Adjust introduces stable sub-codes."
+    },
+    "account_topology": {
+        "_comment": "Playbook section 5: Adjust topology is a single flat level -- the API token's reachable APPS. The reporting entity (selection_level) is the APP (app_token); a selected app narrows the pull via the app_token__in filter and every row carries app_token as a dimension. discover_accounts calls the official Filters Data endpoint (GET https://automate.adjust.com/reports-service/filters_data?required_filters=apps) which lists the apps the token can reach ({id, name}). No *_ACCOUNT_ID env var exists for this module (the 25.5+ standard): without a selected app the pull stays scoped to the token's own account (all its apps), never to an ambient environment value.",
+        "levels": [
+            {
+                "id": "app",
+                "label": "App"
+            }
+        ],
+        "selection_level": "app",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    },
+    "quota": {
+        "window_seconds": 60,
+        "budget_points": 600,
+        "read_cost": 1,
+        "write_cost": 1,
+        "_rate_limit_note": "VERIFIE le 2026-07-21 : le Report Service API applique 50 requetes/seconde par IP source (burst 100) -- https://dev.adjust.com/en/api/rs-api/rate-limits. Le profil retenu (600 points / 60s, soit 10 req/s en moyenne) est volontairement conservateur car la limite est PAR IP (partagee entre connexions derriere le meme NAT). Backstop: handler 429 -> RateLimitError."
+    },
+    "_ad4_notes": {
+        "revenue": "REGLE AD-4 (miroir stripe/shopify 15.7) : 'revenue' Adjust = revenu in-app mesure par le SDK Adjust (meme grandeur canonique que le revenue commerce). Il n'est JAMAIS somme dans un total croise avec le revenue Shopify/Stripe : la regle declarative metric_source_priority.csv porte revenue -> shopify 1, stripe 2, adjust 3 ; la vue cross_source_revenue choisit UNE source gagnante par (projet, jour). Les lignes par source restent interrogeables independamment (fact_daily_kpi keye sur connector).",
+        "sessions": "REGLE AD-4 : 'sessions' Adjust (sessions app mesurees SDK) et 'sessions' GA4 (sessions web/app GA) mesurent des proprietes DIFFERENTES. fact_daily_kpi les separe par connector ; elles ne sont jamais sommees en un total croise (comparaison canal par canal uniquement, meme discipline que klaviyo attributed_*)."
+    },
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "cost",
+                "source_field": "cost",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Ad spend attributed by Adjust (click + impression + install + event cost).",
+                "semantic_hints": [
+                    "spend",
+                    "currency"
+                ],
+                "canonical_target": "cost",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "installs",
+                "source_field": "installs",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "App installs tracked by Adjust.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "installs",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "clicks",
+                "source_field": "clicks",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Ad clicks tracked by Adjust.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "impressions",
+                "source_field": "impressions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Ad impressions tracked by Adjust.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "sessions",
+                "source_field": "sessions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "App sessions measured by the Adjust SDK.",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "sessions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "revenue",
+                "source_field": "revenue",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "In-app purchase revenue measured by the Adjust SDK.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "revenue",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "ad_revenue",
+                "source_field": "ad_revenue",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Ad revenue measured by Adjust.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "ad_revenue",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "all_revenue",
+                "source_field": "all_revenue",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Combined in-app + ad revenue measured by Adjust.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "all_revenue",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "day",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "Reporting day (provider dimension token 'day').",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "app_token",
+                "source_field": "app_token",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "App ID (token) in the Adjust system.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "app_token",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "app",
+                "source_field": "app",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Name of the app.",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "app",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "network",
+                "source_field": "network",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "The name of the advertising network (e.g. Organic, AppLovin).",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "network",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_id_network",
+                "source_field": "campaign_id_network",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign ID from the network.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaign_network",
+                "source_field": "campaign_network",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign name from the network.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "currency_code",
+                "source_field": "currency_code",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "3-character ISO 4217 currency code of the reported monetary values.",
+                "semantic_hints": [
+                    "currency"
+                ],
+                "canonical_target": "cost_source_currency",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "network_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "cost",
+                    "installs",
+                    "clicks",
+                    "impressions",
+                    "sessions",
+                    "revenue",
+                    "ad_revenue",
+                    "all_revenue"
+                ],
+                "dimensions": [
+                    "date",
+                    "app_token",
+                    "app",
+                    "network",
+                    "campaign_id_network",
+                    "campaign_network",
+                    "currency_code"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "app_token",
+                        "network",
+                        "campaign_id_network"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "unknown",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "unknown"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_network_daily"
+                }
+            }
+        ]
+    }
+}

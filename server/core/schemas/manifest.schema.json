@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toorow.dev/schemas/manifest.schema.json",
+  "title": "ConnectorManifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "name",
+    "display_name",
+    "auth_type",
+    "report_profiles",
+    "canonical_metric_mapping",
+    "canonical_dimension_mapping"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^1(\\.[0-9]+)?$" },
+    "name": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "display_name": { "type": "string", "minLength": 1 },
+    "auth_type": {
+      "type": "string",
+      "enum": ["oauth1", "oauth2", "api_key", "none", "google_direct", "basic"],
+      "description": "review-15-9 F-7: 'google_direct' added as a first-class auth family (AD-21, Epic 18). The Google stack (GA4/GSC/Google Ads/Sheets) uses a single server-side OAuth consent whose encrypted token lives in app.connection_ref -- NOT Nango. This is distinct from generic 'oauth2' (Nango-brokered) so a manifest's auth_type no longer contradicts its auth.type='google_direct' block. 'basic' (woocommerce, epic-25) is a first-class family for self-hosted providers that authenticate with a STATIC key/secret pair over HTTP Basic auth and carry a per-connection base URL -- brokered by Nango (core.nango_client.get_basic_credentials), distinct from single-secret 'api_key'. Documented platform-contract evolution."
+    },
+    "public_catalog": {
+      "type": "object",
+      "required": ["visibility"],
+      "properties": {
+        "visibility": {
+          "type": "string",
+          "enum": ["public", "hidden"]
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "paid_media",
+            "ad_server",
+            "analytics_product",
+            "commerce_billing",
+            "crm",
+            "email_sms",
+            "files_warehouses",
+            "business_context"
+          ]
+        },
+        "onboarding_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["connector_pull", "managed_feed", "context_source"]
+          }
+        },
+        "verification": {
+          "type": "object",
+          "required": ["status", "reason_code", "follow_up"],
+          "properties": {
+            "status": { "const": "blocked" },
+            "reason_code": { "type": "string", "minLength": 1 },
+            "follow_up": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "visibility": { "const": "public" } },
+            "required": ["visibility"]
+          },
+          "then": {
+            "required": ["category", "onboarding_modes", "verification"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "report_profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "display_name", "metrics", "dimensions", "extraction_capabilities"],
+        "properties": {
+          "id": { "type": "string" },
+          "display_name": { "type": "string", "minLength": 1 },
+          "metrics": { "type": "array", "items": { "type": "string" } },
+          "dimensions": { "type": "array", "items": { "type": "string" } },
+          "events": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Epic 31: for a landing='context_events' profile -- the kind='event' field ids it emits (metrics/dimensions stay empty). Absent for kpi profiles."
+          },
+          "extraction_capabilities": {
+            "type": "object",
+            "required": ["row_limit", "filters_supported", "realtime"],
+            "properties": {
+              "row_limit": { "type": ["integer", "null"] },
+              "filters_supported": { "type": "boolean" },
+              "realtime": { "type": "boolean" }
+            }
+          },
+          "extraction_path": {
+            "type": "string",
+            "enum": ["airbyte_sync", "custom_pull"],
+            "description": "Story 3.1: Optional extraction route. Absent = 'custom_pull' at runtime. 'airbyte_sync' triggers AirbyteClient instead of module pull()."
+          },
+          "landing": {
+            "type": "string",
+            "enum": ["fact_daily_kpi", "context_events"],
+            "description": "Epic 31: where this profile lands. Absent = derived at load (module_kind=='context' -> context_events, else fact_daily_kpi). Per-profile, so a connector may mix kpi and event profiles."
+          }
+        }
+      }
+    },
+    "canonical_event_mapping": {
+      "type": "object",
+      "description": "Epic 31: source event id -> canonical event_type (governed by dbt/seeds/dim_event_type.csv). Strict parallel of canonical_metric_mapping. Only meaningful for connectors declaring an event profile (landing=context_events).",
+      "additionalProperties": { "type": "string" }
+    },
+    "canonical_metric_mapping": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["canonical", "aggregation_rule"],
+            "properties": {
+              "canonical": { "type": "string" },
+              "aggregation_rule": {
+                "type": "string",
+                "enum": ["impression_weighted", "sum", "max", "latest"]
+              },
+              "non_additive": { "type": "boolean" }
+            },
+            "additionalProperties": false,
+            "description": "Schema v1.1: non-additive metric descriptor with declared aggregation_rule (AD-4). Supported rules: impression_weighted (GSC average_position), sum (additive default)."
+          }
+        ]
+      }
+    },
+    "canonical_dimension_mapping": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "widget_ref": { "type": "string", "pattern": "^ui://" },
+    "module_kind": {
+      "type": "string",
+      "enum": ["kpi", "context"],
+      "description": "Schema v1.1: 'kpi' (default) produces fact_daily_kpi rows; 'context' produces context_events rows only. DEPRECATED as a product concept (Epic 31): a connector is the sum of its profiles' 'landing' values, not a single kind. Retained only as the derivation source for a profile's default 'landing' (absent landing + module_kind=='context' -> context_events). New connectors should set 'landing' per profile; module_kind stays for backward compatibility."
+    },
+    "quota": {
+      "type": "object",
+      "description": "Optional per-platform quota budget. When absent, the platform has unlimited budget (no pre-check, no circuit breaker). All numeric fields must be positive integers.",
+      "required": ["window_seconds", "budget_points", "read_cost", "write_cost"],
+      "properties": {
+        "window_seconds": { "type": "integer", "exclusiveMinimum": 0 },
+        "budget_points":  { "type": "integer", "exclusiveMinimum": 0 },
+        "read_cost":      { "type": "integer", "exclusiveMinimum": 0 },
+        "write_cost":     { "type": "integer", "exclusiveMinimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "source_capabilities": {
+      "$ref": "source-capabilities.schema.json#/$defs/descriptor"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {"not": {"enum": ["1", "1.0", "1.1"]}}
+        }
+      },
+      "then": {"required": ["source_capabilities"]}
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "pull_id": "pull_monday_golden",
+    "connector": "monday",
+    "board_id": "9007199254740993",
+    "item_id": "42",
+    "group_id": "topics",
+    "parent_item_id": "",
+    "updated_at": "2026-07-22T10:00:00Z",
+    "column_values": [{"id": "status", "type": "status", "raw_value": {"index": 1}}]
+  }
+]

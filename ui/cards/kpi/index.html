@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      AD-11: NO external font/asset URLs. Plus Jakarta Sans Variable is inlined via
+      @toorow/shell (Story 1.2 / 8.8). Material Symbols is NOT inlined for this
+      card (SVG icons used instead). The CI bundle gate (ui/scripts/bundle-check.mjs)
+      fails on any http(s) reference.
+    -->
+    <title>Carte KPI</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,316 @@
+/**
+ * renders.css — page-specific styles for the Renders gallery (RenderGalleryPage).
+ *
+ * The store of conserved MCP card outputs. Follows the v3 conventions of
+ * sources.css / overview.css: shell/layout classes (page-header, panel,
+ * selector, secondary-button, quiet-button, signal-label, signal-mark, sr-only)
+ * live in application.css and are global. This file only adds the gallery
+ * grid, the render card layout, the filter row, the empty/skeleton states, and
+ * the reopen dialog.
+ *
+ * Tokenized: every color references an application.css CSS variable, so the page
+ * is dark-safe. Numbers/dates use the Geist tabular treatment.
+ */
+
+/* Filter + refresh controls sitting in the page-header actions slot. */
+.renders-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.renders-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.renders-filter {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.renders-filter.active {
+  border-color: var(--rose);
+  background: var(--rose);
+  color: var(--ink);
+}
+.renders-filter:focus-visible {
+  outline: 2px solid var(--focus, var(--info));
+  outline-offset: 2px;
+}
+.renders-refresh {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.renders-refresh svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.renders-refresh:focus-visible {
+  outline: 2px solid var(--focus, var(--info));
+  outline-offset: 2px;
+}
+
+/* Gallery grid of conserved renders. */
+.renders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
+}
+
+.render-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 156px;
+  padding: 20px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+}
+.render-card:hover {
+  border-color: color-mix(in srgb, var(--rose) 55%, var(--line));
+}
+.render-card:focus-visible {
+  outline: 2px solid var(--focus, var(--info));
+  outline-offset: 2px;
+}
+
+.render-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.render-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.render-title {
+  margin: 0;
+  font: 600 16px/1.4 "Lexend", Arial, sans-serif;
+  color: var(--ink);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.render-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+}
+.render-date {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Freshness pill, tinted from the semantic tokens. */
+.render-freshness {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.render-freshness.live {
+  background: color-mix(in srgb, var(--success) 16%, var(--surface));
+  color: var(--success);
+}
+.render-freshness.stale {
+  background: color-mix(in srgb, var(--warning) 18%, var(--surface));
+  color: var(--warning);
+}
+
+/* States. */
+.renders-state {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--muted);
+}
+.renders-state strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+.renders-state.error {
+  color: var(--error);
+}
+.renders-state.error strong {
+  color: var(--error);
+}
+
+.renders-skeletons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
+}
+.render-skeleton {
+  min-height: 156px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    var(--surface) 50%,
+    var(--surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: renders-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes renders-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .render-skeleton { animation: none; }
+}
+
+/* Reopen dialog. */
+.render-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-modal, 80);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.42);
+}
+.render-dialog {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(17, 17, 17, 0.28);
+}
+.render-dialog h2 {
+  margin: 0 0 18px;
+  font: 600 19px "Lexend", Arial, sans-serif;
+}
+.render-field {
+  margin-bottom: 14px;
+}
+.render-field-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.render-field-value {
+  margin: 0;
+  font-size: 14px;
+}
+.render-field-value.date {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.render-snippet {
+  margin: 4px 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: 12px/1.5 "JetBrains Mono", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.render-dialog-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* Loading overlay for the snapshot fetch. */
+.render-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-toast, 100);
+  display: grid;
+  place-items: center;
+  background: rgba(17, 17, 17, 0.2);
+}
+.render-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--track);
+  border-top-color: var(--rose);
+  border-radius: 50%;
+  animation: renders-spin 0.9s linear infinite;
+}
+@keyframes renders-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .render-spinner { animation: none; }
+}
+
+/* Error toast for snapshot-load failures. */
+.render-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: var(--layer-toast, 100);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--error) 40%, var(--surface));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--error) 12%, var(--surface));
+  color: var(--ink);
+  font-size: 13px;
+  box-shadow: 0 18px 40px rgba(17, 17, 17, 0.18);
+}
+.render-toast button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  cursor: pointer;
+}

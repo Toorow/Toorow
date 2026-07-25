@@ -1,0 +1,42 @@
+[
+  {
+    "page": "/",
+    "views": 95314.0
+  },
+  {
+    "page": "/pricing",
+    "views": 46381.0
+  },
+  {
+    "page": "/features",
+    "views": 30600.0
+  },
+  {
+    "page": "/blog",
+    "views": 22869.0
+  },
+  {
+    "page": "/about",
+    "views": 19209.0
+  },
+  {
+    "page": "/contact",
+    "views": 15485.0
+  },
+  {
+    "page": "/login",
+    "views": 13310.0
+  },
+  {
+    "page": "/signup",
+    "views": 11540.0
+  },
+  {
+    "page": "/docs",
+    "views": 10212.0
+  },
+  {
+    "page": "/docs/quickstart",
+    "views": 9289.0
+  }
+]

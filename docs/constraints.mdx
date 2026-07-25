@@ -1,0 +1,72 @@
+---
+title: Platform Constraints & Security
+description: Security rules, privacy guarantees, pre-live checklists, and non-negotiable architectural invariants for toorow.
+---
+
+This document defines the security rules, privacy policies, operational constraints, and architectural invariants that govern **toorow**.
+
+<Warning>
+Compliance with these constraints is mandatory for all deployments and connector modules. Any public exposure of an instance running in `disabled` or `static` auth mode is strictly prohibited.
+</Warning>
+
+## 1. Privacy & Zero-Telemetry Policy
+
+- **No Phone-Home / No Default Telemetry**: Self-hosted instances of toorow contain **zero default analytics, tracking pixels, or phone-home mechanisms**.
+- **Optional GA4 Measurement Protocol**: Product usage telemetry is strictly opt-in and controlled via environment variables (`GA4_MP_MEASUREMENT_ID` and `GA4_MP_API_SECRET`). When left unset, the telemetry emitter is a complete no-op. If configured by an administrator, event data flows exclusively to *your* designated GA4 property.
+
+---
+
+## 2. Pre-Live Security Checklist
+
+Before exposing a toorow deployment to any network or production environment, verify all items on this checklist:
+
+| Checklist Item | Requirement | Verification / Config |
+|---|---|---|
+| **Authentication Mode** | `TOOROW_AUTH_MODE=oauth` mandatory for production. Never use `static` or `disabled` on open networks. | Set `TOOROW_AUTH_MODE=oauth` and provide `TOOROW_JWKS_URI` or `TOOROW_JWT_PUBLIC_KEY`. |
+| **Host Header Protection** | Validate Host and Origin headers to prevent DNS rebinding and HTTP header spoofing. | Set `HOST_HEADER_VALIDATION=strict` and `ALLOWED_HOST=<your-domain>`. |
+| **Secret Management** | Database credentials, JWT secrets, and OAuth keys must never be committed to git. | Inject via GCP Secret Manager or gitignored `.env` file. |
+| **Database Security** | `PLATFORM_DB_URL` must point to a secure PostgreSQL instance with strong credentials. | Verify non-default password and TLS connection string. |
+| **Least-Privilege IAM** | GCP Service Accounts for BigQuery must hold only necessary roles (`roles/bigquery.dataEditor`, `roles/bigquery.jobUser`). | Audit IAM bindings in Terraform or GCP IAM Console. |
+| **OAuth Token Isolation** | Provider OAuth refresh tokens are owned exclusively by Nango (`NANGO_ENCRYPTION_KEY`). | Ensure core application code never persists or outputs raw provider secrets. |
+
+---
+
+## 3. Core Architectural Invariants (AD-1 to AD-32)
+
+toorow enforces strict architectural boundaries to guarantee data integrity, multi-tenant isolation, and predictable agent interaction:
+
+1. **FastMCP Dual-Channel Model**: MCP data tools return a short, human-readable text summary for the LLM context, accompanied by a full canonical `structuredContent` payload for MCP App widgets.
+2. **Microkernel Architecture**: Source-specific logic lives entirely inside auto-discovered module directories (`server/modules/<source>/`). The core kernel (`server/core/`) remains 100% source-agnostic.
+3. **Canonical Daily Fact Surface (`fact_daily_kpi`)**: Additive daily metrics (impressions, clicks, spend, conversions, revenue) are harmonized into `fact_daily_kpi`. Non-additive metrics (CTR, CPA, ROAS) are calculated on-the-fly via dbt semantic views.
+4. **AD-5 Multi-Tenant Isolation**: Every resource request resolves through an organization-rooted access graph. Tenant isolation is enforced at the database and warehouse queries level and validated by CI isolation test suites.
+5. **Split Persistence Responsibilities**: PostgreSQL owns transactional state, project governance, and audit logs. BigQuery / DuckDB owns analytical facts and marts. No entity has dual writers.
+6. **Desktop Admin Viewport**: The Admin Console targets desktop viewports (1280px minimum layout, 1440x900 canonical). No mobile administration view is supported.
+
+---
+
+## 4. Repository Boundaries
+
+This repository enforces a strict boundary between public application components and private workspace assets:
+
+- **Shareable Application**: `server/`, `ui/`, `dbt/`, `infra/`, `.github/`, root configuration files, and build scripts. Allowed paths are declared in `distribution/public-app.toml`.
+- **Private Workspace**: `web/`, `studio/`, `docs/`, `_bmad/`, `_bmad-output/`, reviews, and internal brand assets.
+- **Export Enforcer**: Run `python scripts/export_public_app.py` to validate public release boundaries before publishing external snapshots.
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Environment Reference" icon="sliders" href="/self-hosting#environment-variable-reference">
+    Inspect complete `.env` configuration options and default values.
+  </Card>
+  <Card title="Self-Hosting Guide" icon="server" href="/self-hosting">
+    Deploy toorow securely on your own infrastructure stack.
+  </Card>
+  <Card title="Cloud Hosting" icon="cloud" href="/cloud-hosting">
+    Review the GCP Cloud Run architecture and scale-to-zero settings.
+  </Card>
+  <Card title="Prerequisites" icon="list-check" href="/prerequisites">
+    Check required accounts, IAM permissions, and local dev tools.
+  </Card>
+</CardGroup>

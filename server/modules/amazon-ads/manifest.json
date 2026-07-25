@@ -1,0 +1,670 @@
+{
+    "schema_version": "1.2",
+    "name": "amazon-ads",
+    "display_name": "Amazon Ads",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "paid_media",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract (25.6 live probe): 3 page-vs-dictionary divergences, real report-generation latencies, dynamic regional 429 tiers, Nango multi-region token config (see ROLLOUT_NOTES.md)."
+        }
+    },
+    "auth_type": "oauth2",
+    "module_kind": "kpi",
+    "provider_api_version": "reporting-v3",
+    "provider_api_hosts": {
+        "NA": "https://advertising-api.amazon.com",
+        "EU": "https://advertising-api-eu.amazon.com",
+        "FE": "https://advertising-api-fe.amazon.com"
+    },
+    "_provider_api_note": "Story 26.5: Reporting v3 is pinned HERE and only here (Content-Type: application/vnd.createasyncreportrequest.v3+json; api_catalog.json / catalog_sources.json api_version must equal this pin -- module test enforces the coupling). The THREE regional hosts are ISOLATED SILOS: a profileId is only valid on its own region's host (cross-region = 4XX). connector.py routes every call on the host of the profile's stored region; discovery fans out over all 3 hosts. Auth = Nango (Login with Amazon, scope advertising::campaign_management); the platform LwA client id is the AMAZON_ADS_CLIENT_ID env var (Amazon-Ads-ClientId header), never per-user.",
+    "report_profiles": [
+        {
+            "id": "sp_campaigns_daily",
+            "display_name": "Sponsored Products campaigns (daily)",
+            "metrics": [
+                "impressions",
+                "clicks",
+                "cost",
+                "purchases14d",
+                "purchases30d",
+                "sales14d",
+                "sales30d"
+            ],
+            "dimensions": [
+                "date",
+                "campaignId",
+                "campaignName",
+                "campaignStatus",
+                "campaignBudgetCurrencyCode"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "sb_campaigns_daily",
+            "display_name": "Sponsored Brands campaigns (daily)",
+            "metrics": [
+                "impressions",
+                "clicks",
+                "cost",
+                "purchases",
+                "sales",
+                "unitsSold",
+                "viewableImpressions"
+            ],
+            "dimensions": [
+                "date",
+                "campaignId",
+                "campaignName",
+                "campaignStatus",
+                "campaignBudgetCurrencyCode"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "sd_campaigns_daily",
+            "display_name": "Sponsored Display campaigns (daily)",
+            "metrics": [
+                "impressions",
+                "clicks",
+                "cost",
+                "purchases",
+                "sales",
+                "unitsSold"
+            ],
+            "dimensions": [
+                "date",
+                "campaignId",
+                "campaignName",
+                "campaignStatus",
+                "campaignBudgetCurrencyCode"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven daily (any selected column)",
+            "metrics": [
+                "impressions",
+                "clicks",
+                "cost",
+                "purchases14d"
+            ],
+            "dimensions": [
+                "date",
+                "campaignId",
+                "campaignName"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        }
+    ],
+    "error_map": {
+        "400": "invalid_request",
+        "401": "auth_expired",
+        "403": "permission_denied",
+        "404": "invalid_request",
+        "405": "invalid_request",
+        "425": "provider_transient",
+        "500": "provider_transient",
+        "502": "provider_transient",
+        "503": "provider_transient",
+        "504": "provider_transient"
+    },
+    "_error_map_note": "Story 26.5 decision (closes the dossier's open point for core/pull_errors.py): Amazon reporting errors carry NO stable numeric provider sub-codes (body = {code, details} with free-text details), so the map keys are HTTP-STATUS-ONLY and the CONNECTOR applies them itself (module-side status lookup with classify_http_error as fallback) -- core's '<status>:<provider_code>' contract is untouched (no wildcard added to core). Module-level refinements on details substrings: 'KDP authors do not have access to Sponsored Brands functionality' -> permission_denied; 'Not authorized to access scope' -> permission_denied; 'Tactic T00020 is not supported for report API in marketplace' -> invalid_request; 'Report date is too far in the past' -> invalid_request (retention floor, also refused pre-call). Poll-time 401s are a documented transient quirk: retried x5 before classifying auth_expired. 425 (duplicate report) is NOT an error: the socle claim/request-hash dedup reuses the in-flight reportId (a residual provider 425 re-reads the persisted ref, never blind-resubmits). Report status FAILED maps to the canonical 'expired' poll status when the failureReason is not configuration (single socle resubmission, then provider_transient); configuration failureReasons raise invalid_request. 429 + Retry-After stays on the core.quota.RateLimitError breaker path, never in this map.",
+    "refetch": {
+        "nightly_days": 3,
+        "weekly_days": 14,
+        "monthly_days": 45,
+        "_note": "Dossier section 1.7: traffic is corrected up to 3 days after the click date (nightly 3); conversions are restated 1/7/28 days after the conversion event and are reported on the AD-INTERACTION date, so with 14-day attribution a value can move up to 42 days (weekly 14 / monthly 45 covers the tail inside the SB 60-day retention floor). AD-7 supersede-by-pull_id makes every re-pull idempotent."
+    },
+    "canonical_metric_mapping": {
+        "impressions": "impressions",
+        "clicks": "clicks",
+        "cost": "cost",
+        "purchases14d": "purchases_14d",
+        "purchases30d": "purchases_30d",
+        "sales14d": "sales_14d",
+        "sales30d": "sales_30d",
+        "purchases": "purchases",
+        "sales": "sales",
+        "unitsSold": "units_sold",
+        "viewableImpressions": "viewable_impressions"
+    },
+    "canonical_dimension_mapping": {
+        "date": "date",
+        "campaignId": "campaign_id",
+        "campaignName": "campaign_name",
+        "campaignStatus": "campaign_status",
+        "campaignBudgetCurrencyCode": "cost_source_currency"
+    },
+    "quota": {
+        "window_seconds": 60,
+        "budget_points": 30,
+        "read_cost": 1,
+        "write_cost": 3,
+        "_note": "No published fixed rate limits (dossier section 1.6): throttling is dynamic (429 + Retry-After in seconds -> core.quota.RateLimitError(retry_after)) and the reporting endpoints add regional report-queue-size tiers. This conservative local budget (30 points/min, report creation = write cost 3) keeps the breaker ahead of the dynamic governor; real limits are probe-only evidence (ROLLOUT_NOTES.md)."
+    },
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "impressions",
+                "source_field": "impressions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Number of times the ads were displayed (traffic validated up to 3 days).",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "clicks",
+                "source_field": "clicks",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Number of ad clicks (invalid clicks removed up to 3 days after the click date).",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "cost",
+                "source_field": "cost",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Ad spend in the profile's local currency (campaignBudgetCurrencyCode).",
+                "semantic_hints": [
+                    "spend",
+                    "currency"
+                ],
+                "canonical_target": "cost",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "purchases14d",
+                "source_field": "purchases14d",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "SP purchases within the 14-day attribution window (attributed to the ad-interaction date; restated 1/7/28 days after the conversion -- refetch ladder).",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "purchases_14d",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "purchases30d",
+                "source_field": "purchases30d",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "SP purchases within the 30-day attribution window (interaction-date attribution, restated -- refetch ladder).",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "purchases_30d",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "sales14d",
+                "source_field": "sales14d",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "SP attributed sales value within the 14-day window (local currency; restated -- refetch ladder).",
+                "semantic_hints": [
+                    "conversion",
+                    "currency"
+                ],
+                "canonical_target": "sales_14d",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "sales30d",
+                "source_field": "sales30d",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "SP attributed sales value within the 30-day window (local currency; restated -- refetch ladder).",
+                "semantic_hints": [
+                    "conversion",
+                    "currency"
+                ],
+                "canonical_target": "sales_30d",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "purchases",
+                "source_field": "purchases",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "SB/SD purchases (14-day attribution baked into the v3 column; restated -- refetch ladder).",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "purchases",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "sales",
+                "source_field": "sales",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "SB/SD attributed sales value (local currency, 14-day attribution; restated -- refetch ladder).",
+                "semantic_hints": [
+                    "conversion",
+                    "currency"
+                ],
+                "canonical_target": "sales",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "unitsSold",
+                "source_field": "unitsSold",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "SB/SD attributed units sold (14-day attribution; restated -- refetch ladder).",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "units_sold",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "viewableImpressions",
+                "source_field": "viewableImpressions",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Viewable impressions (SB viewability family).",
+                "semantic_hints": [
+                    "engagement",
+                    "count"
+                ],
+                "canonical_target": "viewable_impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "date",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "Reporting day (timeUnit DAILY requires this column; profile time zone).",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaignId",
+                "source_field": "campaignId",
+                "kind": "dimension",
+                "physical_type": "integer",
+                "description": "Campaign ID (grain key; landed as a string identifier).",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "campaign_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaignName",
+                "source_field": "campaignName",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign display name.",
+                "semantic_hints": [
+                    "attribution"
+                ],
+                "canonical_target": "campaign_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaignStatus",
+                "source_field": "campaignStatus",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign status (ENABLED / PAUSED / ARCHIVED).",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "campaign_status",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "campaignBudgetCurrencyCode",
+                "source_field": "campaignBudgetCurrencyCode",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Currency code of the profile's spend/budget figures (feeds FX normalization in staging).",
+                "semantic_hints": [
+                    "currency"
+                ],
+                "canonical_target": "cost_source_currency",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "sp_campaigns_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_sp_campaigns_daily"
+                },
+                "metrics": [
+                    "impressions",
+                    "clicks",
+                    "cost",
+                    "purchases14d",
+                    "purchases30d",
+                    "sales14d",
+                    "sales30d"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaignId",
+                    "campaignName",
+                    "campaignStatus",
+                    "campaignBudgetCurrencyCode"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaignId"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 3,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "sb_campaigns_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_sb_campaigns_daily"
+                },
+                "metrics": [
+                    "impressions",
+                    "clicks",
+                    "cost",
+                    "purchases",
+                    "sales",
+                    "unitsSold",
+                    "viewableImpressions"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaignId",
+                    "campaignName",
+                    "campaignStatus",
+                    "campaignBudgetCurrencyCode"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaignId"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 3,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "sd_campaigns_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_sd_campaigns_daily"
+                },
+                "metrics": [
+                    "impressions",
+                    "clicks",
+                    "cost",
+                    "purchases",
+                    "sales",
+                    "unitsSold"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaignId",
+                    "campaignName",
+                    "campaignStatus",
+                    "campaignBudgetCurrencyCode"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaignId"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 3,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                },
+                "metrics": [
+                    "impressions",
+                    "clicks",
+                    "cost",
+                    "purchases14d"
+                ],
+                "dimensions": [
+                    "date",
+                    "campaignId",
+                    "campaignName"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "campaignId"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 3,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            }
+        ]
+    },
+    "account_topology": {
+        "_comment": "Story 26.5 (pattern 25.5): Amazon Ads hierarchy = API region (NA/EU/FE, three ISOLATED hosts) -> advertising profile (one per advertiser x marketplace). The reporting entity (selection_level) is the PROFILE. discover_accounts = fan-out GET /v2/profiles?apiProgram=report&accessLevel=view&profileTypeFilter=seller,vendor over the 3 regional hosts (per-host tolerant: a failing host logs a warning, never fails the whole discovery); every profile node carries the composite opaque id '<REGION>:<profileId>' so every later call routes on the profile's own host without re-discovery (cross-region profileId = 4XX). KDP_AUTHOR sub-type profiles are flagged (no Sponsored Brands access). Core owns selection/access-check/trial/backfill; AMAZON_ADS_*_ID env vars are FORBIDDEN (doctrine).",
+        "levels": [
+            {
+                "id": "region",
+                "label": "API region (NA / EU / FE)"
+            },
+            {
+                "id": "profile",
+                "label": "Advertising profile (advertiser x marketplace)"
+            }
+        ],
+        "selection_level": "profile",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    }
+}

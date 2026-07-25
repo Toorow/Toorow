@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "flow.datastream.schema.json",
+  "title": "FlowDatastream",
+  "description": "Declarative datastream flow document (Story 8.7, Epic 8 Part D). The common interface through which both the admin UI and the LLM agent read/edit datastream flows. GUARDRAIL: additionalProperties:false everywhere so no authorization secret (token/access_token/secret) can be smuggled in; connection_ref_id is an opaque reference only.",
+  "type": "object",
+  "required": ["schema_version", "kind", "project_id", "name"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "schema_version": { "const": "1" } } },
+      "then": {
+        "required": ["module_name"],
+        "not": { "required": ["intent"] }
+      }
+    },
+    {
+      "if": { "properties": { "schema_version": { "const": "2" } } },
+      "then": {
+        "required": ["intent", "idempotency_key"],
+        "not": {
+          "anyOf": [
+            { "required": ["config"] },
+            { "required": ["mappings"] },
+            { "required": ["schedule_mode"] },
+            { "required": ["refetch_days"] },
+            { "required": ["date_window_days"] }
+          ]
+        }
+      }
+    }
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["1", "2"] },
+    "kind": { "const": "datastream" },
+    "id": {
+      "type": "string",
+      "description": "ds_<ULID>. Absent on create; present on update."
+    },
+    "project_id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "intent": {
+      "type": "object",
+      "description": "Schema-version-2 immutable intent; validated by datastream-intent.schema.json."
+    },
+    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "trace_id": { "type": ["string", "null"], "maxLength": 255 },
+    "current_plan_version_id": { "type": ["string", "null"] },
+    "current_plan_version": { "type": ["integer", "null"], "minimum": 1 },
+    "source_kind": { "enum": ["connector_pull", "external_bq", "managed_feed"] },
+    "writer_kind": { "enum": ["toorow", "external"] },
+    "destination_policy": { "enum": ["managed_raw", "external_read_only"] },
+    "cadence_mode": { "enum": ["manual", "daily", "hourly"] },
+    "validation_state": { "enum": ["legacy", "blocked", "executable"] },
+    "next_run_at": { "type": ["string", "null"], "format": "date-time" },
+    "module_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Connector manifest name (kebab-case). AD-2: data, never hardcoded."
+    },
+    "connection_ref_id": {
+      "type": ["string", "null"],
+      "description": "OPAQUE reference to app.connection_ref. Never a secret. Validated to exist and belong to the project at upsert time."
+    },
+    "report_profile_id": { "type": ["string", "null"] },
+    "enabled": { "type": "boolean" },
+    "schedule_mode": { "type": "string", "enum": ["nightly", "manual"] },
+    "refetch_days": { "type": "integer", "minimum": 1, "maximum": 90 },
+    "date_window_days": { "type": "integer", "minimum": 1, "maximum": 365 },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Connector-specific config (R3 date normalization + R4 generic source). No auth material may appear here.",
+      "properties": {
+        "date_format": {
+          "type": "string",
+          "description": "R3: strptime pattern for the source date column. Default: '%Y-%m-%d' (ISO 8601). Example: '%d/%m/%Y' for French dates."
+        },
+        "source_timezone": {
+          "type": "string",
+          "description": "R3: IANA timezone name for the source date column. Default: 'UTC'. Example: 'Europe/Paris'."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["csv_inline", "url"],
+          "description": "R4 generic module: data source type. 'csv_inline' = rows embedded in config; 'url' = fetched via HTTP."
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "R4 generic module: URL to fetch tabular data from (CSV or JSON). Required when source='url'."
+        },
+        "rows": {
+          "type": "array",
+          "description": "R4 generic module: inline tabular rows when source='csv_inline'. Each element is a dict with a date column and N measure/dimension columns.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "date_column": {
+          "type": "string",
+          "description": "R4 generic module: explicit name of the date column. Auto-detected when absent (looks for 'date', 'jour', 'day', etc.)."
+        },
+        "mappings": {
+          "type": "array",
+          "description": "R4 generic module: source column -> canonical metric name mappings. Passed directly to the generic connector.",
+          "items": {
+            "type": "object",
+            "required": ["source_field"],
+            "additionalProperties": false,
+            "properties": {
+              "source_field": { "type": "string", "minLength": 1 },
+              "target_field": { "type": ["string", "null"] },
+              "is_key_column": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "mappings": {
+      "type": "array",
+      "description": "source_field -> target_field bindings (data dictionary).",
+      "items": {
+        "type": "object",
+        "required": ["source_field"],
+        "additionalProperties": false,
+        "properties": {
+          "source_field": { "type": "string", "minLength": 1 },
+          "target_field": {
+            "type": ["string", "null"],
+            "description": "Target field name in app.target_fields, or null when unmapped."
+          },
+          "is_key_column": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

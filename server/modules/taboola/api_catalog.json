@@ -1,0 +1,186 @@
+{
+  "api_version": "backstage-1.0",
+  "catalog_version": "1",
+  "connector": "taboola",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Selected advertiser account.",
+      "exposure": "exposed",
+      "field_id": "account_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "account_id",
+      "tier": "core"
+    },
+    {
+      "description": "Campaign id.",
+      "exposure": "exposed",
+      "field_id": "campaign_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "campaign_id",
+      "tier": "core"
+    },
+    {
+      "description": "One immutable history change record.",
+      "exposure": "exposed",
+      "field_id": "change_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "change_count",
+      "tier": "core"
+    },
+    {
+      "description": "History change time.",
+      "exposure": "exposed",
+      "field_id": "change_time",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "DIMENSION",
+      "source_field": "change_time",
+      "tier": "core"
+    },
+    {
+      "description": "History change type.",
+      "exposure": "exposed",
+      "field_id": "change_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "change_type",
+      "tier": "core"
+    },
+    {
+      "description": "Clicks.",
+      "exposure": "exposed",
+      "field_id": "clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "clicks",
+      "tier": "core"
+    },
+    {
+      "description": "Conversion value.",
+      "exposure": "exposed",
+      "field_id": "conversion_value",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "conversion_value",
+      "tier": "core"
+    },
+    {
+      "description": "Physical conversion count.",
+      "exposure": "exposed",
+      "field_id": "conversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "conversions",
+      "tier": "core"
+    },
+    {
+      "description": "Country breakdown.",
+      "exposure": "exposed",
+      "field_id": "country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "country",
+      "tier": "core"
+    },
+    {
+      "description": "Advertiser-local report day.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "DIMENSION",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "Changed entity id.",
+      "exposure": "exposed",
+      "field_id": "entity_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "entity_id",
+      "tier": "core"
+    },
+    {
+      "description": "Impressions.",
+      "exposure": "exposed",
+      "field_id": "impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Top content item id.",
+      "exposure": "exposed",
+      "field_id": "item_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "item_id",
+      "tier": "core"
+    },
+    {
+      "description": "Platform breakdown.",
+      "exposure": "exposed",
+      "field_id": "platform",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "platform",
+      "tier": "core"
+    },
+    {
+      "description": "Immutable history record id.",
+      "exposure": "exposed",
+      "field_id": "record_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "record_id",
+      "tier": "core"
+    },
+    {
+      "description": "Publisher site id.",
+      "exposure": "exposed",
+      "field_id": "site_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "site_id",
+      "tier": "core"
+    },
+    {
+      "description": "Spend in account currency.",
+      "exposure": "exposed",
+      "field_id": "spent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "METRIC",
+      "source_field": "spent",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-22",
+      "kind": "official",
+      "url": "https://developers.taboola.com/backstage-api/docs/reporting-overview"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "pull_id": "pull_ias_001",
+    "connector": "ias",
+    "date": "2026-07-01",
+    "campaignId": "IAS-CMP-1001",
+    "campaignName": "Q3 Brand Awareness",
+    "measuredImps": 482000,
+    "viewableImps": 351860,
+    "eligibleImps": 500000,
+    "invalidImps": 4820,
+    "passedImps": 476500,
+    "failedImps": 5500,
+    "viewableRate": 0.73
+  },
+  {
+    "pull_id": "pull_ias_001",
+    "connector": "ias",
+    "date": "2026-07-01",
+    "campaignId": "IAS-CMP-1002",
+    "campaignName": "Q3 Performance Prospecting",
+    "measuredImps": 120400,
+    "viewableImps": 78260,
+    "eligibleImps": 130000,
+    "invalidImps": 2610,
+    "passedImps": 117900,
+    "failedImps": 2500,
+    "viewableRate": 0.65
+  },
+  {
+    "pull_id": "pull_ias_002",
+    "connector": "ias",
+    "date": "2026-07-02",
+    "campaignId": "IAS-CMP-1001",
+    "campaignName": "Q3 Brand Awareness",
+    "measuredImps": 558000,
+    "viewableImps": 435240,
+    "eligibleImps": 575000,
+    "invalidImps": 3900,
+    "passedImps": 551200,
+    "failedImps": 6800,
+    "viewableRate": 0.78
+  }
+]

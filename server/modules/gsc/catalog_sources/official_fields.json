@@ -1,0 +1,98 @@
+[
+  {
+    "field_id": "clicks",
+    "source_field": "clicks",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of times a user clicked through to the site from a search result.",
+    "section": "QUERY"
+  },
+  {
+    "field_id": "impressions",
+    "source_field": "impressions",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Number of times the site appeared in search results for a given query or row.",
+    "section": "QUERY"
+  },
+  {
+    "field_id": "ctr",
+    "source_field": "ctr",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Click-through rate: clicks / impressions, ranging from 0.0 to 1.0. Ratio metric — computed from clicks and impressions; never stored raw (AD-4).",
+    "section": "QUERY"
+  },
+  {
+    "field_id": "average_position",
+    "source_field": "average_position",
+    "kind": "metric",
+    "data_type": "decimal",
+    "description": "Average position of the site in search results for the row. GSC API field name is 'position'; canonical rename is 'average_position'. Non-additive: must be impression-weighted when aggregating across rows. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+    "section": "QUERY"
+  },
+  {
+    "field_id": "query",
+    "source_field": "query",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "The search query string that users entered. Returned as a key when 'query' is in the dimensions list.",
+    "section": "QUERY"
+  },
+  {
+    "field_id": "page",
+    "source_field": "page",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "The final URI of the page that was shown in the search result (landing page URL). Returned as a key when 'page' is in the dimensions list.",
+    "section": "LANDING PAGE"
+  },
+  {
+    "field_id": "country",
+    "source_field": "country",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "The country from which the search originated, as a 3-letter ISO 3166-1 alpha-3 country code (e.g. 'fra', 'gbr'). Returned as a key when 'country' is in the dimensions list.",
+    "section": "GEO"
+  },
+  {
+    "field_id": "device",
+    "source_field": "device",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "The device category of the user performing the search. One of: DESKTOP, MOBILE, TABLET. Returned as a key when 'device' is in the dimensions list.",
+    "section": "DEVICE"
+  },
+  {
+    "field_id": "date",
+    "source_field": "date",
+    "kind": "dimension",
+    "data_type": "date",
+    "description": "The date of the data in YYYY-MM-DD format (Pacific Time). Returned as a key when 'date' is in the dimensions list.",
+    "section": "TIME"
+  },
+  {
+    "field_id": "hour",
+    "source_field": "hour",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Hourly breakdown key (ISO-8601 timestamp). Only available when dataState='hourly_all' is set in the request. Returned as a key when 'hour' is in the dimensions list.",
+    "section": "TIME"
+  },
+  {
+    "field_id": "search_type",
+    "source_field": "type",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "The search surface (type parameter in the request body). One of: web (default), image, video, news, discover, googleNews. Stamped on every raw row during extraction; not a grouping dimension returned in keys[].",
+    "section": "QUERY"
+  },
+  {
+    "field_id": "search_appearance",
+    "source_field": "searchAppearance",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "The specific search result feature that triggered the impression (e.g. RICHRESULT, AMP, WEBLIGHTRESULT). Returned as a key when 'searchAppearance' is in the dimensions list. Cannot be grouped with any other API dimension; daily grain requires per-day single-dim requests.",
+    "section": "SEARCH APPEARANCE"
+  }
+]

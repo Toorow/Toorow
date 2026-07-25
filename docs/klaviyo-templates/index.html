@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>toorow — Galerie & Prévisualisation des Emails Klaviyo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background-color: #F8F9FA;
+      color: #111111;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      background-color: #FFFFFF;
+      border-bottom: 1px solid #EBEBF3;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand {
+      font-family: 'Lexend', sans-serif;
+      font-weight: 600;
+      font-size: 22px;
+      letter-spacing: -0.03em;
+    }
+    .brand span {
+      color: #FF99C8;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #7E6BC4;
+      font-weight: 600;
+      margin-left: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 10px 24px;
+      background-color: #FFFFFF;
+      border-bottom: 1px solid #EBEBF3;
+    }
+    .tab-btn {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 999px;
+      border: 1px solid #EBEBF3;
+      background-color: #F8F9FA;
+      color: #555555;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+    .tab-btn:hover {
+      border-color: #FF99C8;
+      color: #111111;
+    }
+    .tab-btn.active {
+      background-color: #FF99C8;
+      border-color: #F77FB4;
+      color: #111111;
+      box-shadow: 0 2px 8px rgba(255,153,200,0.3);
+    }
+    
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .viewport-btn {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #EBEBF3;
+      background: #FFFFFF;
+      cursor: pointer;
+    }
+    .viewport-btn.active {
+      background-color: #111111;
+      color: #FFFFFF;
+      border-color: #111111;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      background-color: #F0F2F5;
+      overflow: auto;
+    }
+    .iframe-wrapper {
+      background-color: #FFFFFF;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+      overflow: hidden;
+      transition: width 0.3s ease;
+      height: 100%;
+      max-height: 820px;
+      display: flex;
+      flex-direction: column;
+    }
+    .iframe-wrapper.desktop {
+      width: 680px;
+    }
+    .iframe-wrapper.mobile {
+      width: 380px;
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div style="display:flex; align-items:center;">
+      <div class="brand">toorow<span>.</span></div>
+      <div class="subtitle">Galerie de Prévisualisation Emails Klaviyo</div>
+    </div>
+    
+    <div class="controls">
+      <span style="font-size:12px; color:#666;">Format :</span>
+      <button class="viewport-btn active" onclick="setViewport('desktop')">💻 Desktop (680px)</button>
+      <button class="viewport-btn" onclick="setViewport('mobile')">📱 Mobile (380px)</button>
+    </div>
+  </header>
+
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="loadEmail('01-waitlisted.html', this)">1. Waitlist Confirmation</button>
+    <button class="tab-btn" onclick="loadEmail('02-invited-to-test.html', this)">2. Invitation Trial</button>
+    <button class="tab-btn" onclick="loadEmail('03-invite-expired.html', this)">3. Invitation Expirée</button>
+    <button class="tab-btn" onclick="loadEmail('04-signed-up.html', this)">4. Bienvenue Onboarding</button>
+    <button class="tab-btn" onclick="loadEmail('05-first-datastream-connected.html', this)">5. 1er Datastream Connecté</button>
+    <button class="tab-btn" onclick="loadEmail('06-trial-limit-reached.html', this)">6. Limite d'Essai (3/3)</button>
+    <button class="tab-btn" onclick="loadEmail('07-upgraded.html', this)">7. Surclassement Plan Full</button>
+  </div>
+
+  <main>
+    <div class="iframe-wrapper desktop" id="wrapper">
+      <iframe id="previewFrame" src="01-waitlisted.html"></iframe>
+    </div>
+  </main>
+
+  <script>
+    function loadEmail(filename, btn) {
+      document.getElementById('previewFrame').src = filename;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    function setViewport(mode) {
+      const wrapper = document.getElementById('wrapper');
+      document.querySelectorAll('.viewport-btn').forEach(b => b.classList.remove('active'));
+      if (mode === 'mobile') {
+        wrapper.className = 'iframe-wrapper mobile';
+        event.target.classList.add('active');
+      } else {
+        wrapper.className = 'iframe-wrapper desktop';
+        event.target.classList.add('active');
+      }
+    }
+  </script>
+</body>
+</html>

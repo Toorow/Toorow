@@ -1,0 +1,89 @@
+{
+  "connector": "google-analytics",
+  "api_version": "GA4 Data API v1",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "official_fields.json is produced by build_official_fields.py (committed alongside, deterministic, no network / no clock). It curates the STANDARD (predefined) dimensions and metrics of the official GA4 Data API 'API Dimensions & Metrics' schema page. Custom / property-scoped dynamic fields (customEvent:*, customUser:*, customItem:*, dimensionN, metricN, keyEvents:<name>) are deliberately excluded: they are per-property and cannot be cataloged statically without a live connected property.",
+    "field_id_policy": "The fifteen fields the manifest's source_capabilities already exposes keep their platform-side snake_case field_id and carry an explicit source_field = the GA4 apiName (active_users->activeUsers, device_category->deviceCategory, landing_page->landingPage, page->pagePath, screen_page_views->screenPageViews, session_campaign->sessionCampaignName, session_source_medium->sessionSourceMedium, first_user_source_medium->firstUserSourceMedium, purchase_revenue->purchaseRevenue, transaction_id->transactionId). sessions / conversions / date / country / newVsReturning already equal their apiName so no source_field is emitted. Every other field keeps the GA4 apiName verbatim as its field_id, so source_field defaults to it in the generator. This keeps drift_ids EMPTY and the manifest<->catalog gate free of source_field_mismatch (25.4 AC2).",
+    "conversions_note": "GA4 renamed 'Conversions' to 'Key events'; the runReport API still accepts the legacy metric apiName 'conversions', which is what the manifest and connector request. Both 'conversions' and the newer 'keyEvents' apiName are cataloged.",
+    "count_divergence": "Supermetrics publishes 89 metrics / 261 dimensions for its GA4 connector; many of those are Supermetrics-COMPUTED fields (derived ratios, renamed families, per-value permutations of newVsReturning / channel groupings) that are not standard GA4 Data API apiNames. Those land as enrichment_only suspects in the fusion report and are NEVER emitted into the catalog (enrichment is never the authority). This snapshot declares each standard GA4 apiName ONCE."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.google.com/analytics/devguides/reporting/data/v1/api-schema",
+      "fetched_at": "2026-07-21"
+    },
+    {
+      "kind": "enrichment",
+      "file": "supermetrics.md",
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/google-analytics-4-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/google-analytics-4-fields.md -o server/modules/google-analytics/catalog_sources/supermetrics.md   # DO NOT COMMIT this file (enrichment snapshot only)"
+    }
+  ],
+  "section_tier_map": {
+    "TIME": "core",
+    "GEO": "core",
+    "DEVICE": "core",
+    "CONTENT": "core",
+    "SESSION": "core",
+    "SESSION SOURCE": "core",
+    "USER SOURCE": "core",
+    "USER": "core",
+    "EVENT": "core",
+    "ECOMMERCE": "standard",
+    "MANUAL SOURCE": "standard",
+    "SEARCH": "standard",
+    "LINKS": "standard",
+    "AUDIENCE": "standard",
+    "ADS": "standard",
+    "DAILY COHORT": "advanced",
+    "CM360": "advanced",
+    "DV360": "advanced",
+    "SA360": "advanced",
+    "PUBLISHER": "advanced",
+    "GAMING": "advanced"
+  },
+  "field_tier_overrides": {
+    "sessions": "core",
+    "active_users": "core",
+    "conversions": "core",
+    "keyEvents": "core",
+    "screen_page_views": "core",
+    "totalRevenue": "core",
+    "purchase_revenue": "core",
+    "transactions": "core",
+    "transaction_id": "core",
+    "date": "core",
+    "country": "core",
+    "device_category": "core",
+    "session_source_medium": "core",
+    "session_campaign": "core",
+    "first_user_source_medium": "core",
+    "landing_page": "core",
+    "page": "core",
+    "newVsReturning": "core"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "report_statistics",
+    "batch_size": 10,
+    "structural_note": "GA4 runReport takes dimensions[] and metrics[] as {name: <apiName>} objects. The probe batches up to 10 fields of one kind per runReport over a 1-day window on the selected property; a field that triggers an invalid_request is re-probed alone so the exact rejected field is captured (never the whole batch)."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {
+    "DAILY COHORT": "Cohort fields require a runReport cohortSpec which pull_catalog_daily does not build.",
+    "WEEKLY COHORT": "Cohort fields require a runReport cohortSpec which pull_catalog_daily does not build.",
+    "MONTHLY COHORT": "Cohort fields require a runReport cohortSpec which pull_catalog_daily does not build."
+  },
+  "realtime_incompatible_fields": {
+    "_comment": "Story 25.9: minute-grain TIME dimensions are only defined for the GA4 Realtime API (properties/{id}:runRealtimeReport), which pull_catalog_daily does NOT call -- it builds a standard runReport over a date window. These field ids are cataloged (they are valid GA4 apiNames) but selecting them for a catalog_daily pull is a request-build error the section map cannot express (TIME is a single 'core' section carrying both daily and realtime-only dims). pull_catalog_daily refuses them BEFORE any HTTP call with core.pull_errors.InvalidRequestError (invalid_request-class -- the catalog/integration drift signal), and prunes them from the tier-core default selection so a None selection stays valid.",
+    "dateHourMinute": "Minute-grain (YYYYMMDDHHMM); only defined for the Realtime API, not the standard runReport pull_catalog_daily builds.",
+    "minute": "Minute-of-hour (00-59); only defined for the Realtime API, not the standard runReport pull_catalog_daily builds.",
+    "nthMinute": "Minutes since the range start; only defined for the Realtime API, not the standard runReport pull_catalog_daily builds."
+  }
+}

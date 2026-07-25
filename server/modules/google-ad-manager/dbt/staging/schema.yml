@@ -1,0 +1,34 @@
+version: 2
+
+sources:
+  - name: raw_google_ad_manager
+    description: "Immutable raw landing zone for Google Ad Manager report data (AD-7: append-only)."
+    schema: main
+    tables:
+      - name: raw_google_ad_manager_daily
+        description: "Raw GAM Interactive Reports rows, long format. Append-only (AD-7)."
+
+models:
+  - name: stg_google_ad_manager_daily
+    description: >
+      Staging: maps raw GAM report fields to canonical names.
+      QUALIFY supersede (AD-7): latest pull per grain wins. MONEY metrics stay in
+      MICROS here and through the mart; the /1e6 happens once at read with currency.
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+      - name: currency
+        description: "Network currency code (ISO 4217) for MONEY metrics; NULL for non-money. Guards against summing across currencies."
+      - name: report_timezone
+        description: "Network report timezone; explains day-boundary offsets when reconciling with other datastreams."
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_google_ad_manager_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || metric || '|' || breakdown_dimension || '|' || breakdown_value"

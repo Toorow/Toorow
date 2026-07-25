@@ -1,0 +1,4 @@
+canonical_value,aliases
+desktop,desktop|DESKTOP|Desktop
+mobile,mobile|MOBILE|Mobile|mobile_with_full_browser|mobile_without_full_browser
+tablet,tablet|TABLET|Tablet|tablet_with_full_browser

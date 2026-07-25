@@ -1,0 +1,105 @@
+{
+  "connector": "tiktok-ads",
+  "api_version": "v1.3",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "official_fields.json is produced by build_official_fields.py (committed alongside, deterministic). SCALAR metrics + DIMENSIONS come from the TikTok Business (Marketing) API v1.3 'Basic report supported metrics' and 'Basic report supported dimensions' references; CONVERSION / IN APP EVENT / IN APP EVENT (SKAN) / ONSITE EVENT / PAGE EVENT families are EXPANDED per event-type.",
+    "expansion_rule": "For each expanded family F (conversion, cost_per_conversion, conversion_rate, real_time_conversion, in-app total/cost, SKAN total/cost, onsite, page_event) and each official event type E, a flattened metric id is emitted as '<F>_<E>' with E's dots/dashes normalised to underscores (e.g. conversion_complete_payment, total_app_install, skan_total_purchase, onsite_on_web_order). This mirrors how the reporting API surfaces per-optimization-event metrics and how Supermetrics flattens the same CONVERSION/IN APP EVENT/ONSITE/PAGE sections, which is why the merged metric count converges on the same order of magnitude as their 387 metrics / 153 dimensions catalog.",
+    "count_divergence": "Metric total (~313) lands on the order of the Supermetrics 387 figure. Dimension total (34) is intentionally below their 153: Supermetrics counts every breakdown VALUE permutation (per-country, per-age-bucket, per-placement, per-gender) as a distinct dimension column, whereas this catalog declares each breakdown ONCE as a parameterised dimension. Enumerating breakdown values is out of scope (they are query parameters, not catalog fields) and would be non-deterministic against the account's data.",
+    "portal_render_caveat": "AI-53: the business-api.tiktok.com portal is a client-side SPA whose metric/dimension tables are NOT retrievable by a plain HTTP fetch (WebFetch returns only the page shell). The curated lists reflect the v1.3 BASIC references at the URLs below, cross-checked against the Supermetrics enrichment section structure. Every field is a DECLARED contract; live ratification (playbook step 7) confirms exact ids/availability per access tier."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://business-api.tiktok.com/portal/docs/basic-reports-supported-metrics/v1.3",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "supported_metrics",
+          "url": "https://business-api.tiktok.com/portal/docs/basic-reports-supported-metrics/v1.3",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "supported_dimensions",
+          "url": "https://business-api.tiktok.com/portal/docs/basic-reports-supported-dimensions/v1.3",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "basic_reports_endpoint",
+          "url": "https://business-api.tiktok.com/portal/docs/basic-reports/v1.3",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "error_codes",
+          "url": "https://business-api.tiktok.com/portal/docs?id=1737172488964097",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "file": "supermetrics.md",
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/tiktok-ads-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/tiktok-ads-fields.md -o server/modules/tiktok-ads/catalog_sources/supermetrics.md   # DO NOT COMMIT this file (enrichment snapshot only). Published totals: 387 metrics / 153 dimensions."
+    }
+  ],
+  "section_tier_map": {
+    "BASIC": "core",
+    "COST": "core",
+    "CLICKS": "core",
+    "IMPRESSION": "core",
+    "CAMPAIGN": "core",
+    "AD GROUP": "core",
+    "AD": "core",
+    "TIME": "core",
+    "CONVERSION": "standard",
+    "REACH": "standard",
+    "VIDEO": "standard",
+    "ENGAGEMENT": "standard",
+    "ATTRIBUTION": "standard",
+    "AUDIENCE": "standard",
+    "ACCOUNT": "standard",
+    "ONSITE EVENT": "advanced",
+    "PAGE EVENT": "advanced",
+    "IN APP EVENT": "advanced",
+    "IN APP EVENT (SKAN)": "advanced",
+    "INTERACTIVE ADD-ON": "advanced",
+    "LIVE": "advanced",
+    "PRODUCT": "advanced"
+  },
+  "field_tier_overrides": {
+    "spend": "core",
+    "impressions": "core",
+    "clicks": "core",
+    "conversions": "core",
+    "ctr": "core",
+    "cpc": "core",
+    "cpm": "core",
+    "reach": "core",
+    "date": "core",
+    "campaign_id": "core",
+    "campaign_name": "core",
+    "adgroup_id": "core",
+    "adgroup_name": "core",
+    "ad_id": "core"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 20,
+    "structural_note": "TikTok /report/integrated/get takes JSON-encoded dimensions and metrics arrays. The probe batches up to 20 metric fields per report request over a 1-day window on the selected advertiser; dimension fields are probed as the report grain. A batch that returns an invalid_request is bisected so the exact rejected field is captured."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {
+    "REACH": "Requires report_type=REACH, not served by the BASIC synchronous report.",
+    "AUDIENCE": "Audience/geo/device/placement are report_type=AUDIENCE breakdowns, not BASIC group-by keys.",
+    "IN APP EVENT (SKAN)": "Dedicated SKAN report shape, not served by the BASIC synchronous report.",
+    "LIVE": "LIVE-specific reporting endpoint, not served by the BASIC synchronous report.",
+    "PRODUCT": "GMV/shopping report shape, not served by the BASIC synchronous report.",
+    "ACCOUNT": "advertiser_id is a request param and advertiser_name comes from advertiser/info; neither is a report field."
+  }
+}

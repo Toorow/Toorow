@@ -1,0 +1,16 @@
+# Remote state backend (GCS) — EXAMPLE.
+#
+# [HUMAN GATE] Copy to backend.tf and fill in the bucket. The bucket itself is
+# created in the same apply (bootstrap): on the very first apply, run with a
+# local backend, then create the bucket, then migrate state with
+# `terraform init -migrate-state` once this backend.tf is in place.
+#
+# Do NOT commit backend.tf with a real bucket name if it encodes sensitive
+# project identifiers — keep it local or in a private ops repo.
+
+terraform {
+  backend "gcs" {
+    bucket = "toorow-tfstate-dev" # created during bootstrap apply
+    prefix = "dev/terraform/state"
+  }
+}

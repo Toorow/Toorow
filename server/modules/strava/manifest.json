@@ -1,0 +1,427 @@
+{
+    "schema_version": "1.2",
+    "name": "strava",
+    "display_name": "Strava",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "analytics_product",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify against one known public club id once a Strava connection exists (no test account 2026-07-21)."
+        }
+    },
+    "auth_type": "oauth2",
+    "module_kind": "kpi",
+    "report_profiles": [
+        {
+            "id": "competitor_snapshot",
+            "display_name": "Club snapshot (competitors + own)",
+            "metrics": [
+                "member_count",
+                "following_count"
+            ],
+            "dimensions": [
+                "date",
+                "club_id",
+                "club_name",
+                "sport_type",
+                "club_city",
+                "club_state",
+                "club_country",
+                "is_private",
+                "is_verified",
+                "club_url",
+                "is_own_club"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": false,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "_api_notes": "GET /clubs/{id} per configured club id (competitor ids from per-project config + own club ids from discovery). Public clubs only; a private/absent id returns 404 and is skipped with an alert (never a fabricated zero). member_count/following_count are point-in-time snapshot LEVELS: one dated row per club (grain club_id x date)."
+        },
+        {
+            "id": "own_club_full",
+            "display_name": "Own club (snapshot; members/activities on-demand)",
+            "metrics": [
+                "member_count",
+                "following_count"
+            ],
+            "dimensions": [
+                "date",
+                "club_id",
+                "club_name",
+                "sport_type",
+                "club_city",
+                "club_state",
+                "club_country",
+                "is_private",
+                "is_verified",
+                "club_url",
+                "is_own_club"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 200,
+                "filters_supported": false,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "_api_notes": "Own clubs only (discovered via GET /athlete/clubs). Persists the same club snapshot as competitor_snapshot; the membership-gated feeds (GET /clubs/{id}/members, /admins, /activities) are ANONYMIZED (first name + last initial, no athlete id, no stable PK) and are exposed as on-demand reads, cataloged as planned -- NOT persisted in v1 (privacy-lean default; decision recorded in the story)."
+        }
+    ],
+    "canonical_metric_mapping": {
+        "member_count": {
+            "canonical": "member_count",
+            "aggregation_rule": "latest",
+            "non_additive": true
+        },
+        "following_count": {
+            "canonical": "following_count",
+            "aggregation_rule": "latest",
+            "non_additive": true
+        }
+    },
+    "canonical_dimension_mapping": {
+        "id": "club_id",
+        "name": "club_name",
+        "city": "club_city",
+        "state": "club_state",
+        "country": "club_country",
+        "private": "is_private",
+        "verified": "is_verified",
+        "url": "club_url"
+    },
+    "error_map": {
+        "400": "invalid_request",
+        "401": "auth_expired",
+        "403": "permission_denied",
+        "404": "permission_denied",
+        "500": "provider_transient"
+    },
+    "_error_map_note": "VERIFIE le 2026-07-21 (https://developers.strava.com/swagger/swagger.json). Strava error body = Fault { message, errors[]:{resource, field, code} }. 'code' is a FREE-FORM string (invalid/required/exceeded/missing/not found), NOT a stable enum, so the map is keyed on HTTP STATUS ALONE (like adjust): the pure-HTTP taxonomy in core.pull_errors already lands 401->auth_expired, 403->permission_denied, 400->invalid_request, 5xx->provider_transient. 429 raises core.quota.RateLimitError (breaker path, honor Retry-After). TWO connector shims applied BEFORE classify_http_error: (a) a 403 whose Fault errors[].code=='exceeded' (or X-RateLimit-Usage at/over limit) is routed to the breaker as a rate-limit, not permission_denied (Strava historically returns 403 for rate-limit on some endpoints); (b) a 404 on the competitor_snapshot path is an EXPECTED non-fatal 'unreachable' outcome (private/absent public club) -> the club is skipped + a meta alert emitted, NEVER raised. A 404 on own_club_full (a club the athlete should belong to) stays a real permission_denied.",
+    "account_topology": {
+        "_comment": "Strava Clubs topology has a SINGLE level: the connected athlete's OWN clubs (GET /athlete/clubs -> SummaryClub[]). discover_accounts enumerates them. The reporting entity (selection_level) is the CLUB. Access-check = GET /clubs/{id} returns 200 for a selected own club. COMPETITOR clubs are NOT in this topology: Strava exposes no club search/list endpoint, so competitor ids are arbitrary PUBLIC ids the token can read but does not own -> they are supplied as per-project config (strava_competitor_club_ids), validated at pull time by GET /clubs/{id} (200 public / 404 unreachable). No *_CLUB_ID env var (doctrine): own selection + competitor list live in connection_ref / project config.",
+        "levels": [
+            {
+                "id": "club",
+                "label": "Club"
+            }
+        ],
+        "selection_level": "club",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    },
+    "quota": {
+        "window_seconds": 900,
+        "budget_points": 100,
+        "read_cost": 1,
+        "write_cost": 1,
+        "_rate_limit_note": "VERIFIE le 2026-07-21 (https://developers.strava.com/docs/rate-limits/): default 100 reads / 15 min (900s), 1000 reads/day; overall 200/15min, 2000/day. 1 club snapshot = 1 read. Conservative budget = 100 points / 900s. Backstop: 429 (and 403 'exceeded') -> RateLimitError.",
+        "cost_note": "1 read per club per snapshot. own_club_full adds 1 (/athlete/clubs) + paged /members + paged /activities + 1 /admins per own club. Serialize pulls per connection."
+    },
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "member_count",
+                "source_field": "member_count",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Total number of club members at the snapshot moment. Non-additive point-in-time level (aggregation_rule=latest); the growth trend is derived downstream. THE key competitive metric.",
+                "semantic_hints": [
+                    "audience",
+                    "count",
+                    "non_additive"
+                ],
+                "canonical_target": "member_count",
+                "aggregation": "latest",
+                "non_additive": true
+            },
+            {
+                "field_id": "following_count",
+                "source_field": "following_count",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "Number of accounts the club follows, at the snapshot moment. Non-additive point-in-time level (aggregation_rule=latest).",
+                "semantic_hints": [
+                    "audience",
+                    "count",
+                    "non_additive"
+                ],
+                "canonical_target": "following_count",
+                "aggregation": "latest",
+                "non_additive": true
+            },
+            {
+                "field_id": "date",
+                "source_field": "date",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "Snapshot date (YYYY-MM-DD), stamped at extraction (Strava returns no date; the club object is a point-in-time snapshot). Time grain of the fact.",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "club_id",
+                "source_field": "id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Strava club unique identifier (DetailedClub.id). The snapshot grain key.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "club_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "club_name",
+                "source_field": "name",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Club display name (DetailedClub.name).",
+                "semantic_hints": [
+                    "label"
+                ],
+                "canonical_target": "club_name",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "sport_type",
+                "source_field": "sport_type",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Club primary sport type (cycling/running/triathlon/other).",
+                "semantic_hints": [
+                    "category"
+                ],
+                "canonical_target": "sport_type",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "club_city",
+                "source_field": "city",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Club city (free-form; not an ISO code, renamed club_* to avoid vocabulary collision).",
+                "semantic_hints": [
+                    "geography"
+                ],
+                "canonical_target": "club_city",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "club_state",
+                "source_field": "state",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Club state/region (free-form).",
+                "semantic_hints": [
+                    "geography"
+                ],
+                "canonical_target": "club_state",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "club_country",
+                "source_field": "country",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Club country (free-form, NOT an ISO-3166 code; renamed club_country to avoid colliding with the vocabulary-governed 'country' dimension).",
+                "semantic_hints": [
+                    "geography"
+                ],
+                "canonical_target": "club_country",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "is_private",
+                "source_field": "private",
+                "kind": "dimension",
+                "physical_type": "boolean",
+                "description": "Whether the club is private. A private competitor club is unreachable to a non-member (404 -> skipped).",
+                "semantic_hints": [
+                    "flag"
+                ],
+                "canonical_target": "is_private",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "is_verified",
+                "source_field": "verified",
+                "kind": "dimension",
+                "physical_type": "boolean",
+                "description": "Whether the club is verified (DetailedClub.verified).",
+                "semantic_hints": [
+                    "flag"
+                ],
+                "canonical_target": "is_verified",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "club_url",
+                "source_field": "url",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Club vanity URL slug (DetailedClub.url).",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "club_url",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "is_own_club",
+                "source_field": "is_own_club",
+                "kind": "dimension",
+                "physical_type": "boolean",
+                "description": "Stamped by the connector: true for an own club (from discovery), false for a config-supplied competitor club.",
+                "semantic_hints": [
+                    "flag"
+                ],
+                "canonical_target": "is_own_club",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "competitor_snapshot",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_competitor_snapshot"
+                },
+                "metrics": [
+                    "member_count",
+                    "following_count"
+                ],
+                "dimensions": [
+                    "date",
+                    "club_id",
+                    "club_name",
+                    "sport_type",
+                    "club_city",
+                    "club_state",
+                    "club_country",
+                    "is_private",
+                    "is_verified",
+                    "club_url",
+                    "is_own_club"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "club_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request_per_club"
+                },
+                "incremental": {
+                    "mode": "full_refresh",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "own_club_full",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_own_club_full"
+                },
+                "metrics": [
+                    "member_count",
+                    "following_count"
+                ],
+                "dimensions": [
+                    "date",
+                    "club_id",
+                    "club_name",
+                    "sport_type",
+                    "club_city",
+                    "club_state",
+                    "club_country",
+                    "is_private",
+                    "is_verified",
+                    "club_url",
+                    "is_own_club"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "club_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [],
+                "pagination": {
+                    "mode": "offset",
+                    "completeness": "bounded",
+                    "max_pages": null,
+                    "row_limit": 200,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request_per_club"
+                },
+                "incremental": {
+                    "mode": "full_refresh",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            }
+        ]
+    }
+}

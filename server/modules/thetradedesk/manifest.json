@@ -1,0 +1,408 @@
+{
+    "schema_version": "1.2",
+    "name": "thetradedesk",
+    "display_name": "The Trade Desk",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "paid_media",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify the live probe (DRAFT catalog): transcribe the real ReportTemplate facet enum (GET /v3/myreports/reportschedule/facets) and diff it against the 275-field Supermetrics baseline (e.g. 'Selling party name/ID' superseding SupplyVendor); confirm real 429/Retry-After behaviour, the reference managed ReportTemplate, and the download URL format (CSV vs gzip vs JSON). See ROLLOUT_NOTES.md."
+        }
+    },
+    "auth_type": "api_key",
+    "module_kind": "kpi",
+    "provider_api_version": "v3",
+    "provider_api_host": "https://api.thetradedesk.com",
+    "_provider_api_note": "Story 28.2: The Trade Desk REST API v3 (MyReports aggregated-reporting domain) is pinned HERE and only here; api_catalog.json / catalog_sources.json api_version must equal this pin. Auth = POST /v3/authentication {Login, Password} -> TTD-Auth token (+ ExpirationDateUtc); the platform credentials are the THETRADEDESK_API_LOGIN / THETRADEDESK_API_PASSWORD env vars (never per-user, never in the manifest); THETRADEDESK_PARTNER_ID scopes discovery. MyReports is NOT create-on-the-fly: the connector references a PRE-EXISTING managed ReportTemplate. STATUS DRAFT until the live probe (public_catalog.verification blocked). Manifest field_ids are the TTD column ids (Impressions, CampaignId, ...) == the api_catalog field_ids; canonical_*_mapping renames them to snake_case at transform/landing (AD-2).",
+    "report_profiles": [
+        {
+            "id": "daily_performance",
+            "display_name": "Daily performance (advertiser/campaign/ad group)",
+            "metrics": [
+                "Impressions",
+                "Clicks",
+                "Bids",
+                "AdvertiserCostAdvCurrency",
+                "AdvertiserCostUSD",
+                "TtdCostUsd",
+                "PartnerCostUsd",
+                "TotalClickConversions",
+                "TotalViewThroughConversions"
+            ],
+            "dimensions": [
+                "date",
+                "AdvertiserId",
+                "CampaignId",
+                "AdGroupId"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Catalog-driven daily (any selected column)",
+            "metrics": [
+                "Impressions",
+                "Clicks",
+                "AdvertiserCostAdvCurrency"
+            ],
+            "dimensions": [
+                "date",
+                "AdvertiserId",
+                "CampaignId"
+            ],
+            "extraction_capabilities": {
+                "row_limit": null,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull"
+        }
+    ],
+    "error_map": {
+        "400": "invalid_request",
+        "401": "auth_expired",
+        "403": "permission_denied",
+        "404": "invalid_request",
+        "500": "provider_transient",
+        "502": "provider_transient",
+        "503": "provider_transient",
+        "504": "provider_transient"
+    },
+    "_error_map_note": "Story 28.2 decision (dossier section 6): TTD publishes no numeric error-code table, so the map keys are HTTP-STATUS-ONLY and the CONNECTOR applies them itself (module-side status lookup with classify_http_error as fallback). Body-token refinements: a 401/403 body containing 'revoked' or 'disabled' -> auth_revoked (reconnect) instead of auth_expired/permission_denied. A 401 during a report call re-authenticates once (ExpirationDateUtc passed) before classifying. A Failed ReportExecutionState maps to the canonical 'expired' poll status when the failureReason is not configuration (single socle resubmission, then provider_transient); configuration failureReasons (invalid/not supported/unknown dimension|metric/template) raise invalid_request. 429 stays on the core.quota.RateLimitError breaker path (Retry-After UNDOCUMENTED -> default backoff), never in this map.",
+    "refetch": {
+        "nightly_days": 3,
+        "weekly_days": 14,
+        "monthly_days": 45,
+        "_note": "Dossier section 5: conversion families (click/view-through/touch/time-weighted-decay, pixels 01-06) restate as attribution windows close; treat the last ~3-7 days as provisional (nightly 3). The exact attribution window is ReportTemplate-configured (probe-only). Weekly 14 / monthly 45 cover the restatement tail. AD-7 supersede-by-pull_id makes every re-pull idempotent."
+    },
+    "canonical_metric_mapping": {
+        "Impressions": "impressions",
+        "Clicks": "clicks",
+        "Bids": "bids",
+        "AdvertiserCostAdvCurrency": "advertiser_cost_adv_currency",
+        "AdvertiserCostUSD": "advertiser_cost_usd",
+        "TtdCostUsd": "ttd_cost_usd",
+        "PartnerCostUsd": "partner_cost_usd",
+        "TotalClickConversions": "total_click_conversions",
+        "TotalViewThroughConversions": "total_view_through_conversions"
+    },
+    "canonical_dimension_mapping": {
+        "date": "date",
+        "AdvertiserId": "advertiser_id",
+        "CampaignId": "campaign_id",
+        "AdGroupId": "ad_group_id",
+        "CreativeId": "creative_id"
+    },
+    "quota": {
+        "window_seconds": 60,
+        "budget_points": 20,
+        "read_cost": 1,
+        "write_cost": 3,
+        "_note": "No published rate limits (dossier section 6): throttling is dynamic and UNDOCUMENTED per partner/advertiser with no published Retry-After. This CONSERVATIVE local budget (20 points/min, report creation = write cost 3) keeps the breaker ahead of the undocumented governor; real limits are probe-only evidence (ROLLOUT_NOTES.md)."
+    },
+    "widget_ref": "ui://core/daily-report",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "Impressions",
+                "source_field": "Impressions",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Number of impressions.",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "impressions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "Clicks",
+                "source_field": "Clicks",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Number of clicks.",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "clicks",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "Bids",
+                "source_field": "Bids",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Number of bids.",
+                "semantic_hints": ["engagement", "count"],
+                "canonical_target": "bids",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "AdvertiserCostAdvCurrency",
+                "source_field": "AdvertiserCostAdvCurrency",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Advertiser cost in the advertiser's currency.",
+                "semantic_hints": ["spend", "currency"],
+                "canonical_target": "advertiser_cost_adv_currency",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "AdvertiserCostUSD",
+                "source_field": "AdvertiserCostUSD",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Advertiser cost in USD.",
+                "semantic_hints": ["spend", "currency"],
+                "canonical_target": "advertiser_cost_usd",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "TtdCostUsd",
+                "source_field": "TtdCostUsd",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "The Trade Desk platform cost in USD.",
+                "semantic_hints": ["spend", "currency"],
+                "canonical_target": "ttd_cost_usd",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "PartnerCostUsd",
+                "source_field": "PartnerCostUsd",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Partner cost in USD.",
+                "semantic_hints": ["spend", "currency"],
+                "canonical_target": "partner_cost_usd",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "TotalClickConversions",
+                "source_field": "TotalClickConversions",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Total click conversions combining click conversions from 01-06 conversion pixels (restated as attribution windows close -- refetch ladder).",
+                "semantic_hints": ["conversion", "count"],
+                "canonical_target": "total_click_conversions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "TotalViewThroughConversions",
+                "source_field": "TotalViewThroughConversions",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "Total view-through conversions combining view-through conversions from 01-06 conversion pixels (restated -- refetch ladder).",
+                "semantic_hints": ["conversion", "count"],
+                "canonical_target": "total_view_through_conversions",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "date",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "Reporting day (daily grain requires this column; advertiser time zone).",
+                "semantic_hints": ["date"],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "AdvertiserId",
+                "source_field": "AdvertiserId",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Advertiser ID (the MyReports reporting anchor).",
+                "semantic_hints": ["identifier"],
+                "canonical_target": "advertiser_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "CampaignId",
+                "source_field": "CampaignId",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Campaign ID (grain key).",
+                "semantic_hints": ["identifier"],
+                "canonical_target": "campaign_id",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "AdGroupId",
+                "source_field": "AdGroupId",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "Ad group ID (grain key).",
+                "semantic_hints": ["identifier"],
+                "canonical_target": "ad_group_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "daily_performance",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_daily_performance"
+                },
+                "metrics": [
+                    "Impressions",
+                    "Clicks",
+                    "Bids",
+                    "AdvertiserCostAdvCurrency",
+                    "AdvertiserCostUSD",
+                    "TtdCostUsd",
+                    "PartnerCostUsd",
+                    "TotalClickConversions",
+                    "TotalViewThroughConversions"
+                ],
+                "dimensions": [
+                    "date",
+                    "AdvertiserId",
+                    "CampaignId",
+                    "AdGroupId"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "AdGroupId"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 3,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                },
+                "metrics": [
+                    "Impressions",
+                    "Clicks",
+                    "AdvertiserCostAdvCurrency"
+                ],
+                "dimensions": [
+                    "date",
+                    "AdvertiserId",
+                    "CampaignId"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "CampaignId"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "none",
+                    "completeness": "complete",
+                    "max_pages": null,
+                    "row_limit": null,
+                    "truncation_signal": "none"
+                },
+                "quota_cost": {
+                    "read_points": 3,
+                    "unit": "report"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                }
+            }
+        ]
+    },
+    "account_topology": {
+        "_comment": "Story 28.2 (pattern 25.5): The Trade Desk hierarchy = Partner -> Advertiser -> Campaign -> AdGroup -> Creative. The reporting entity (selection_level) is the ADVERTISER (MyReports executions are queried per advertiser). discover_accounts = POST /v3/advertiser/query/partner with THETRADEDESK_PARTNER_ID (the partner seat the platform credential is scoped to); every advertiser node carries the composite opaque id '<PartnerId>:<AdvertiserId>' so later calls carry both without re-discovery. Core owns selection/access-check/trial/backfill; THETRADEDESK_*_ID account env vars are FORBIDDEN (doctrine); THETRADEDESK_PARTNER_ID is the partner seat only.",
+        "levels": [
+            {
+                "id": "partner",
+                "label": "Partner (billing/seat)"
+            },
+            {
+                "id": "advertiser",
+                "label": "Advertiser (reporting anchor)"
+            }
+        ],
+        "selection_level": "advertiser",
+        "discovery": {
+            "callable": "discover_accounts"
+        }
+    }
+}

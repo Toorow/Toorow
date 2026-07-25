@@ -1,0 +1,112 @@
+[
+  {
+    "pull_id": "pull_gsc_001",
+    "connector": "gsc",
+    "date": "2026-07-01",
+    "page": "https://example.com/blog/",
+    "country": "fra",
+    "device": "DESKTOP",
+    "clicks": 42,
+    "impressions": 850,
+    "average_position": 7.3
+  },
+  {
+    "pull_id": "pull_gsc_001",
+    "connector": "gsc",
+    "date": "2026-07-01",
+    "page": "https://example.com/docs/",
+    "country": "fra",
+    "device": "DESKTOP",
+    "clicks": 15,
+    "impressions": 200,
+    "average_position": 3.1
+  },
+  {
+    "pull_id": "pull_gsc_002",
+    "connector": "gsc",
+    "date": "2026-07-02",
+    "page": "https://example.com/blog/",
+    "country": "gbr",
+    "device": "MOBILE",
+    "clicks": 28,
+    "impressions": 620,
+    "average_position": 9.2
+  },
+  {
+    "pull_id": "pull_gsc_002",
+    "connector": "gsc",
+    "date": "2026-07-02",
+    "page": "https://example.com/pricing/",
+    "country": "fra",
+    "device": "TABLET",
+    "clicks": 8,
+    "impressions": 180,
+    "average_position": 5.4
+  },
+  {
+    "pull_id": "pull_gsc_003",
+    "connector": "gsc",
+    "date": "2026-07-03",
+    "page": "https://example.com/blog/",
+    "country": "deu",
+    "device": "DESKTOP",
+    "clicks": 19,
+    "impressions": 410,
+    "average_position": 6.8
+  },
+  {
+    "pull_id": "pull_gsc_003",
+    "connector": "gsc",
+    "date": "2026-07-03",
+    "page": "https://example.com/docs/",
+    "country": "fra",
+    "device": "DESKTOP",
+    "clicks": 14,
+    "impressions": 190,
+    "average_position": 3.3
+  },
+  {
+    "pull_id": "pull_gsc_004",
+    "connector": "gsc",
+    "date": "2026-07-04",
+    "page": "https://example.com/blog/",
+    "country": "fra",
+    "device": "DESKTOP",
+    "clicks": 38,
+    "impressions": 800,
+    "average_position": 7.8
+  },
+  {
+    "pull_id": "pull_gsc_004",
+    "connector": "gsc",
+    "date": "2026-07-04",
+    "page": "https://example.com/docs/",
+    "country": "fra",
+    "device": "DESKTOP",
+    "clicks": 16,
+    "impressions": 210,
+    "average_position": 2.9
+  },
+  {
+    "pull_id": "pull_gsc_005",
+    "connector": "gsc",
+    "date": "2026-07-05",
+    "page": "https://example.com/blog/",
+    "country": "fra",
+    "device": "DESKTOP",
+    "clicks": 45,
+    "impressions": 870,
+    "average_position": 6.9
+  },
+  {
+    "pull_id": "pull_gsc_005",
+    "connector": "gsc",
+    "date": "2026-07-05",
+    "page": "https://example.com/docs/",
+    "country": "fra",
+    "device": "DESKTOP",
+    "clicks": 13,
+    "impressions": 195,
+    "average_position": 3.5
+  }
+]

@@ -1,0 +1,129 @@
+version: 2
+
+sources:
+  - name: raw_square
+    description: "Immutable raw landing zone for Square payments (AD-7: append-only)."
+    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    tables:
+      - name: raw_square_payments
+        description: >
+          Raw Square payments — one row per payment × pull_id. Append-only (AD-7):
+          each pull run adds a new batch identified by pull_id. Amounts are already in
+          currency UNITS (converted from centimes by the connector at pull time --
+          conversion EXPLICITE, jamais silencieuse). order_id / location_id are DETAIL
+          dimensions.
+        columns:
+          - name: date
+            description: "ISO-8601 date string (payment created day, UTC). Day grain."
+          - name: payment_id
+            description: "Square payment id. Supersede grain key with (project_id, date)."
+          - name: order_id
+            description: >
+              Square Order id (payment.order_id). Detail dimension / Orders-API join key.
+              Nullable (absent on some POS payments). AI-53: presence to confirm live per channel.
+          - name: location_id
+            description: >
+              Square location id (payment.location_id). Topology key + detail dimension.
+              Nullable. NOT a mart partition.
+          - name: revenue
+            description: >
+              Payment amount in currency UNITS (converted from centimes at pull). AI-53:
+              mapped from payment.amount_money.amount. Additive (AD-4). DEDUP: revenue Square,
+              Shopify and Stripe never sum into a cross-source total (cross_source_revenue, AD-4).
+          - name: refunds
+            description: >
+              Refunded amount for the payment in currency units, DEDICATED positive column.
+              AI-53: payment.refunded_money.amount. NEVER subtracted silently from revenue
+              (meme discipline que Stripe 15.7). Additive (AD-4).
+          - name: fees
+            description: >
+              Square processing fee for the payment in currency units, DEDICATED positive
+              column. AI-53: SUM(payment.processing_fee[].amount_money.amount). NEVER subtracted
+              silently from revenue. Additive (AD-4).
+          - name: transaction_count
+            description: "1 per payment; summed to a daily payment count in the mart. Additive (AD-4)."
+          - name: order_count
+            description: >
+              1 per payment; summed to a daily order count in the mart. Additive (AD-4).
+              AI-53: split-tender orders (several payments, one order_id) may overcount --
+              documented; refine via Orders API in live pass.
+          - name: revenue_source_currency
+            description: "Payment currency (e.g. 'EUR', 'USD', 'JPY'). Enables FX normalization in staging."
+          - name: pull_id
+            description: "Prefixed ULID (pull_<ULID>) identifying the load batch. AD-7."
+          - name: loaded_at
+            description: "UTC ISO-8601 timestamp of when this batch was loaded."
+          - name: project_id
+            description: "Project binding. 'default' for seeded test data; real project IDs otherwise (AD-14)."
+
+models:
+  - name: stg_square_payments_daily
+    description: >
+      Staging layer: maps raw Square payment fields to canonical names. AD-4: only additive
+      metrics (revenue, refunds, fees, transaction_count, order_count). Supersede semantics
+      (AD-7): QUALIFY keeps the latest pull per (project_id, date, payment_id). Currency:
+      revenue / refunds / fees are FX-normalized to the project canonical currency via fx_rates;
+      source values preserved. refunds and fees are DEDICATED positive columns — never netted
+      into revenue. DEDUP: revenue Square/Shopify/Stripe never sum into a cross-source total
+      (cross_source_revenue view).
+    tests:
+      # Grain uniqueness (AI-05): one row per project × date × payment.
+      - unique:
+          name: stg_square_payments_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || payment_id"
+    columns:
+      - name: date
+        description: "ISO-8601 date string, payment created day (UTC)."
+        tests:
+          - not_null
+      - name: payment_id
+        description: "Square payment id (grain key with project_id + date)."
+        tests:
+          - not_null
+      - name: order_id
+        description: "Square Order id (detail dimension, Orders-API join key). Nullable."
+      - name: location_id
+        description: "Square location id (topology key, detail dimension). Nullable."
+      - name: revenue
+        description: "Payment amount normalized to project currency (additive, AD-4)."
+        tests:
+          - not_null
+      - name: refunds
+        description: >
+          Refund total normalized to project currency — DEDICATED positive column, never
+          netted into revenue. Additive (AD-4).
+        tests:
+          - not_null
+      - name: fees
+        description: >
+          Square fee total normalized to project currency — DEDICATED positive column, never
+          netted into revenue. Additive (AD-4).
+        tests:
+          - not_null
+      - name: transaction_count
+        description: "1 per payment; summed to a daily payment count in the mart (additive, AD-4)."
+        tests:
+          - not_null
+      - name: order_count
+        description: "1 per payment; summed to a daily order count in the mart (additive, AD-4)."
+        tests:
+          - not_null
+      - name: revenue_source_value
+        description: "Raw payment amount in the payment currency (AD-6: preserved for reconciliation)."
+        tests:
+          - not_null
+      - name: revenue_source_currency
+        description: "The currency of the raw payment amount (e.g. 'EUR')."
+        tests:
+          - not_null
+      - name: pull_id
+        description: "Provenance ID from raw load batch (AD-7)."
+        tests:
+          - not_null
+      - name: loaded_at
+        description: "UTC load timestamp from raw batch."
+      - name: project_id
+        description: "Project binding propagated from raw_square_payments."
+        tests:
+          - not_null

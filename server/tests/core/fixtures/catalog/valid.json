@@ -1,0 +1,40 @@
+{
+  "catalog_version": "1",
+  "connector": "fixture-connector",
+  "api_version": "v2026-01",
+  "sources": [
+    {
+      "url": "https://example.dev/docs/api",
+      "kind": "official",
+      "fetched_at": "2026-07-21T00:00:00Z"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "fields": [
+    {
+      "field_id": "alpha_metric",
+      "source_field": "alpha_metric_raw",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "description": "A neutral test metric.",
+      "section": "ALPHA",
+      "tier": "core",
+      "exposure": "exposed",
+      "semantic_hints": ["count"],
+      "canonical_target": "alpha_canonical",
+      "aggregation": "sum",
+      "non_additive": false
+    },
+    {
+      "field_id": "beta_dimension",
+      "source_field": "beta_dimension_raw",
+      "kind": "dimension",
+      "physical_type": "string",
+      "description": "A neutral test dimension.",
+      "section": "BETA",
+      "tier": "standard",
+      "exposure": "exposed",
+      "canonical_target": null
+    }
+  ]
+}

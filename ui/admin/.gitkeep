@@ -1,0 +1,3 @@
+# ui/admin/ — admin console (Story 2.4 / AD-15). Same MD3 tokens, served by the
+# mcp-server service. Single place to configure projects/accounts, Nango OAuth
+# flows, per-project module enablement, and report setup. Populated later.

@@ -1,0 +1,85 @@
+schema_version = 1
+
+# The public application is an allow-listed projection of the private monorepo.
+# Paths not listed here never enter an export, even when they are tracked by Git.
+root_files = [
+  ".dockerignore",
+  ".env.example",
+  ".gitignore",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  "LICENSE",
+  "Makefile",
+  "README.md",
+  "pyproject.toml",
+  "uv.lock",
+]
+
+public_directories = [
+  ".github",
+  "dbt",
+  "distribution",
+  "docs",
+  "infra",
+  "scripts",
+  "server",
+  "ui",
+]
+
+# These paths belong to the private product/presence repository. Keeping this
+# list explicit makes boundary reviews understandable even though the exporter
+# already denies every path not present in the public allow-list.
+private_paths = [
+  ".agents",
+  ".claude",
+  ".codex",
+  ".design-sync",
+  ".ds-sync",
+  ".mcp.json",
+  "_bmad",
+  "_bmad-output",
+  "_screenshots",
+  "design-sync.config.json",
+  "doc",
+  "info.md",
+  "logo",
+  "reviews",
+  "skills-lock.json",
+  "studio",
+  "web",
+]
+
+# Defense in depth for generated files, local state, and credentials that may
+# accidentally become visible or tracked below an otherwise public directory.
+exclude_globs = [
+  "**/.env",
+  "**/.env.*",
+  "**/.pytest_cache/**",
+  "**/.ruff_cache/**",
+  "**/.terraform/**",
+  "**/__pycache__/**",
+  "**/*.duckdb",
+  "**/*.key",
+  "**/*.pem",
+  "**/*.p12",
+  "**/*.pfx",
+  "**/*.pyc",
+  "**/*.tfstate",
+  "**/*.tfstate.*",
+  "**/*.tfvars",
+  "**/build/**",
+  "**/coverage/**",
+  "**/dist/**",
+  "**/node_modules/**",
+  "**/scratch_*",
+  "dbt/profiles/profiles.yml",
+  "infra/keys/**",
+  "server/modules/**/seeds/*.csv",
+]
+
+# Safe templates are deliberately re-included after the deny rules above.
+allow_globs = [
+  ".env.example",
+  "**/.env.example",
+  "**/*.tfvars.example",
+]

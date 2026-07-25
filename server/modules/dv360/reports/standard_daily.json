@@ -1,0 +1,9 @@
+{
+  "id": "standard_daily",
+  "display_name": "DV360 standard delivery",
+  "metrics": ["impressions", "clicks", "cost"],
+  "dimensions": ["date", "advertiser_id", "campaign_id", "insertion_order_id", "line_item_id", "creative_id"],
+  "layout": {"chart_type": "line", "order_by": "date"},
+  "narrative_prompt": "Summarize delivery while preserving advertiser currency and full provider grain.",
+  "date_window": {"default_days": 30, "min_days": 1, "max_days": 90}
+}

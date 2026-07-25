@@ -1,0 +1,104 @@
+{
+  "connector": "adjust",
+  "api_version": "reports-service-2026-07-21",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "official_fields.json is produced by build_official_fields.py (committed alongside, deterministic). METRICS come from the official Datascape metrics glossary (the Report Service API reference points to it as the full metric list); the glossary article body is committed verbatim as glossary_body.md. DIMENSIONS come from the Report Service reports endpoint Dimensions table, curated inline in the builder. The catalog id 'date' maps to the provider dimension token 'day' (source_field), mirroring meta-ads date -> date_start.",
+    "expansion_rule": "Official range rows ('conversion_1 to conversion_6', 'conversion_value_1 to conversion_value_63', 'skad_direct_conversion_1 to skad_direct_conversion_6', 'skad_direct_conversion_value_0 to skad_direct_conversion_value_63') are EXPANDED into one field per integer, matching how each id is individually valid in the metrics= query parameter.",
+    "count_divergence": "Metric total (343) vs the Supermetrics 81-metric catalog: Supermetrics curates a subset (their catalog is enrichment, never authority). 150 glossary rows are QUERY TEMPLATES parameterised by account data ({event_slug}_..., ..._{cohort_period}, subscription_{event_from}_to_{event_to}_rate_...): they are NOT emitted as catalog fields because enumerating them is non-deterministic against the account's events/cohort settings (same decision as meta-ads breakdown-value non-enumeration). 3 malformed official ids ('general revenue_events_min/est/max' -- contain a space in the official doc) are skipped and reported by the builder rather than silently corrected. The glossary lists skad_ecpi in two sections; the builder keeps the first occurrence and reports the duplicate.",
+    "event_metrics_note": "Account-specific event metrics ({event_slug}_events, {event_slug}_{cohort_period}_revenue_cohort, ...) are reachable via the official Events endpoint (https://dev.adjust.com/en/api/rs-api/events) which returns the machine-generated event slugs per account. Wiring dynamic event-metric discovery is a follow-up story (field_discovery.mode static for now)."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://help.adjust.com/en/article/datascape-metrics-glossary",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "metrics_glossary_body_snapshot",
+          "url": "https://help.adjust.com/en/article/datascape-metrics-glossary",
+          "fetched_at": "2026-07-21",
+          "_note": "Committed verbatim as glossary_body.md. The help-center HTML shell is JS-rendered; the article body markdown was extracted from the page's Next.js data payload (pageProps.article.body) and IS the authoritative snapshot the builder parses."
+        },
+        {
+          "purpose": "reports_endpoint_dimensions_and_params",
+          "url": "https://dev.adjust.com/en/api/rs-api/reports",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "filters_data_endpoint",
+          "url": "https://dev.adjust.com/en/api/rs-api/filters-data",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "rate_limits",
+          "url": "https://dev.adjust.com/en/api/rs-api/rate-limits",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "authentication",
+          "url": "https://dev.adjust.com/en/api/rs-api/authentication",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "file": "supermetrics.md",
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/adjust-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/adjust-fields.md | sed 's/datascape__//g' > server/modules/adjust/catalog_sources/supermetrics.md   # DO NOT COMMIT this file (enrichment snapshot only). The sed strips the Supermetrics-internal 'datascape__' id prefix so enrichment ids align with the official Report Service metric ids (datascape__cost -> cost)."
+    }
+  ],
+  "section_tier_map": {
+    "AD SPEND": "core",
+    "REVENUE": "core",
+    "STRUCTURE": "core",
+    "CONVERSION": "standard",
+    "TIME": "standard",
+    "SKAD": "advanced",
+    "SUBSCRIPTION": "advanced",
+    "FRAUD": "advanced",
+    "ASSIST": "advanced",
+    "INSIGHT": "advanced"
+  },
+  "field_tier_overrides": {
+    "installs": "core",
+    "clicks": "core",
+    "impressions": "core",
+    "sessions": "core",
+    "network_installs": "core",
+    "organic_installs": "core",
+    "non_organic_installs": "core",
+    "reattributions": "core",
+    "ctr": "standard",
+    "date": "core",
+    "hour": "advanced",
+    "adgroup": "standard",
+    "adgroup_network": "standard",
+    "adgroup_id_network": "standard",
+    "creative": "standard",
+    "creative_network": "standard",
+    "creative_id_network": "standard",
+    "source_network": "advanced",
+    "source_id_network": "advanced",
+    "ad_account_id": "standard",
+    "partner": "standard",
+    "partner_id": "standard",
+    "partner_name": "standard",
+    "channel": "standard",
+    "platform": "standard",
+    "region": "standard",
+    "skad_installs": "standard",
+    "skad_total_installs": "standard"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 10,
+    "structural_note": "The Report Service report endpoint takes comma-joined metrics= and dimensions= params over a date_period on the selected app (app_token__in). The probe batches up to 10 metric ids per request over a 1-day window with dimensions=day; a batch that returns an invalid_request (HTTP 400 on an unknown metric) is bisected so the exact rejected field is captured. Dimension fields probe with dimensions=day,<dim> and metrics=installs."
+  }
+}

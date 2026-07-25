@@ -1,0 +1,4410 @@
+[
+  {
+    "data_type": "string",
+    "description": "Currency used by the ad account.",
+    "field_id": "account_currency",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "id",
+    "description": "ID number of the ad account.",
+    "field_id": "account_id",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "string",
+    "description": "Name of the ad account.",
+    "field_id": "account_name",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "string",
+    "description": "Component identifier within the Canvas ad.",
+    "field_id": "action_canvas_component_name",
+    "kind": "dimension",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "id",
+    "description": "ID of the carousel card that people engaged with.",
+    "field_id": "action_carousel_card_id",
+    "kind": "dimension",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "string",
+    "description": "Carousel card identified by its headline.",
+    "field_id": "action_carousel_card_name",
+    "kind": "dimension",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "string",
+    "description": "Destination where people go after clicking the ad.",
+    "field_id": "action_destination",
+    "kind": "dimension",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "string",
+    "description": "Device on which the conversion event occurred.",
+    "field_id": "action_device",
+    "kind": "dimension",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "string",
+    "description": "Type of reaction on the ad or boosted post.",
+    "field_id": "action_reaction",
+    "kind": "dimension",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "id",
+    "description": "ID of the destination where people go after clicking.",
+    "field_id": "action_target_id",
+    "kind": "dimension",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "string",
+    "description": "Kind of action taken on the ad, Page, app, or event.",
+    "field_id": "action_type",
+    "kind": "dimension",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "json",
+    "description": "Total action value attributed to the ads (array keyed by action_type).",
+    "field_id": "action_values",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_achievement_unlocked'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_achievement_unlocked",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_activate_app'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_activate_app",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_add_payment_info'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_add_payment_info",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_add_to_cart'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_add_to_cart",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_add_to_wishlist'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_add_to_wishlist",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_complete_registration'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_complete_registration",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_content_view'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_content_view",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_initiate_checkout'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_initiate_checkout",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_lead'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_lead",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_level_achieved'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_level_achieved",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_purchase'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_purchase",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_rate'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_rate",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_search'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_search",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_spent_credits'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_spent_credits",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.fb_mobile_tutorial_completion'.",
+    "field_id": "action_values_app_custom_event_fb_mobile_tutorial_completion",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_custom_event.other'.",
+    "field_id": "action_values_app_custom_event_other",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_install'.",
+    "field_id": "action_values_app_install",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'app_use'.",
+    "field_id": "action_values_app_use",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'cancel_subscription_total'.",
+    "field_id": "action_values_cancel_subscription_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'checkin'.",
+    "field_id": "action_values_checkin",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'click_to_call_call_confirm'.",
+    "field_id": "action_values_click_to_call_call_confirm",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'click_to_call_native_20s_call_connect'.",
+    "field_id": "action_values_click_to_call_native_20s_call_connect",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'click_to_call_native_60s_call_connect'.",
+    "field_id": "action_values_click_to_call_native_60s_call_connect",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'click_to_call_native_call_placed'.",
+    "field_id": "action_values_click_to_call_native_call_placed",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'comment'.",
+    "field_id": "action_values_comment",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'contact_total'.",
+    "field_id": "action_values_contact_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'customize_product_total'.",
+    "field_id": "action_values_customize_product_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'donate_total'.",
+    "field_id": "action_values_donate_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'find_location_total'.",
+    "field_id": "action_values_find_location_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'landing_page_view'.",
+    "field_id": "action_values_landing_page_view",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'lead'.",
+    "field_id": "action_values_lead",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'leadgen_grouped'.",
+    "field_id": "action_values_leadgen_grouped",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'like'.",
+    "field_id": "action_values_like",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'link_click'.",
+    "field_id": "action_values_link_click",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'mobile_app_install'.",
+    "field_id": "action_values_mobile_app_install",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'offsite_conversion.fb_pixel_add_payment_info'.",
+    "field_id": "action_values_offsite_conversion_fb_pixel_add_payment_info",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'offsite_conversion.fb_pixel_add_to_cart'.",
+    "field_id": "action_values_offsite_conversion_fb_pixel_add_to_cart",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'offsite_conversion.fb_pixel_add_to_wishlist'.",
+    "field_id": "action_values_offsite_conversion_fb_pixel_add_to_wishlist",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'offsite_conversion.fb_pixel_complete_registration'.",
+    "field_id": "action_values_offsite_conversion_fb_pixel_complete_registration",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'offsite_conversion.fb_pixel_custom'.",
+    "field_id": "action_values_offsite_conversion_fb_pixel_custom",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'offsite_conversion.fb_pixel_initiate_checkout'.",
+    "field_id": "action_values_offsite_conversion_fb_pixel_initiate_checkout",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'offsite_conversion.fb_pixel_lead'.",
+    "field_id": "action_values_offsite_conversion_fb_pixel_lead",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'offsite_conversion.fb_pixel_purchase'.",
+    "field_id": "action_values_offsite_conversion_fb_pixel_purchase",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'offsite_conversion.fb_pixel_search'.",
+    "field_id": "action_values_offsite_conversion_fb_pixel_search",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'offsite_conversion.fb_pixel_view_content'.",
+    "field_id": "action_values_offsite_conversion_fb_pixel_view_content",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_achievement_unlocked'.",
+    "field_id": "action_values_omni_achievement_unlocked",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_activate_app'.",
+    "field_id": "action_values_omni_activate_app",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_add_to_cart'.",
+    "field_id": "action_values_omni_add_to_cart",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_add_to_wishlist'.",
+    "field_id": "action_values_omni_add_to_wishlist",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_app_install'.",
+    "field_id": "action_values_omni_app_install",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_complete_registration'.",
+    "field_id": "action_values_omni_complete_registration",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_custom'.",
+    "field_id": "action_values_omni_custom",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_initiated_checkout'.",
+    "field_id": "action_values_omni_initiated_checkout",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_level_achieved'.",
+    "field_id": "action_values_omni_level_achieved",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_purchase'.",
+    "field_id": "action_values_omni_purchase",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_rate'.",
+    "field_id": "action_values_omni_rate",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_search'.",
+    "field_id": "action_values_omni_search",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_spend_credits'.",
+    "field_id": "action_values_omni_spend_credits",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_tutorial_completion'.",
+    "field_id": "action_values_omni_tutorial_completion",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'omni_view_content'.",
+    "field_id": "action_values_omni_view_content",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'onsite_conversion.flow_complete'.",
+    "field_id": "action_values_onsite_conversion_flow_complete",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'onsite_conversion.lead_grouped'.",
+    "field_id": "action_values_onsite_conversion_lead_grouped",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'onsite_conversion.messaging_block'.",
+    "field_id": "action_values_onsite_conversion_messaging_block",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'onsite_conversion.messaging_conversation_started_7d'.",
+    "field_id": "action_values_onsite_conversion_messaging_conversation_started_7d",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'onsite_conversion.messaging_first_reply'.",
+    "field_id": "action_values_onsite_conversion_messaging_first_reply",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'onsite_conversion.messaging_user_subscribed'.",
+    "field_id": "action_values_onsite_conversion_messaging_user_subscribed",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'onsite_conversion.post_save'.",
+    "field_id": "action_values_onsite_conversion_post_save",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'onsite_conversion.purchase'.",
+    "field_id": "action_values_onsite_conversion_purchase",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'outbound_click'.",
+    "field_id": "action_values_outbound_click",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'page_engagement'.",
+    "field_id": "action_values_page_engagement",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'photo_view'.",
+    "field_id": "action_values_photo_view",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'post'.",
+    "field_id": "action_values_post",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'post_engagement'.",
+    "field_id": "action_values_post_engagement",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'post_reaction'.",
+    "field_id": "action_values_post_reaction",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'recurring_subscription_payment_total'.",
+    "field_id": "action_values_recurring_subscription_payment_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'rsvp'.",
+    "field_id": "action_values_rsvp",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'schedule_total'.",
+    "field_id": "action_values_schedule_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'start_trial_total'.",
+    "field_id": "action_values_start_trial_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'submit_application_total'.",
+    "field_id": "action_values_submit_application_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'subscribe_total'.",
+    "field_id": "action_values_subscribe_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Action value for action_type 'video_view'.",
+    "field_id": "action_values_video_view",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "string",
+    "description": "Audio status during video ad playback.",
+    "field_id": "action_video_sound",
+    "kind": "dimension",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "string",
+    "description": "Video-specific action type.",
+    "field_id": "action_video_type",
+    "kind": "dimension",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "json",
+    "description": "Total actions attributed to the ads (array keyed by action_type).",
+    "field_id": "actions",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_achievement_unlocked'.",
+    "field_id": "actions_app_custom_event_fb_mobile_achievement_unlocked",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_activate_app'.",
+    "field_id": "actions_app_custom_event_fb_mobile_activate_app",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_add_payment_info'.",
+    "field_id": "actions_app_custom_event_fb_mobile_add_payment_info",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_add_to_cart'.",
+    "field_id": "actions_app_custom_event_fb_mobile_add_to_cart",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_add_to_wishlist'.",
+    "field_id": "actions_app_custom_event_fb_mobile_add_to_wishlist",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_complete_registration'.",
+    "field_id": "actions_app_custom_event_fb_mobile_complete_registration",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_content_view'.",
+    "field_id": "actions_app_custom_event_fb_mobile_content_view",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_initiate_checkout'.",
+    "field_id": "actions_app_custom_event_fb_mobile_initiate_checkout",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_lead'.",
+    "field_id": "actions_app_custom_event_fb_mobile_lead",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_level_achieved'.",
+    "field_id": "actions_app_custom_event_fb_mobile_level_achieved",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_purchase'.",
+    "field_id": "actions_app_custom_event_fb_mobile_purchase",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_rate'.",
+    "field_id": "actions_app_custom_event_fb_mobile_rate",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_search'.",
+    "field_id": "actions_app_custom_event_fb_mobile_search",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_spent_credits'.",
+    "field_id": "actions_app_custom_event_fb_mobile_spent_credits",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.fb_mobile_tutorial_completion'.",
+    "field_id": "actions_app_custom_event_fb_mobile_tutorial_completion",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_custom_event.other'.",
+    "field_id": "actions_app_custom_event_other",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_install'.",
+    "field_id": "actions_app_install",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'app_use'.",
+    "field_id": "actions_app_use",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'cancel_subscription_total'.",
+    "field_id": "actions_cancel_subscription_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'checkin'.",
+    "field_id": "actions_checkin",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'click_to_call_call_confirm'.",
+    "field_id": "actions_click_to_call_call_confirm",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'click_to_call_native_20s_call_connect'.",
+    "field_id": "actions_click_to_call_native_20s_call_connect",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'click_to_call_native_60s_call_connect'.",
+    "field_id": "actions_click_to_call_native_60s_call_connect",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'click_to_call_native_call_placed'.",
+    "field_id": "actions_click_to_call_native_call_placed",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'comment'.",
+    "field_id": "actions_comment",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'contact_total'.",
+    "field_id": "actions_contact_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'customize_product_total'.",
+    "field_id": "actions_customize_product_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'donate_total'.",
+    "field_id": "actions_donate_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'find_location_total'.",
+    "field_id": "actions_find_location_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'landing_page_view'.",
+    "field_id": "actions_landing_page_view",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'lead'.",
+    "field_id": "actions_lead",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'leadgen_grouped'.",
+    "field_id": "actions_leadgen_grouped",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'like'.",
+    "field_id": "actions_like",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'link_click'.",
+    "field_id": "actions_link_click",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'mobile_app_install'.",
+    "field_id": "actions_mobile_app_install",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'offsite_conversion.fb_pixel_add_payment_info'.",
+    "field_id": "actions_offsite_conversion_fb_pixel_add_payment_info",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'offsite_conversion.fb_pixel_add_to_cart'.",
+    "field_id": "actions_offsite_conversion_fb_pixel_add_to_cart",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'offsite_conversion.fb_pixel_add_to_wishlist'.",
+    "field_id": "actions_offsite_conversion_fb_pixel_add_to_wishlist",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'offsite_conversion.fb_pixel_complete_registration'.",
+    "field_id": "actions_offsite_conversion_fb_pixel_complete_registration",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'offsite_conversion.fb_pixel_custom'.",
+    "field_id": "actions_offsite_conversion_fb_pixel_custom",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'offsite_conversion.fb_pixel_initiate_checkout'.",
+    "field_id": "actions_offsite_conversion_fb_pixel_initiate_checkout",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'offsite_conversion.fb_pixel_lead'.",
+    "field_id": "actions_offsite_conversion_fb_pixel_lead",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'offsite_conversion.fb_pixel_purchase'.",
+    "field_id": "actions_offsite_conversion_fb_pixel_purchase",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'offsite_conversion.fb_pixel_search'.",
+    "field_id": "actions_offsite_conversion_fb_pixel_search",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'offsite_conversion.fb_pixel_view_content'.",
+    "field_id": "actions_offsite_conversion_fb_pixel_view_content",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_achievement_unlocked'.",
+    "field_id": "actions_omni_achievement_unlocked",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_activate_app'.",
+    "field_id": "actions_omni_activate_app",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_add_to_cart'.",
+    "field_id": "actions_omni_add_to_cart",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_add_to_wishlist'.",
+    "field_id": "actions_omni_add_to_wishlist",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_app_install'.",
+    "field_id": "actions_omni_app_install",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_complete_registration'.",
+    "field_id": "actions_omni_complete_registration",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_custom'.",
+    "field_id": "actions_omni_custom",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_initiated_checkout'.",
+    "field_id": "actions_omni_initiated_checkout",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_level_achieved'.",
+    "field_id": "actions_omni_level_achieved",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_purchase'.",
+    "field_id": "actions_omni_purchase",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_rate'.",
+    "field_id": "actions_omni_rate",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_search'.",
+    "field_id": "actions_omni_search",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_spend_credits'.",
+    "field_id": "actions_omni_spend_credits",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_tutorial_completion'.",
+    "field_id": "actions_omni_tutorial_completion",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'omni_view_content'.",
+    "field_id": "actions_omni_view_content",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'onsite_conversion.flow_complete'.",
+    "field_id": "actions_onsite_conversion_flow_complete",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'onsite_conversion.lead_grouped'.",
+    "field_id": "actions_onsite_conversion_lead_grouped",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'onsite_conversion.messaging_block'.",
+    "field_id": "actions_onsite_conversion_messaging_block",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'onsite_conversion.messaging_conversation_started_7d'.",
+    "field_id": "actions_onsite_conversion_messaging_conversation_started_7d",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'onsite_conversion.messaging_first_reply'.",
+    "field_id": "actions_onsite_conversion_messaging_first_reply",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'onsite_conversion.messaging_user_subscribed'.",
+    "field_id": "actions_onsite_conversion_messaging_user_subscribed",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'onsite_conversion.post_save'.",
+    "field_id": "actions_onsite_conversion_post_save",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'onsite_conversion.purchase'.",
+    "field_id": "actions_onsite_conversion_purchase",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'outbound_click'.",
+    "field_id": "actions_outbound_click",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'page_engagement'.",
+    "field_id": "actions_page_engagement",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'photo_view'.",
+    "field_id": "actions_photo_view",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'post'.",
+    "field_id": "actions_post",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'post_engagement'.",
+    "field_id": "actions_post_engagement",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'post_reaction'.",
+    "field_id": "actions_post_reaction",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'recurring_subscription_payment_total'.",
+    "field_id": "actions_recurring_subscription_payment_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'rsvp'.",
+    "field_id": "actions_rsvp",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'schedule_total'.",
+    "field_id": "actions_schedule_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'start_trial_total'.",
+    "field_id": "actions_start_trial_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'submit_application_total'.",
+    "field_id": "actions_submit_application_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'subscribe_total'.",
+    "field_id": "actions_subscribe_total",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Actions for action_type 'video_view'.",
+    "field_id": "actions_video_view",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "json",
+    "description": "Total ad click actions attributed to the ads (array keyed by action_type).",
+    "field_id": "ad_click_actions",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "id",
+    "description": "ID of the ad format asset in the impression or click.",
+    "field_id": "ad_format_asset",
+    "kind": "dimension",
+    "section": "CREATIVE ASSET"
+  },
+  {
+    "data_type": "id",
+    "description": "Unique ID of the ad in reporting.",
+    "field_id": "ad_id",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "json",
+    "description": "Total ad impression actions attributed to the ads (array keyed by action_type).",
+    "field_id": "ad_impression_actions",
+    "kind": "metric",
+    "section": "IMPRESSION"
+  },
+  {
+    "data_type": "string",
+    "description": "Name of the ad in reporting.",
+    "field_id": "ad_name",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "id",
+    "description": "Unique ID of the ad set.",
+    "field_id": "adset_id",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "string",
+    "description": "Name of the ad set.",
+    "field_id": "adset_name",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "string",
+    "description": "Age range of the people reached.",
+    "field_id": "age",
+    "kind": "dimension",
+    "section": "TARGETING"
+  },
+  {
+    "data_type": "id",
+    "description": "ID of the application associated with the ad account.",
+    "field_id": "app_id",
+    "kind": "dimension",
+    "section": "APP"
+  },
+  {
+    "data_type": "string",
+    "description": "Default attribution window for the account.",
+    "field_id": "attribution_setting",
+    "kind": "dimension",
+    "section": "ATTRIBUTION"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Bid amount in the auction.",
+    "field_id": "auction_bid",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Competitiveness metric in the auction.",
+    "field_id": "auction_competitiveness",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Maximum competitor bid in the auction.",
+    "field_id": "auction_max_competitor_bid",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "id",
+    "description": "Ad body component identifier.",
+    "field_id": "body_asset",
+    "kind": "dimension",
+    "section": "CREATIVE ASSET"
+  },
+  {
+    "data_type": "string",
+    "description": "Method of payment and targeting (auction or reach & frequency).",
+    "field_id": "buying_type",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "id",
+    "description": "Call-to-action component identifier.",
+    "field_id": "call_to_action_asset",
+    "kind": "dimension",
+    "section": "CREATIVE ASSET"
+  },
+  {
+    "data_type": "id",
+    "description": "Unique ID of the campaign.",
+    "field_id": "campaign_id",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "string",
+    "description": "Name of the campaign.",
+    "field_id": "campaign_name",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "percent",
+    "description": "Average percentage of the Instant Experience that was viewed.",
+    "field_id": "canvas_avg_view_percent",
+    "kind": "metric",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Average time (seconds) spent viewing the Instant Experience.",
+    "field_id": "canvas_avg_view_time",
+    "kind": "metric",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "data_type": "json",
+    "description": "Total catalog segment value attributed to the ads (array keyed by action_type).",
+    "field_id": "catalog_segment_value",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Total number of clicks on the ads.",
+    "field_id": "clicks",
+    "kind": "metric",
+    "section": "CLICKS",
+    "source_field": "clicks"
+  },
+  {
+    "data_type": "string",
+    "description": "Ranking of the ad's expected conversion rate vs competing ads.",
+    "field_id": "conversion_rate_ranking",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "json",
+    "description": "Total conversion value attributed to the ads (array keyed by action_type).",
+    "field_id": "conversion_values",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_achievement_unlocked'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_achievement_unlocked",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_activate_app'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_activate_app",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_add_payment_info'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_add_payment_info",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_add_to_cart'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_add_to_cart",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_add_to_wishlist'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_add_to_wishlist",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_complete_registration'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_complete_registration",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_content_view'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_content_view",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_initiate_checkout'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_initiate_checkout",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_lead'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_lead",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_level_achieved'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_level_achieved",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_purchase'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_purchase",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_rate'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_rate",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_search'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_search",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_spent_credits'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_spent_credits",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.fb_mobile_tutorial_completion'.",
+    "field_id": "conversion_values_app_custom_event_fb_mobile_tutorial_completion",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_custom_event.other'.",
+    "field_id": "conversion_values_app_custom_event_other",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_install'.",
+    "field_id": "conversion_values_app_install",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'app_use'.",
+    "field_id": "conversion_values_app_use",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'cancel_subscription_total'.",
+    "field_id": "conversion_values_cancel_subscription_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'checkin'.",
+    "field_id": "conversion_values_checkin",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'click_to_call_call_confirm'.",
+    "field_id": "conversion_values_click_to_call_call_confirm",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'click_to_call_native_20s_call_connect'.",
+    "field_id": "conversion_values_click_to_call_native_20s_call_connect",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'click_to_call_native_60s_call_connect'.",
+    "field_id": "conversion_values_click_to_call_native_60s_call_connect",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'click_to_call_native_call_placed'.",
+    "field_id": "conversion_values_click_to_call_native_call_placed",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'comment'.",
+    "field_id": "conversion_values_comment",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'contact_total'.",
+    "field_id": "conversion_values_contact_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'customize_product_total'.",
+    "field_id": "conversion_values_customize_product_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'donate_total'.",
+    "field_id": "conversion_values_donate_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'find_location_total'.",
+    "field_id": "conversion_values_find_location_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'landing_page_view'.",
+    "field_id": "conversion_values_landing_page_view",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'lead'.",
+    "field_id": "conversion_values_lead",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'leadgen_grouped'.",
+    "field_id": "conversion_values_leadgen_grouped",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'like'.",
+    "field_id": "conversion_values_like",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'link_click'.",
+    "field_id": "conversion_values_link_click",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'mobile_app_install'.",
+    "field_id": "conversion_values_mobile_app_install",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'offsite_conversion.fb_pixel_add_payment_info'.",
+    "field_id": "conversion_values_offsite_conversion_fb_pixel_add_payment_info",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'offsite_conversion.fb_pixel_add_to_cart'.",
+    "field_id": "conversion_values_offsite_conversion_fb_pixel_add_to_cart",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'offsite_conversion.fb_pixel_add_to_wishlist'.",
+    "field_id": "conversion_values_offsite_conversion_fb_pixel_add_to_wishlist",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'offsite_conversion.fb_pixel_complete_registration'.",
+    "field_id": "conversion_values_offsite_conversion_fb_pixel_complete_registration",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'offsite_conversion.fb_pixel_custom'.",
+    "field_id": "conversion_values_offsite_conversion_fb_pixel_custom",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'offsite_conversion.fb_pixel_initiate_checkout'.",
+    "field_id": "conversion_values_offsite_conversion_fb_pixel_initiate_checkout",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'offsite_conversion.fb_pixel_lead'.",
+    "field_id": "conversion_values_offsite_conversion_fb_pixel_lead",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'offsite_conversion.fb_pixel_purchase'.",
+    "field_id": "conversion_values_offsite_conversion_fb_pixel_purchase",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'offsite_conversion.fb_pixel_search'.",
+    "field_id": "conversion_values_offsite_conversion_fb_pixel_search",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'offsite_conversion.fb_pixel_view_content'.",
+    "field_id": "conversion_values_offsite_conversion_fb_pixel_view_content",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_achievement_unlocked'.",
+    "field_id": "conversion_values_omni_achievement_unlocked",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_activate_app'.",
+    "field_id": "conversion_values_omni_activate_app",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_add_to_cart'.",
+    "field_id": "conversion_values_omni_add_to_cart",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_add_to_wishlist'.",
+    "field_id": "conversion_values_omni_add_to_wishlist",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_app_install'.",
+    "field_id": "conversion_values_omni_app_install",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_complete_registration'.",
+    "field_id": "conversion_values_omni_complete_registration",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_custom'.",
+    "field_id": "conversion_values_omni_custom",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_initiated_checkout'.",
+    "field_id": "conversion_values_omni_initiated_checkout",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_level_achieved'.",
+    "field_id": "conversion_values_omni_level_achieved",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_purchase'.",
+    "field_id": "conversion_values_omni_purchase",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_rate'.",
+    "field_id": "conversion_values_omni_rate",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_search'.",
+    "field_id": "conversion_values_omni_search",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_spend_credits'.",
+    "field_id": "conversion_values_omni_spend_credits",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_tutorial_completion'.",
+    "field_id": "conversion_values_omni_tutorial_completion",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'omni_view_content'.",
+    "field_id": "conversion_values_omni_view_content",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'onsite_conversion.flow_complete'.",
+    "field_id": "conversion_values_onsite_conversion_flow_complete",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'onsite_conversion.lead_grouped'.",
+    "field_id": "conversion_values_onsite_conversion_lead_grouped",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'onsite_conversion.messaging_block'.",
+    "field_id": "conversion_values_onsite_conversion_messaging_block",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'onsite_conversion.messaging_conversation_started_7d'.",
+    "field_id": "conversion_values_onsite_conversion_messaging_conversation_started_7d",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'onsite_conversion.messaging_first_reply'.",
+    "field_id": "conversion_values_onsite_conversion_messaging_first_reply",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'onsite_conversion.messaging_user_subscribed'.",
+    "field_id": "conversion_values_onsite_conversion_messaging_user_subscribed",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'onsite_conversion.post_save'.",
+    "field_id": "conversion_values_onsite_conversion_post_save",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'onsite_conversion.purchase'.",
+    "field_id": "conversion_values_onsite_conversion_purchase",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'outbound_click'.",
+    "field_id": "conversion_values_outbound_click",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'page_engagement'.",
+    "field_id": "conversion_values_page_engagement",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'photo_view'.",
+    "field_id": "conversion_values_photo_view",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'post'.",
+    "field_id": "conversion_values_post",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'post_engagement'.",
+    "field_id": "conversion_values_post_engagement",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'post_reaction'.",
+    "field_id": "conversion_values_post_reaction",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'recurring_subscription_payment_total'.",
+    "field_id": "conversion_values_recurring_subscription_payment_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'rsvp'.",
+    "field_id": "conversion_values_rsvp",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'schedule_total'.",
+    "field_id": "conversion_values_schedule_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'start_trial_total'.",
+    "field_id": "conversion_values_start_trial_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'submit_application_total'.",
+    "field_id": "conversion_values_submit_application_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'subscribe_total'.",
+    "field_id": "conversion_values_subscribe_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Conversion value for action_type 'video_view'.",
+    "field_id": "conversion_values_video_view",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Number of conversions attributed to the ads.",
+    "field_id": "conversions",
+    "kind": "metric",
+    "section": "CONVERSION",
+    "source_field": "conversions"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_achievement_unlocked'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_achievement_unlocked",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_activate_app'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_activate_app",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_add_payment_info'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_add_payment_info",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_add_to_cart'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_add_to_cart",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_add_to_wishlist'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_add_to_wishlist",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_complete_registration'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_complete_registration",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_content_view'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_content_view",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_initiate_checkout'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_initiate_checkout",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_lead'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_lead",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_level_achieved'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_level_achieved",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_purchase'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_purchase",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_rate'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_rate",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_search'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_search",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_spent_credits'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_spent_credits",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.fb_mobile_tutorial_completion'.",
+    "field_id": "conversions_app_custom_event_fb_mobile_tutorial_completion",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_custom_event.other'.",
+    "field_id": "conversions_app_custom_event_other",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_install'.",
+    "field_id": "conversions_app_install",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'app_use'.",
+    "field_id": "conversions_app_use",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'cancel_subscription_total'.",
+    "field_id": "conversions_cancel_subscription_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'checkin'.",
+    "field_id": "conversions_checkin",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'click_to_call_call_confirm'.",
+    "field_id": "conversions_click_to_call_call_confirm",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'click_to_call_native_20s_call_connect'.",
+    "field_id": "conversions_click_to_call_native_20s_call_connect",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'click_to_call_native_60s_call_connect'.",
+    "field_id": "conversions_click_to_call_native_60s_call_connect",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'click_to_call_native_call_placed'.",
+    "field_id": "conversions_click_to_call_native_call_placed",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'comment'.",
+    "field_id": "conversions_comment",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'contact_total'.",
+    "field_id": "conversions_contact_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'customize_product_total'.",
+    "field_id": "conversions_customize_product_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'donate_total'.",
+    "field_id": "conversions_donate_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'find_location_total'.",
+    "field_id": "conversions_find_location_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'landing_page_view'.",
+    "field_id": "conversions_landing_page_view",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'lead'.",
+    "field_id": "conversions_lead",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'leadgen_grouped'.",
+    "field_id": "conversions_leadgen_grouped",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'like'.",
+    "field_id": "conversions_like",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'link_click'.",
+    "field_id": "conversions_link_click",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'mobile_app_install'.",
+    "field_id": "conversions_mobile_app_install",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'offsite_conversion.fb_pixel_add_payment_info'.",
+    "field_id": "conversions_offsite_conversion_fb_pixel_add_payment_info",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'offsite_conversion.fb_pixel_add_to_cart'.",
+    "field_id": "conversions_offsite_conversion_fb_pixel_add_to_cart",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'offsite_conversion.fb_pixel_add_to_wishlist'.",
+    "field_id": "conversions_offsite_conversion_fb_pixel_add_to_wishlist",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'offsite_conversion.fb_pixel_complete_registration'.",
+    "field_id": "conversions_offsite_conversion_fb_pixel_complete_registration",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'offsite_conversion.fb_pixel_custom'.",
+    "field_id": "conversions_offsite_conversion_fb_pixel_custom",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'offsite_conversion.fb_pixel_initiate_checkout'.",
+    "field_id": "conversions_offsite_conversion_fb_pixel_initiate_checkout",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'offsite_conversion.fb_pixel_lead'.",
+    "field_id": "conversions_offsite_conversion_fb_pixel_lead",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'offsite_conversion.fb_pixel_purchase'.",
+    "field_id": "conversions_offsite_conversion_fb_pixel_purchase",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'offsite_conversion.fb_pixel_search'.",
+    "field_id": "conversions_offsite_conversion_fb_pixel_search",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'offsite_conversion.fb_pixel_view_content'.",
+    "field_id": "conversions_offsite_conversion_fb_pixel_view_content",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_achievement_unlocked'.",
+    "field_id": "conversions_omni_achievement_unlocked",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_activate_app'.",
+    "field_id": "conversions_omni_activate_app",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_add_to_cart'.",
+    "field_id": "conversions_omni_add_to_cart",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_add_to_wishlist'.",
+    "field_id": "conversions_omni_add_to_wishlist",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_app_install'.",
+    "field_id": "conversions_omni_app_install",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_complete_registration'.",
+    "field_id": "conversions_omni_complete_registration",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_custom'.",
+    "field_id": "conversions_omni_custom",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_initiated_checkout'.",
+    "field_id": "conversions_omni_initiated_checkout",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_level_achieved'.",
+    "field_id": "conversions_omni_level_achieved",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_purchase'.",
+    "field_id": "conversions_omni_purchase",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_rate'.",
+    "field_id": "conversions_omni_rate",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_search'.",
+    "field_id": "conversions_omni_search",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_spend_credits'.",
+    "field_id": "conversions_omni_spend_credits",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_tutorial_completion'.",
+    "field_id": "conversions_omni_tutorial_completion",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'omni_view_content'.",
+    "field_id": "conversions_omni_view_content",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'onsite_conversion.flow_complete'.",
+    "field_id": "conversions_onsite_conversion_flow_complete",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'onsite_conversion.lead_grouped'.",
+    "field_id": "conversions_onsite_conversion_lead_grouped",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'onsite_conversion.messaging_block'.",
+    "field_id": "conversions_onsite_conversion_messaging_block",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'onsite_conversion.messaging_conversation_started_7d'.",
+    "field_id": "conversions_onsite_conversion_messaging_conversation_started_7d",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'onsite_conversion.messaging_first_reply'.",
+    "field_id": "conversions_onsite_conversion_messaging_first_reply",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'onsite_conversion.messaging_user_subscribed'.",
+    "field_id": "conversions_onsite_conversion_messaging_user_subscribed",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'onsite_conversion.post_save'.",
+    "field_id": "conversions_onsite_conversion_post_save",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'onsite_conversion.purchase'.",
+    "field_id": "conversions_onsite_conversion_purchase",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'outbound_click'.",
+    "field_id": "conversions_outbound_click",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'page_engagement'.",
+    "field_id": "conversions_page_engagement",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'photo_view'.",
+    "field_id": "conversions_photo_view",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'post'.",
+    "field_id": "conversions_post",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'post_engagement'.",
+    "field_id": "conversions_post_engagement",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'post_reaction'.",
+    "field_id": "conversions_post_reaction",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'recurring_subscription_payment_total'.",
+    "field_id": "conversions_recurring_subscription_payment_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'rsvp'.",
+    "field_id": "conversions_rsvp",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'schedule_total'.",
+    "field_id": "conversions_schedule_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'start_trial_total'.",
+    "field_id": "conversions_start_trial_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'submit_application_total'.",
+    "field_id": "conversions_submit_application_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'subscribe_total'.",
+    "field_id": "conversions_subscribe_total",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Conversions for action_type 'video_view'.",
+    "field_id": "conversions_video_view",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "json",
+    "description": "Number of products purchased attributed to the ads (by action type).",
+    "field_id": "converted_product_quantity",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "json",
+    "description": "Value of products purchased attributed to the ads (by action type).",
+    "field_id": "converted_product_value",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "json",
+    "description": "Total cost per 15-second video view (array keyed by action_type).",
+    "field_id": "cost_per_15_sec_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per 15-second video view for action_type 'video_view'.",
+    "field_id": "cost_per_15_sec_video_view_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total cost per 2-second continuous video view (array keyed by action_type).",
+    "field_id": "cost_per_2_sec_continuous_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per 2-second continuous video view for action_type 'video_view'.",
+    "field_id": "cost_per_2_sec_continuous_video_view_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total cost per action attributed to the ads (array keyed by action_type).",
+    "field_id": "cost_per_action_type",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_achievement_unlocked'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_achievement_unlocked",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_activate_app'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_activate_app",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_add_payment_info'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_add_payment_info",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_add_to_cart'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_add_to_cart",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_add_to_wishlist'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_add_to_wishlist",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_complete_registration'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_complete_registration",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_content_view'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_content_view",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_initiate_checkout'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_initiate_checkout",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_lead'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_lead",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_level_achieved'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_level_achieved",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_purchase'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_purchase",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_rate'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_rate",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_search'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_search",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_spent_credits'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_spent_credits",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.fb_mobile_tutorial_completion'.",
+    "field_id": "cost_per_action_type_app_custom_event_fb_mobile_tutorial_completion",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_custom_event.other'.",
+    "field_id": "cost_per_action_type_app_custom_event_other",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_install'.",
+    "field_id": "cost_per_action_type_app_install",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'app_use'.",
+    "field_id": "cost_per_action_type_app_use",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'cancel_subscription_total'.",
+    "field_id": "cost_per_action_type_cancel_subscription_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'checkin'.",
+    "field_id": "cost_per_action_type_checkin",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'click_to_call_call_confirm'.",
+    "field_id": "cost_per_action_type_click_to_call_call_confirm",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'click_to_call_native_20s_call_connect'.",
+    "field_id": "cost_per_action_type_click_to_call_native_20s_call_connect",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'click_to_call_native_60s_call_connect'.",
+    "field_id": "cost_per_action_type_click_to_call_native_60s_call_connect",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'click_to_call_native_call_placed'.",
+    "field_id": "cost_per_action_type_click_to_call_native_call_placed",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'comment'.",
+    "field_id": "cost_per_action_type_comment",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'contact_total'.",
+    "field_id": "cost_per_action_type_contact_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'customize_product_total'.",
+    "field_id": "cost_per_action_type_customize_product_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'donate_total'.",
+    "field_id": "cost_per_action_type_donate_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'find_location_total'.",
+    "field_id": "cost_per_action_type_find_location_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'landing_page_view'.",
+    "field_id": "cost_per_action_type_landing_page_view",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'lead'.",
+    "field_id": "cost_per_action_type_lead",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'leadgen_grouped'.",
+    "field_id": "cost_per_action_type_leadgen_grouped",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'like'.",
+    "field_id": "cost_per_action_type_like",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'link_click'.",
+    "field_id": "cost_per_action_type_link_click",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'mobile_app_install'.",
+    "field_id": "cost_per_action_type_mobile_app_install",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'offsite_conversion.fb_pixel_add_payment_info'.",
+    "field_id": "cost_per_action_type_offsite_conversion_fb_pixel_add_payment_info",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'offsite_conversion.fb_pixel_add_to_cart'.",
+    "field_id": "cost_per_action_type_offsite_conversion_fb_pixel_add_to_cart",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'offsite_conversion.fb_pixel_add_to_wishlist'.",
+    "field_id": "cost_per_action_type_offsite_conversion_fb_pixel_add_to_wishlist",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'offsite_conversion.fb_pixel_complete_registration'.",
+    "field_id": "cost_per_action_type_offsite_conversion_fb_pixel_complete_registration",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'offsite_conversion.fb_pixel_custom'.",
+    "field_id": "cost_per_action_type_offsite_conversion_fb_pixel_custom",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'offsite_conversion.fb_pixel_initiate_checkout'.",
+    "field_id": "cost_per_action_type_offsite_conversion_fb_pixel_initiate_checkout",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'offsite_conversion.fb_pixel_lead'.",
+    "field_id": "cost_per_action_type_offsite_conversion_fb_pixel_lead",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'offsite_conversion.fb_pixel_purchase'.",
+    "field_id": "cost_per_action_type_offsite_conversion_fb_pixel_purchase",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'offsite_conversion.fb_pixel_search'.",
+    "field_id": "cost_per_action_type_offsite_conversion_fb_pixel_search",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'offsite_conversion.fb_pixel_view_content'.",
+    "field_id": "cost_per_action_type_offsite_conversion_fb_pixel_view_content",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_achievement_unlocked'.",
+    "field_id": "cost_per_action_type_omni_achievement_unlocked",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_activate_app'.",
+    "field_id": "cost_per_action_type_omni_activate_app",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_add_to_cart'.",
+    "field_id": "cost_per_action_type_omni_add_to_cart",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_add_to_wishlist'.",
+    "field_id": "cost_per_action_type_omni_add_to_wishlist",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_app_install'.",
+    "field_id": "cost_per_action_type_omni_app_install",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_complete_registration'.",
+    "field_id": "cost_per_action_type_omni_complete_registration",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_custom'.",
+    "field_id": "cost_per_action_type_omni_custom",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_initiated_checkout'.",
+    "field_id": "cost_per_action_type_omni_initiated_checkout",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_level_achieved'.",
+    "field_id": "cost_per_action_type_omni_level_achieved",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_purchase'.",
+    "field_id": "cost_per_action_type_omni_purchase",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_rate'.",
+    "field_id": "cost_per_action_type_omni_rate",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_search'.",
+    "field_id": "cost_per_action_type_omni_search",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_spend_credits'.",
+    "field_id": "cost_per_action_type_omni_spend_credits",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_tutorial_completion'.",
+    "field_id": "cost_per_action_type_omni_tutorial_completion",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'omni_view_content'.",
+    "field_id": "cost_per_action_type_omni_view_content",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'onsite_conversion.flow_complete'.",
+    "field_id": "cost_per_action_type_onsite_conversion_flow_complete",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'onsite_conversion.lead_grouped'.",
+    "field_id": "cost_per_action_type_onsite_conversion_lead_grouped",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'onsite_conversion.messaging_block'.",
+    "field_id": "cost_per_action_type_onsite_conversion_messaging_block",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'onsite_conversion.messaging_conversation_started_7d'.",
+    "field_id": "cost_per_action_type_onsite_conversion_messaging_conversation_started_7d",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'onsite_conversion.messaging_first_reply'.",
+    "field_id": "cost_per_action_type_onsite_conversion_messaging_first_reply",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'onsite_conversion.messaging_user_subscribed'.",
+    "field_id": "cost_per_action_type_onsite_conversion_messaging_user_subscribed",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'onsite_conversion.post_save'.",
+    "field_id": "cost_per_action_type_onsite_conversion_post_save",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'onsite_conversion.purchase'.",
+    "field_id": "cost_per_action_type_onsite_conversion_purchase",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'outbound_click'.",
+    "field_id": "cost_per_action_type_outbound_click",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'page_engagement'.",
+    "field_id": "cost_per_action_type_page_engagement",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'photo_view'.",
+    "field_id": "cost_per_action_type_photo_view",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'post'.",
+    "field_id": "cost_per_action_type_post",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'post_engagement'.",
+    "field_id": "cost_per_action_type_post_engagement",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'post_reaction'.",
+    "field_id": "cost_per_action_type_post_reaction",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'recurring_subscription_payment_total'.",
+    "field_id": "cost_per_action_type_recurring_subscription_payment_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'rsvp'.",
+    "field_id": "cost_per_action_type_rsvp",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'schedule_total'.",
+    "field_id": "cost_per_action_type_schedule_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'start_trial_total'.",
+    "field_id": "cost_per_action_type_start_trial_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'submit_application_total'.",
+    "field_id": "cost_per_action_type_submit_application_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'subscribe_total'.",
+    "field_id": "cost_per_action_type_subscribe_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per action for action_type 'video_view'.",
+    "field_id": "cost_per_action_type_video_view",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "json",
+    "description": "Total cost per conversion attributed to the ads (array keyed by action_type).",
+    "field_id": "cost_per_conversion",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_achievement_unlocked'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_achievement_unlocked",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_activate_app'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_activate_app",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_add_payment_info'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_add_payment_info",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_add_to_cart'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_add_to_cart",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_add_to_wishlist'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_add_to_wishlist",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_complete_registration'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_complete_registration",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_content_view'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_content_view",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_initiate_checkout'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_initiate_checkout",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_lead'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_lead",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_level_achieved'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_level_achieved",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_purchase'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_purchase",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_rate'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_rate",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_search'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_search",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_spent_credits'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_spent_credits",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.fb_mobile_tutorial_completion'.",
+    "field_id": "cost_per_conversion_app_custom_event_fb_mobile_tutorial_completion",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_custom_event.other'.",
+    "field_id": "cost_per_conversion_app_custom_event_other",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_install'.",
+    "field_id": "cost_per_conversion_app_install",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'app_use'.",
+    "field_id": "cost_per_conversion_app_use",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'cancel_subscription_total'.",
+    "field_id": "cost_per_conversion_cancel_subscription_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'checkin'.",
+    "field_id": "cost_per_conversion_checkin",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'click_to_call_call_confirm'.",
+    "field_id": "cost_per_conversion_click_to_call_call_confirm",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'click_to_call_native_20s_call_connect'.",
+    "field_id": "cost_per_conversion_click_to_call_native_20s_call_connect",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'click_to_call_native_60s_call_connect'.",
+    "field_id": "cost_per_conversion_click_to_call_native_60s_call_connect",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'click_to_call_native_call_placed'.",
+    "field_id": "cost_per_conversion_click_to_call_native_call_placed",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'comment'.",
+    "field_id": "cost_per_conversion_comment",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'contact_total'.",
+    "field_id": "cost_per_conversion_contact_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'customize_product_total'.",
+    "field_id": "cost_per_conversion_customize_product_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'donate_total'.",
+    "field_id": "cost_per_conversion_donate_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'find_location_total'.",
+    "field_id": "cost_per_conversion_find_location_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'landing_page_view'.",
+    "field_id": "cost_per_conversion_landing_page_view",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'lead'.",
+    "field_id": "cost_per_conversion_lead",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'leadgen_grouped'.",
+    "field_id": "cost_per_conversion_leadgen_grouped",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'like'.",
+    "field_id": "cost_per_conversion_like",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'link_click'.",
+    "field_id": "cost_per_conversion_link_click",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'mobile_app_install'.",
+    "field_id": "cost_per_conversion_mobile_app_install",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'offsite_conversion.fb_pixel_add_payment_info'.",
+    "field_id": "cost_per_conversion_offsite_conversion_fb_pixel_add_payment_info",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'offsite_conversion.fb_pixel_add_to_cart'.",
+    "field_id": "cost_per_conversion_offsite_conversion_fb_pixel_add_to_cart",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'offsite_conversion.fb_pixel_add_to_wishlist'.",
+    "field_id": "cost_per_conversion_offsite_conversion_fb_pixel_add_to_wishlist",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'offsite_conversion.fb_pixel_complete_registration'.",
+    "field_id": "cost_per_conversion_offsite_conversion_fb_pixel_complete_registration",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'offsite_conversion.fb_pixel_custom'.",
+    "field_id": "cost_per_conversion_offsite_conversion_fb_pixel_custom",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'offsite_conversion.fb_pixel_initiate_checkout'.",
+    "field_id": "cost_per_conversion_offsite_conversion_fb_pixel_initiate_checkout",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'offsite_conversion.fb_pixel_lead'.",
+    "field_id": "cost_per_conversion_offsite_conversion_fb_pixel_lead",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'offsite_conversion.fb_pixel_purchase'.",
+    "field_id": "cost_per_conversion_offsite_conversion_fb_pixel_purchase",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'offsite_conversion.fb_pixel_search'.",
+    "field_id": "cost_per_conversion_offsite_conversion_fb_pixel_search",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'offsite_conversion.fb_pixel_view_content'.",
+    "field_id": "cost_per_conversion_offsite_conversion_fb_pixel_view_content",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_achievement_unlocked'.",
+    "field_id": "cost_per_conversion_omni_achievement_unlocked",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_activate_app'.",
+    "field_id": "cost_per_conversion_omni_activate_app",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_add_to_cart'.",
+    "field_id": "cost_per_conversion_omni_add_to_cart",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_add_to_wishlist'.",
+    "field_id": "cost_per_conversion_omni_add_to_wishlist",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_app_install'.",
+    "field_id": "cost_per_conversion_omni_app_install",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_complete_registration'.",
+    "field_id": "cost_per_conversion_omni_complete_registration",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_custom'.",
+    "field_id": "cost_per_conversion_omni_custom",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_initiated_checkout'.",
+    "field_id": "cost_per_conversion_omni_initiated_checkout",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_level_achieved'.",
+    "field_id": "cost_per_conversion_omni_level_achieved",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_purchase'.",
+    "field_id": "cost_per_conversion_omni_purchase",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_rate'.",
+    "field_id": "cost_per_conversion_omni_rate",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_search'.",
+    "field_id": "cost_per_conversion_omni_search",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_spend_credits'.",
+    "field_id": "cost_per_conversion_omni_spend_credits",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_tutorial_completion'.",
+    "field_id": "cost_per_conversion_omni_tutorial_completion",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'omni_view_content'.",
+    "field_id": "cost_per_conversion_omni_view_content",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'onsite_conversion.flow_complete'.",
+    "field_id": "cost_per_conversion_onsite_conversion_flow_complete",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'onsite_conversion.lead_grouped'.",
+    "field_id": "cost_per_conversion_onsite_conversion_lead_grouped",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'onsite_conversion.messaging_block'.",
+    "field_id": "cost_per_conversion_onsite_conversion_messaging_block",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'onsite_conversion.messaging_conversation_started_7d'.",
+    "field_id": "cost_per_conversion_onsite_conversion_messaging_conversation_started_7d",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'onsite_conversion.messaging_first_reply'.",
+    "field_id": "cost_per_conversion_onsite_conversion_messaging_first_reply",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'onsite_conversion.messaging_user_subscribed'.",
+    "field_id": "cost_per_conversion_onsite_conversion_messaging_user_subscribed",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'onsite_conversion.post_save'.",
+    "field_id": "cost_per_conversion_onsite_conversion_post_save",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'onsite_conversion.purchase'.",
+    "field_id": "cost_per_conversion_onsite_conversion_purchase",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'outbound_click'.",
+    "field_id": "cost_per_conversion_outbound_click",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'page_engagement'.",
+    "field_id": "cost_per_conversion_page_engagement",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'photo_view'.",
+    "field_id": "cost_per_conversion_photo_view",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'post'.",
+    "field_id": "cost_per_conversion_post",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'post_engagement'.",
+    "field_id": "cost_per_conversion_post_engagement",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'post_reaction'.",
+    "field_id": "cost_per_conversion_post_reaction",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'recurring_subscription_payment_total'.",
+    "field_id": "cost_per_conversion_recurring_subscription_payment_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'rsvp'.",
+    "field_id": "cost_per_conversion_rsvp",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'schedule_total'.",
+    "field_id": "cost_per_conversion_schedule_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'start_trial_total'.",
+    "field_id": "cost_per_conversion_start_trial_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'submit_application_total'.",
+    "field_id": "cost_per_conversion_submit_application_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'subscribe_total'.",
+    "field_id": "cost_per_conversion_subscribe_total",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per conversion for action_type 'video_view'.",
+    "field_id": "cost_per_conversion_video_view",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Average cost per estimated ad recall lift (people).",
+    "field_id": "cost_per_estimated_ad_recallers",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Average cost per inline link click.",
+    "field_id": "cost_per_inline_link_click",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Average cost per inline post engagement.",
+    "field_id": "cost_per_inline_post_engagement",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "json",
+    "description": "Total cost per outbound click attributed to the ads (array keyed by action_type).",
+    "field_id": "cost_per_outbound_click",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "json",
+    "description": "Total cost per ThruPlay (array keyed by action_type).",
+    "field_id": "cost_per_thruplay",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "currency",
+    "description": "Cost per thruplay for action_type 'video_view'.",
+    "field_id": "cost_per_thruplay_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total cost per unique action attributed to the ads (array keyed by action_type).",
+    "field_id": "cost_per_unique_action_type",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Average cost per unique click (estimated).",
+    "field_id": "cost_per_unique_click",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Average cost per unique inline link click (estimated).",
+    "field_id": "cost_per_unique_inline_link_click",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "json",
+    "description": "Total cost per unique outbound click attributed to the ads (array keyed by action_type).",
+    "field_id": "cost_per_unique_outbound_click",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "string",
+    "description": "Country where the reached people are located.",
+    "field_id": "country",
+    "kind": "dimension",
+    "section": "TARGETING"
+  },
+  {
+    "data_type": "currency",
+    "description": "Average cost per click.",
+    "field_id": "cpc",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Average cost per 1,000 impressions.",
+    "field_id": "cpm",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Average cost to reach 1,000 people (estimated).",
+    "field_id": "cpp",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Creation timestamp.",
+    "field_id": "created_time",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "id",
+    "description": "Unique ID of the ad creative.",
+    "field_id": "creative_id",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "percent",
+    "description": "Click-through rate (percentage).",
+    "field_id": "ctr",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "date",
+    "description": "Start date of the reporting period.",
+    "field_id": "date",
+    "kind": "dimension",
+    "section": "TIME",
+    "source_field": "date_start"
+  },
+  {
+    "data_type": "date",
+    "description": "End date of the reporting period.",
+    "field_id": "date_stop",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "id",
+    "description": "Description component identifier.",
+    "field_id": "description_asset",
+    "kind": "dimension",
+    "section": "CREATIVE ASSET"
+  },
+  {
+    "data_type": "string",
+    "description": "Mobile or desktop device type.",
+    "field_id": "device_platform",
+    "kind": "dimension",
+    "section": "PLACEMENT"
+  },
+  {
+    "data_type": "string",
+    "description": "Designated Market Area (DMA) region.",
+    "field_id": "dma",
+    "kind": "dimension",
+    "section": "TARGETING"
+  },
+  {
+    "data_type": "string",
+    "description": "Ranking of the ad's expected engagement rate vs competing ads.",
+    "field_id": "engagement_rate_ranking",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "percent",
+    "description": "Estimated percentage of people who may recall the ad.",
+    "field_id": "estimated_ad_recall_rate",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "int",
+    "description": "Estimated number of additional people who may recall the ad.",
+    "field_id": "estimated_ad_recallers",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "decimal",
+    "description": "Average number of times each person saw the ad (estimated).",
+    "field_id": "frequency",
+    "kind": "metric",
+    "section": "IMPRESSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Number of times an ad was served to each Accounts Center account.",
+    "field_id": "frequency_value",
+    "kind": "dimension",
+    "section": "TARGETING"
+  },
+  {
+    "data_type": "int",
+    "description": "Number of full-view impressions on page posts.",
+    "field_id": "full_view_impressions",
+    "kind": "metric",
+    "section": "IMPRESSION"
+  },
+  {
+    "data_type": "int",
+    "description": "Number of people who performed a full view of the page post.",
+    "field_id": "full_view_reach",
+    "kind": "metric",
+    "section": "IMPRESSION"
+  },
+  {
+    "data_type": "string",
+    "description": "Gender of the people reached.",
+    "field_id": "gender",
+    "kind": "dimension",
+    "section": "TARGETING"
+  },
+  {
+    "data_type": "string",
+    "description": "Hourly breakdown by advertiser time zone.",
+    "field_id": "hourly_stats_aggregated_by_advertiser_time_zone",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "string",
+    "description": "Hourly breakdown by audience time zone.",
+    "field_id": "hourly_stats_aggregated_by_audience_time_zone",
+    "kind": "dimension",
+    "section": "TIME"
+  },
+  {
+    "data_type": "id",
+    "description": "Image component identifier.",
+    "field_id": "image_asset",
+    "kind": "dimension",
+    "section": "CREATIVE ASSET"
+  },
+  {
+    "data_type": "string",
+    "description": "Device on which the last ad was served.",
+    "field_id": "impression_device",
+    "kind": "dimension",
+    "section": "PLACEMENT"
+  },
+  {
+    "data_type": "int",
+    "description": "Number of times the ads were on screen.",
+    "field_id": "impressions",
+    "kind": "metric",
+    "section": "IMPRESSION",
+    "source_field": "impressions"
+  },
+  {
+    "data_type": "percent",
+    "description": "Percentage of views that resulted in inline link clicks.",
+    "field_id": "inline_link_click_ctr",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "int",
+    "description": "Number of inline link clicks.",
+    "field_id": "inline_link_clicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "int",
+    "description": "Total number of inline post engagement actions.",
+    "field_id": "inline_post_engagement",
+    "kind": "metric",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "data_type": "int",
+    "description": "Clicks to open the Instant Experience.",
+    "field_id": "instant_experience_clicks_to_open",
+    "kind": "metric",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "data_type": "int",
+    "description": "Clicks to start the Instant Experience.",
+    "field_id": "instant_experience_clicks_to_start",
+    "kind": "metric",
+    "section": "ENGAGEMENT"
+  },
+  {
+    "data_type": "json",
+    "description": "Total Instant Experience outbound clicks attributed to the ads (array keyed by action_type).",
+    "field_id": "instant_experience_outbound_clicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "boolean",
+    "description": "Flag indicating modeled conversion data.",
+    "field_id": "is_conversion_id_modeled",
+    "kind": "dimension",
+    "section": "ATTRIBUTION"
+  },
+  {
+    "data_type": "id",
+    "description": "URL asset component identifier.",
+    "field_id": "link_url_asset",
+    "kind": "dimension",
+    "section": "CREATIVE ASSET"
+  },
+  {
+    "data_type": "json",
+    "description": "Total mobile app purchase ROAS attributed to the ads (array keyed by action_type).",
+    "field_id": "mobile_app_purchase_roas",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "string",
+    "description": "Campaign objective or goal.",
+    "field_id": "objective",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "string",
+    "description": "Selected optimization goal for the ads.",
+    "field_id": "optimization_goal",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "json",
+    "description": "Total outbound clicks attributed to the ads (array keyed by action_type).",
+    "field_id": "outbound_clicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "json",
+    "description": "Total outbound click-through rate attributed to the ads (array keyed by action_type).",
+    "field_id": "outbound_clicks_ctr",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "id",
+    "description": "ID of the place page in the impression or click.",
+    "field_id": "place_page_id",
+    "kind": "dimension",
+    "section": "PLACEMENT"
+  },
+  {
+    "data_type": "string",
+    "description": "Ad placement position within the platform.",
+    "field_id": "platform_position",
+    "kind": "dimension",
+    "section": "PLACEMENT"
+  },
+  {
+    "data_type": "id",
+    "description": "ID of the product in the impression, click, or action.",
+    "field_id": "product_id",
+    "kind": "dimension",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "string",
+    "description": "Platform where the ad appeared (Facebook, Instagram, ...).",
+    "field_id": "publisher_platform",
+    "kind": "dimension",
+    "section": "PLACEMENT"
+  },
+  {
+    "data_type": "json",
+    "description": "Total purchase ROAS attributed to the ads (array keyed by action_type).",
+    "field_id": "purchase_roas",
+    "kind": "metric",
+    "section": "CONVERSION"
+  },
+  {
+    "data_type": "percent",
+    "description": "Rate of qualifying answers to instant-form questions.",
+    "field_id": "qualifying_question_qualify_answer_rate",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "string",
+    "description": "Ranking of the ad's perceived quality vs competing ads.",
+    "field_id": "quality_ranking",
+    "kind": "metric",
+    "section": "PERFORMANCE"
+  },
+  {
+    "data_type": "int",
+    "description": "Number of people who saw the ads at least once (estimated).",
+    "field_id": "reach",
+    "kind": "metric",
+    "section": "IMPRESSION"
+  },
+  {
+    "data_type": "string",
+    "description": "Region where the reached people are located.",
+    "field_id": "region",
+    "kind": "dimension",
+    "section": "TARGETING"
+  },
+  {
+    "data_type": "id",
+    "description": "Raw campaign ID from the SKAdNetwork postback.",
+    "field_id": "skan_campaign_id",
+    "kind": "dimension",
+    "section": "ATTRIBUTION"
+  },
+  {
+    "data_type": "id",
+    "description": "Assigned Conversion ID in the SKAdNetwork configuration.",
+    "field_id": "skan_conversion_id",
+    "kind": "dimension",
+    "section": "ATTRIBUTION"
+  },
+  {
+    "data_type": "currency",
+    "description": "Amount spent on ads shown with social information.",
+    "field_id": "social_spend",
+    "kind": "metric",
+    "section": "COST"
+  },
+  {
+    "data_type": "currency",
+    "description": "Total estimated amount spent on the ads.",
+    "field_id": "spend",
+    "kind": "metric",
+    "section": "COST",
+    "source_field": "spend"
+  },
+  {
+    "data_type": "id",
+    "description": "Title component identifier.",
+    "field_id": "title_asset",
+    "kind": "dimension",
+    "section": "CREATIVE ASSET"
+  },
+  {
+    "data_type": "json",
+    "description": "Total unique actions attributed to the ads (array keyed by action_type).",
+    "field_id": "unique_actions",
+    "kind": "metric",
+    "section": "ACTION"
+  },
+  {
+    "data_type": "int",
+    "description": "Number of unique clicks (estimated).",
+    "field_id": "unique_clicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "percent",
+    "description": "Unique click-through rate (estimated).",
+    "field_id": "unique_ctr",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "percent",
+    "description": "Unique inline link click-through rate (estimated).",
+    "field_id": "unique_inline_link_click_ctr",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "int",
+    "description": "Number of unique inline link clicks (estimated).",
+    "field_id": "unique_inline_link_clicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "percent",
+    "description": "Unique link click-through rate (estimated).",
+    "field_id": "unique_link_clicks_ctr",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "json",
+    "description": "Total unique outbound clicks attributed to the ads (array keyed by action_type).",
+    "field_id": "unique_outbound_clicks",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "json",
+    "description": "Total unique outbound click-through rate attributed to the ads (array keyed by action_type).",
+    "field_id": "unique_outbound_clicks_ctr",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "datetime",
+    "description": "Last update timestamp.",
+    "field_id": "updated_time",
+    "kind": "dimension",
+    "section": "CAMPAIGN DETAILS"
+  },
+  {
+    "data_type": "string",
+    "description": "User segment of Advantage+ Shopping Campaigns.",
+    "field_id": "user_segment_key",
+    "kind": "dimension",
+    "section": "TARGETING"
+  },
+  {
+    "data_type": "json",
+    "description": "Total 30-second video views (array keyed by action_type).",
+    "field_id": "video_30_sec_watched_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "int",
+    "description": "30-second video views for action_type 'video_view'.",
+    "field_id": "video_30_sec_watched_actions_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "id",
+    "description": "Video component identifier.",
+    "field_id": "video_asset",
+    "kind": "dimension",
+    "section": "CREATIVE ASSET"
+  },
+  {
+    "data_type": "json",
+    "description": "Average video watch time per impression (by action type).",
+    "field_id": "video_avg_time_watched_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total continuous 2-second video views (array keyed by action_type).",
+    "field_id": "video_continuous_2_sec_watched_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "int",
+    "description": "Continuous 2-second video views for action_type 'video_view'.",
+    "field_id": "video_continuous_2_sec_watched_actions_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total video plays to 100% (array keyed by action_type).",
+    "field_id": "video_p100_watched_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "int",
+    "description": "Video plays to 100% for action_type 'video_view'.",
+    "field_id": "video_p100_watched_actions_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total video plays to 25% (array keyed by action_type).",
+    "field_id": "video_p25_watched_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "int",
+    "description": "Video plays to 25% for action_type 'video_view'.",
+    "field_id": "video_p25_watched_actions_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total video plays to 50% (array keyed by action_type).",
+    "field_id": "video_p50_watched_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "int",
+    "description": "Video plays to 50% for action_type 'video_view'.",
+    "field_id": "video_p50_watched_actions_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total video plays to 75% (array keyed by action_type).",
+    "field_id": "video_p75_watched_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "int",
+    "description": "Video plays to 75% for action_type 'video_view'.",
+    "field_id": "video_p75_watched_actions_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total video plays to 95% (array keyed by action_type).",
+    "field_id": "video_p95_watched_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "int",
+    "description": "Video plays to 95% for action_type 'video_view'.",
+    "field_id": "video_p95_watched_actions_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total video plays (array keyed by action_type).",
+    "field_id": "video_play_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "int",
+    "description": "Video plays for action_type 'video_view'.",
+    "field_id": "video_play_actions_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Video play retention curve graph data.",
+    "field_id": "video_play_curve_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Total ThruPlay watched actions (array keyed by action_type).",
+    "field_id": "video_thruplay_watched_actions",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "int",
+    "description": "Thruplay watched actions for action_type 'video_view'.",
+    "field_id": "video_thruplay_watched_actions_video_view",
+    "kind": "metric",
+    "section": "VIDEO"
+  },
+  {
+    "data_type": "json",
+    "description": "Click-through rate for website clicks (by action type).",
+    "field_id": "website_ctr",
+    "kind": "metric",
+    "section": "CLICKS"
+  },
+  {
+    "data_type": "json",
+    "description": "Total website purchase ROAS attributed to the ads (array keyed by action_type).",
+    "field_id": "website_purchase_roas",
+    "kind": "metric",
+    "section": "CONVERSION"
+  }
+]

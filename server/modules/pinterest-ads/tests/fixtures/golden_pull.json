@@ -1,0 +1,34 @@
+[
+  {
+    "pull_id": "pull_test_001",
+    "connector": "pinterest-ads",
+    "date": "2026-07-01",
+    "CAMPAIGN_ID": "626744128982",
+    "CAMPAIGN_NAME": "Prospecting - FR",
+    "CAMPAIGN_ENTITY_STATUS": "ACTIVE",
+    "CAMPAIGN_OBJECTIVE_TYPE": "CONVERSIONS",
+    "SPEND_IN_MICRO_DOLLAR": 118400000,
+    "TOTAL_IMPRESSION": 12040,
+    "TOTAL_CLICKTHROUGH": 640,
+    "TOTAL_ENGAGEMENT": 810,
+    "TOTAL_CONVERSIONS": 42,
+    "TOTAL_CHECKOUT": 17,
+    "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR": 3120750000
+  },
+  {
+    "pull_id": "pull_test_001",
+    "connector": "pinterest-ads",
+    "date": "2026-07-01",
+    "CAMPAIGN_ID": "626744128982",
+    "AD_GROUP_ID": "2680059592705",
+    "AD_GROUP_NAME": "Broad - Home Decor",
+    "AD_GROUP_ENTITY_STATUS": "ACTIVE",
+    "SPEND_IN_MICRO_DOLLAR": 61250000,
+    "TOTAL_IMPRESSION": 7015,
+    "TOTAL_CLICKTHROUGH": 355,
+    "TOTAL_ENGAGEMENT": 512,
+    "TOTAL_CONVERSIONS": 23,
+    "TOTAL_CHECKOUT": 9,
+    "TOTAL_CHECKOUT_VALUE_IN_MICRO_DOLLAR": 1544000000
+  }
+]

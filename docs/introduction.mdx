@@ -1,0 +1,48 @@
+---
+title: Introduction
+description: Discover Toorow, the sovereign MCP control plane for trustworthy, governed marketing analytics.
+---
+
+**toorow** is a self-hostable marketing data platform engineered for artificial intelligence agents. It leverages the **Model Context Protocol (MCP)** to grant agents governed access to unified marketing indicators without exposing raw credentials, provider APIs, or underlying database tables.
+
+<Note>
+This repository does not yet include an open-source license. toorow must not be described as open-source until an explicit license is selected and added.
+</Note>
+
+## Key Capabilities
+
+- **Unified Marketing Data**: Metrics from GA4, Search Console, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, and Klaviyo converge into a canonical semantic model built with dbt.
+- **Audited & Traceable Analysis**: Freshness, data provenance, quality checks (DQ baselines), and alerts accompany every metric served to AI agents.
+- **Isolated Multi-Tenant Access**: Inbound identity, provider OAuth scopes, and dataset access are strictly isolated per project (AD-5 resource graph).
+- **Dual-Channel Response Model**: Agents receive a short, contextual text summary while the accompanying MCP widget receives rich, structured data payload (`structuredContent`) for rendering visual cards.
+- **Extensible Module Architecture**: Connectors are self-contained modules auto-discovered at boot, featuring manifests, staging SQL, dbt marts, and golden-pull conformance tests.
+
+## Strategic Direction
+
+toorow is designed as a sovereign control plane for agentic analytics rather than a basic connector catalog:
+
+1. Managed or external warehouse ingestion.
+2. Semantic governance and MDM dictionary enforcement.
+3. Mandatory data quality and lineage tracking.
+4. Shared business context and progressive disclosure.
+5. Post-click attribution without proprietary tracking pixels.
+6. Continuous evaluation loop for agent reliability.
+
+---
+
+## Explore the Documentation
+
+<CardGroup cols={2}>
+  <Card title="Prerequisites" icon="list-check" href="/prerequisites">
+    Check required cloud accounts, GCP setup, and local tooling.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install and run toorow locally in under 5 minutes.
+  </Card>
+  <Card title="Self-Hosting & Environment" icon="server" href="/self-hosting">
+    Deploy on your infrastructure and inspect the complete `.env` reference.
+  </Card>
+  <Card title="Platform Constraints" icon="shield-check" href="/constraints">
+    Review security rules, zero-telemetry policies, and architectural invariants.
+  </Card>
+</CardGroup>

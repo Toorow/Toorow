@@ -1,0 +1,14 @@
+{
+  "id": "overview_daily",
+  "display_name": "Vue d'ensemble quotidienne",
+  "metrics": ["sessions", "active_users", "conversions"],
+  "dimensions": ["date", "device", "country"],
+  "layout": {
+    "chart_type": "line",
+    "order_by": "date"
+  },
+  "narrative_prompt": "Analyse les tendances de trafic et conversion GA4. Mets en avant les variations notables par rapport à la période précédente.",
+  "date_window": {
+    "default_days": 30
+  }
+}

@@ -1,0 +1,8 @@
+/*
+ * Material Symbols removal for the KPI card single-file bundle (AD-11 / bundle gate).
+ *
+ * @toorow/shell's fonts.css @imports @fontsource/material-symbols-outlined
+ * (~4.4 MB across weights). The KPI card uses inline <svg> icons (src/icons.tsx)
+ * and needs none of those glyphs, so vite.config.ts aliases the icon-font CSS to
+ * this empty stub. Plus Jakarta Sans Variable (the toorow text face) stays inlined.
+ */

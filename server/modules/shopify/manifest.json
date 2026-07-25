@@ -1,0 +1,279 @@
+{
+    "schema_version": "1.2",
+    "name": "shopify",
+    "display_name": "Shopify",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "commerce_billing",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify and run the independent connector evidence contract."
+        }
+    },
+    "module_kind": "kpi",
+    "auth_type": "oauth2",
+    "report_profiles": [
+        {
+            "id": "orders_daily",
+            "display_name": "Orders (daily sales of record)",
+            "metrics": [
+                "revenue",
+                "refund_amount",
+                "orders_count"
+            ],
+            "dimensions": [
+                "date",
+                "transaction_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 250,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Orders — catalog-driven (any field, order grain)",
+            "metrics": [
+                "revenue",
+                "refund_amount",
+                "orders_count"
+            ],
+            "dimensions": [
+                "date",
+                "transaction_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 250,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        }
+    ],
+    "canonical_metric_mapping": {
+        "total_price": "revenue",
+        "total_refunded": "refund_amount",
+        "order": "orders_count"
+    },
+    "canonical_dimension_mapping": {
+        "order_id": "order_id",
+        "transaction_id": "transaction_id"
+    },
+    "quota": {
+        "window_seconds": 1,
+        "budget_points": 2,
+        "read_cost": 1,
+        "write_cost": 10
+    },
+    "widget_ref": "ui://core/daily-report",
+    "_ai_53_notes": {
+        "quota": "AI-53 A CONFIRMER EN STORY: Shopify applique des call limits PAR PLAN MARCHAND (leaky bucket REST: 2 req/s standard, 4 req/s Shopify Plus, bucket 40/80). review-15-4 F-3: l'engine core est un FIXED-WINDOW (recharge complete par fenetre) et ne modelise PAS le leaky bucket -- une fenetre 60s/40pts autoriserait un BURST de 40 requetes instantanees (plus permissif que Shopify, pas 'prudent'). Profil retenu: window 1s / 2 points = 2 req/s soutenu SANS burst (approximation conservatrice du bucket standard). Le vrai backstop reste le handler 429 -> RateLimitError. A recalibrer via X-Shopify-Shop-Api-Call-Limit en passe live (Phase B).",
+        "canonical_metric_mapping": "AI-53 A CONFIRMER EN STORY: noms de champs API Admin REST supposes d'apres la doc: order.total_price -> revenue (montant total commande, additif), order.total_refunded (ou somme des refund.transactions) -> refund_amount (COLONNE DEDIEE, JAMAIS soustrait silencieusement de revenue), comptage d'ordres -> orders_count. A verifier endpoint/champs exacts (Admin REST vs GraphQL) en passe live (AI-53/AI-13).",
+        "transaction_id": "AI-53 A CONFIRMER EN STORY: transaction_id expose comme DIMENSION DE DETAIL du raw (une commande -> une/plusieurs transactions de paiement Shopify). C'est la cle de jointure GA4 x Shopify (Epic 17). Le mart agrege au JOUR: transaction_id N'est PAS une partition de breakdown du mart. Disponibilite exacte (order.transactions[].id vs order.id) a confirmer via la doc Admin API.",
+        "refunds_decision": "DECISION 15.4 (REFERENCE pour Stripe 15.7): les remboursements sont stockes en COLONNE DEDIEE refund_amount (metrique additive positive), JAMAIS soustraits silencieusement de revenue. Le net se calcule au niveau semantique (revenue - refund_amount) de facon explicite et auditable."
+    },
+    "_error_map_note": "Shopify Admin REST uses pure HTTP status semantics: 401=Unauthorized (expired/invalid token), 402=Payment Required (shop suspended), 403=Forbidden (permission scope missing), 423=Locked (shop locked), 429=Too Many Requests (leaky-bucket overflow, handled by RateLimitError path). No provider-level numeric error codes refine beyond the HTTP status; error_map is intentionally empty. The 429 path keeps raising core.quota.RateLimitError directly (Story 3.3 breaker contract). All other non-200 responses raise via classify_http_error(status_code, body) with an empty map, relying on pure-HTTP classification.",
+    "error_map": {},
+    "_account_topology_note": "Shopify is shop-scoped: one OAuth token = one merchant store. There is no account hierarchy to discover or select; the shop_domain is the sole scope and is resolved from the connection's Nango credential at pull time. account_topology is therefore absent from this manifest by design, not by omission.",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "revenue",
+                "source_field": "total_price",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "revenue exposed by Shopify.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "revenue",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "refund_amount",
+                "source_field": "total_refunded",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "refund amount exposed by Shopify.",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "refund_amount",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "orders_count",
+                "source_field": "order",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "orders count exposed by Shopify.",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "orders_count",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "created_at",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "date exposed by Shopify.",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "transaction_id",
+                "source_field": "transaction_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "transaction id exposed by Shopify.",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "transaction_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "orders_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "revenue",
+                    "refund_amount",
+                    "orders_count"
+                ],
+                "dimensions": [
+                    "date",
+                    "transaction_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "transaction_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "link",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 250,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull"
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "revenue",
+                    "refund_amount",
+                    "orders_count"
+                ],
+                "dimensions": [
+                    "date",
+                    "transaction_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "transaction_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "link",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 250,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                }
+            }
+        ]
+    }
+}

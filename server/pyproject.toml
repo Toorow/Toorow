@@ -1,0 +1,95 @@
+# server/ — FastMCP core + modules (Python 3.12).
+#
+# Stack pins (non-negotiable per Story 1.1 Dev Notes / ARCHITECTURE-SPINE §Stack):
+#   - Python 3.12
+#   - FastMCP 3.4.x  (streamable HTTP transport)
+#
+# If fastmcp==3.4.* is unobtainable on PyPI at build time, record the actual
+# resolved pin in the story's Dev Agent Record (see AC1 deviation note).
+[project]
+name = "toorow-server"
+version = "0.1.0"
+description = "toorow MCP core (FastMCP) + modules"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Resolves to 3.4.4 (latest 3.4.x as of 2026-07). 3.4.3 introduced the
+    # native Host/Origin 421 guard; 3.4.4 restored ASGI/serverless compat.
+    "fastmcp==3.4.*",
+    "uvicorn>=0.34,<1.0",
+    # FastMCP 3.4.1 floors Starlette at >=1.0.1 (CVE-2026-48710); keep it here
+    # explicitly so a stale resolver cannot pull an affected version.
+    "starlette>=1.0.1",
+    # Story 1.3 — manifest schema validation (T1.2).
+    "jsonschema>=4.23",
+    # Story 1.4 — DuckDB local fallback warehouse (T2.3).
+    "duckdb>=1.0",
+    # Story 1.4 — pull_id ULID generation (T3.1, AD-7).
+    "python-ulid>=3.0",
+    # Story 2.2 — Nango API client (async HTTP, preferred for future async FastMCP handlers).
+    "httpx>=0.27",
+    # Story 2.6 — Audit log DB writes (sync psycopg3; avoids asyncio.run nesting risk
+    # that asyncpg would require when called from sync handlers). psycopg[binary] bundles
+    # the C extension so no libpq build dependency is needed on Windows/Cloud Run.
+    "psycopg[binary]>=3.1",
+    # Story 4.4 mirror_sync uses DataFrame registration for DuckDB writes —
+    # was an undeclared transitive dep until review-5-1 flagged it.
+    "pandas>=2.0",
+    # Story 18.1 — Fernet (AEAD) encryption of the Google direct-auth token blob
+    # in google_token_store.py (AD-21). Already resolved transitively (authlib /
+    # langfuse) but declared explicitly so the coupling is honest and pinned.
+    "cryptography>=44.0",
+    # Story 11.1 — YAML frontmatter validation in context_store.py
+    "pyyaml>=6.0",
+    # Story 22.2 — Excel media-plan import parser (multi-sheet + merged-cell
+    # resolution via openpyxl merged_cells). Runtime dep in mediaplan_import.py.
+    "openpyxl>=3.1",
+    # Epic 38 — inbound quarantine store (GcsQuarantineStore): read/write the
+    # delivered file bytes + manifest in the private EU quarantine bucket. Imported
+    # lazily, but must be installed for the receipt/bridge Cloud Run services.
+    "google-cloud-storage>=2.18",
+]
+
+# Story 5.1 — OTel/Langfuse tracing is an OPTIONAL extra. CI does NOT install it;
+# the server starts normally with these absent (all tracing calls no-op when
+# TRACING_ENABLED=false or the SDK is unimportable — AC10). Install with:
+#   uv sync --extra tracing     (or: pip install 'toorow-server[tracing]')
+# Versions pinned 2026-07-11 (latest on PyPI): otel 1.43.0, langfuse 4.14.0.
+[project.optional-dependencies]
+tracing = [
+    "opentelemetry-sdk>=1.43,<2.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.43,<2.0",
+    "langfuse>=4.14,<5.0",
+]
+
+[dependency-groups]
+dev = [
+    # Story 1.4 — realistic seed data generation (T1.2).
+    "faker>=37.0",
+    # Story 2.2 — HTTP mocking for nango_client unit tests (matches httpx choice).
+    "respx>=0.21",
+    # Story 5.1 — OTel SDK in the DEV/test venv so tracing tests run with an
+    # in-memory span exporter (no live Langfuse). Production still treats OTel as
+    # an optional extra; tracing tests importorskip when the SDK is absent.
+    "opentelemetry-sdk>=1.43,<2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core", "inbound"]
+
+[tool.pytest.ini_options]
+markers = [
+    "conformance_layer_1: manifest schema validation layer",
+    "conformance_layer_2: envelope shape validation layer",
+    "conformance_layer_3: single-file bundle check layer",
+    "conformance_layer_4: golden pull fixture layer",
+    "conformance_layer_5: context-event golden fixture layer (Story 4.5)",
+    "conformance_layer_6: report-pack definition validation layer (Story 6.1)",
+    "integration: integration tests requiring DuckDB/dbt infrastructure",
+    "isolation: cross-project isolation suite (Story 7.4) — requires TEST_POSTGRES_DSN and the two-project fixture; a failing isolation test FAILS the CI build (FR12, AD-5)",
+    "live_postgres: E2E tests requiring a live Postgres + DuckDB environment (Story 8.10); skipped in CI",
+    "live_pg: tests requiring a live Postgres (Epic 38 inbound); skipped unless a DSN is provided",
+]

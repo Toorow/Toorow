@@ -1,0 +1,278 @@
+{
+  "schema_version": "1",
+  "meta": {
+    "freshness": {
+      "last_pull": null,
+      "cadence_hours": 24,
+      "stale_since": null
+    },
+    "provenance": {
+      "source_system": "mediaplan_pacing",
+      "source_field": "marts.plan_pacing_by_line + plan_pacing_by_channel",
+      "plan_id": "00000000-0000-4000-8000-000000000022",
+      "plan_version_id": "00000000-0000-4000-8000-000000000221",
+      "pull_ids": [
+        "pull_a",
+        "pull_b"
+      ],
+      "pull_id": "pull_b"
+    },
+    "alerts": [],
+    "trace_id": null,
+    "as_of": "2026-03-10",
+    "context_events": [],
+    "card_selection": {
+      "chosen": "mediaplan_pacing",
+      "mode": "explicit",
+      "answers_question": "Comment mon plan évolue-t-il face aux dépenses réelles (consommé, pace, reste, extrapolé par ligne et par support) ?",
+      "alternatives": []
+    },
+    "project_id": "default"
+  },
+  "data": {
+    "card_id": "mediaplan_pacing",
+    "card_type": "mediaplan_pacing",
+    "title": "Pacing Médiaplan",
+    "answers_question": "Comment mon plan évolue-t-il face aux dépenses réelles (consommé, pace, reste, extrapolé par ligne et par support) ?",
+    "plan_id": "00000000-0000-4000-8000-000000000022",
+    "plan_name": "Plan Test 22.5",
+    "plan_version_id": "00000000-0000-4000-8000-000000000221",
+    "as_of_day": "2026-03-10",
+    "date_range": {
+      "start": null,
+      "end": "2026-03-10"
+    },
+    "connectors": [
+      "digital",
+      "tv"
+    ],
+    "rendered_comment": "Plan « Plan Test 22.5 » — arrêté au 2026-03-10, 10 jour(s) de réel (Pace = (réel − prévu to-date) / prévu to-date) (plan version 00000000-0000-4000-8000-000000000221, mart plan_pacing_by_line, pull pull_b)\nPace global : +25.0 % (réel 1250 € / budget 8000 €) — Estimation extrapolation (run-rate linéaire) ; lignes plan seul (aucun pacing calculé) : « line-tv » (plan version 00000000-0000-4000-8000-000000000221, mart plan_pacing_by_line, pull pull_b)\nContexte manquant pour cette période.",
+    "composition": [
+      {
+        "type": "table",
+        "title": "Lignes du plan",
+        "binding": {
+          "source": "plan_lines"
+        },
+        "data": {
+          "columns": [
+            {
+              "key": "label",
+              "label": "Ligne",
+              "numeric": false
+            },
+            {
+              "key": "channel",
+              "label": "Support",
+              "numeric": false
+            },
+            {
+              "key": "budget",
+              "label": "Budget (€)",
+              "numeric": true
+            },
+            {
+              "key": "actual_to_date",
+              "label": "Dépensé",
+              "numeric": true
+            },
+            {
+              "key": "consumed_pct",
+              "label": "Consommé (%)",
+              "numeric": true
+            },
+            {
+              "key": "pace_pct",
+              "label": "Pace (%)",
+              "numeric": true
+            },
+            {
+              "key": "remaining_budget",
+              "label": "Reste (€)",
+              "numeric": true
+            },
+            {
+              "key": "extrapolated_spend",
+              "label": "Extrapolé (€) (Estimation)",
+              "numeric": true
+            },
+            {
+              "key": "is_plan_only",
+              "label": "Plan seul",
+              "numeric": false
+            }
+          ],
+          "rows": [
+            {
+              "line_key": "line-digital-a",
+              "label": "Digital A",
+              "channel": "digital",
+              "budget": 3000.0,
+              "actual_to_date": 1250.0,
+              "allocated_to_date": 1000.0,
+              "consumed_pct": 41.7,
+              "pace_pct": 25.0,
+              "remaining_budget": 1750.0,
+              "extrapolated_spend": 3750.0,
+              "is_plan_only": false,
+              "plan_version_id": "00000000-0000-4000-8000-000000000221",
+              "actual_pull_id_min": "pull_a",
+              "actual_pull_id_max": "pull_b"
+            },
+            {
+              "line_key": "line-tv",
+              "label": "TV Brand",
+              "channel": "tv",
+              "budget": 5000.0,
+              "actual_to_date": null,
+              "allocated_to_date": 5000.0,
+              "consumed_pct": null,
+              "pace_pct": null,
+              "remaining_budget": null,
+              "extrapolated_spend": null,
+              "is_plan_only": true,
+              "plan_version_id": "00000000-0000-4000-8000-000000000221",
+              "actual_pull_id_min": null,
+              "actual_pull_id_max": null
+            }
+          ],
+          "estimate_columns": [
+            "extrapolated_spend"
+          ],
+          "plan_only_badge_column": "is_plan_only"
+        }
+      },
+      {
+        "type": "table",
+        "title": "Rollup par support",
+        "binding": {
+          "source": "plan_channels"
+        },
+        "data": {
+          "columns": [
+            {
+              "key": "channel",
+              "label": "Support",
+              "numeric": false
+            },
+            {
+              "key": "budget",
+              "label": "Budget (€)",
+              "numeric": true
+            },
+            {
+              "key": "actual_to_date",
+              "label": "Dépensé",
+              "numeric": true
+            },
+            {
+              "key": "consumed_pct",
+              "label": "Consommé (%)",
+              "numeric": true
+            },
+            {
+              "key": "pace_pct",
+              "label": "Pace (%)",
+              "numeric": true
+            },
+            {
+              "key": "remaining_budget",
+              "label": "Reste (€)",
+              "numeric": true
+            },
+            {
+              "key": "extrapolated_spend",
+              "label": "Extrapolé (€) (Estimation)",
+              "numeric": true
+            }
+          ],
+          "rows": [
+            {
+              "channel": "digital",
+              "budget": 3000.0,
+              "actual_to_date": 1250.0,
+              "allocated_to_date": 1000.0,
+              "consumed_pct": 41.7,
+              "pace_pct": 25.0,
+              "remaining_budget": 1750.0,
+              "extrapolated_spend": 3750.0,
+              "plan_only_line_count": 0,
+              "paceable_line_count": 1,
+              "plan_version_id": "00000000-0000-4000-8000-000000000221"
+            },
+            {
+              "channel": "tv",
+              "budget": 5000.0,
+              "actual_to_date": null,
+              "allocated_to_date": null,
+              "consumed_pct": null,
+              "pace_pct": null,
+              "remaining_budget": null,
+              "extrapolated_spend": null,
+              "plan_only_line_count": 1,
+              "paceable_line_count": 0,
+              "plan_version_id": "00000000-0000-4000-8000-000000000221"
+            }
+          ],
+          "estimate_columns": [
+            "extrapolated_spend"
+          ]
+        }
+      },
+      {
+        "type": "table",
+        "title": "Actuals non mappés",
+        "binding": {
+          "source": "plan_unmapped_actuals"
+        },
+        "data": {
+          "columns": [
+            {
+              "key": "connector",
+              "label": "Connecteur",
+              "numeric": false
+            },
+            {
+              "key": "campaign_ref",
+              "label": "Campagne",
+              "numeric": false
+            },
+            {
+              "key": "spend",
+              "label": "Dépense réelle (€)",
+              "numeric": true
+            },
+            {
+              "key": "reason",
+              "label": "Motif",
+              "numeric": false
+            }
+          ],
+          "rows": [],
+          "note": "Périmètre non vérifiable (entrepôt indisponible)",
+          "verifiable": false
+        }
+      },
+      {
+        "type": "comment",
+        "binding": {
+          "source": "plan_pacing"
+        },
+        "data": {
+          "text": "Plan « Plan Test 22.5 » — arrêté au 2026-03-10, 10 jour(s) de réel (Pace = (réel − prévu to-date) / prévu to-date) (plan version 00000000-0000-4000-8000-000000000221, mart plan_pacing_by_line, pull pull_b)\nPace global : +25.0 % (réel 1250 € / budget 8000 €) — Estimation extrapolation (run-rate linéaire) ; lignes plan seul (aucun pacing calculé) : « line-tv » (plan version 00000000-0000-4000-8000-000000000221, mart plan_pacing_by_line, pull pull_b)\nContexte manquant pour cette période."
+        }
+      }
+    ],
+    "pacing_meta": {
+      "plan_version_id": "00000000-0000-4000-8000-000000000221",
+      "pull_ids": [
+        "pull_a",
+        "pull_b"
+      ],
+      "as_of_day": "2026-03-10",
+      "estimate_label": "Estimation",
+      "pace_formula": "Pace = (réel − prévu_to-date) / prévu_to-date",
+      "honesty_note": "extrapolated_spend est une Estimation (run-rate linéaire) ; jamais une mesure exacte. pace NULL = allocation to-date nulle ou ligne plan seul."
+    }
+  }
+}

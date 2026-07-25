@@ -1,0 +1,136 @@
+{
+  "connector": "linkedin-ads",
+  "api_version": "202506",
+  "generated_at": "2026-07-21T00:00:00Z",
+  "_derivation": {
+    "note": "official_fields.json is produced by build_official_fields.py (committed alongside, byte-deterministic). Metrics come from the LinkedIn Marketing adAnalytics 'Metrics Available' table (li-lms-2026-06 moniker); the pivot dimensions come from the Analytics/Statistics finder 'pivot' enum; the Revenue Attribution metrics come from the attributedRevenueMetrics finder (flattened).",
+    "expansion_rule": "Every metric in the Metrics Available table is emitted verbatim as a 'metric' field. Four provider tokens are RENAMED to the manifest's canonical field_id and carry the provider token as source_field so the manifest<->catalog gate stays green: costInLocalCurrency->cost, externalWebsiteConversions->conversions, leadGenerationMailContactInfoShares->leads; the date dimension is field_id 'date' with source_field 'dateRange'. impressions/clicks are identical on both sides. Every Analytics/Statistics finder pivot enum value is emitted ONCE as a parameterised dimension field_id 'pivot_<ENUM>' (source_field 'pivot:<ENUM>'); the connector materialises the structural campaign_id / campaign_group_id ids from the pivot URNs.",
+    "count_divergence": "Metric total (125) is well below the Supermetrics 101-metric figure only in the sense that the two catalogs count differently: Supermetrics itemises fewer viral/document/event families than the official 202506 schema. Dimension total (28) is intentionally below Supermetrics' 110: Supermetrics enumerates every demographic pivot VALUE permutation (per-country, per-industry, per-seniority, ...) as a distinct column, whereas this catalog declares each pivot ONCE as a parameterised dimension. Enumerating pivot values is out of scope -- they are query outputs resolved per account at run time (URN resolution), not catalog fields, and would be non-deterministic."
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://learn.microsoft.com/en-us/linkedin/marketing/integrations/ads-reporting/ads-reporting-schema?view=li-lms-2026-06",
+      "fetched_at": "2026-07-21",
+      "_also": [
+        {
+          "purpose": "adAnalytics_endpoint_and_finders",
+          "url": "https://learn.microsoft.com/en-us/linkedin/marketing/integrations/ads-reporting/ads-reporting?view=li-lms-2026-06",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "metrics_available_and_pivot_enums",
+          "url": "https://learn.microsoft.com/en-us/linkedin/marketing/integrations/ads-reporting/ads-reporting-schema?view=li-lms-2026-06",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "account_discovery_adAccounts_search",
+          "url": "https://learn.microsoft.com/en-us/linkedin/marketing/integrations/ads/account-structure/create-and-manage-accounts?view=li-lms-2026-06",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "error_handling",
+          "url": "https://learn.microsoft.com/en-us/linkedin/shared/api-guide/concepts/error-handling",
+          "fetched_at": "2026-07-21"
+        }
+      ]
+    },
+    {
+      "kind": "enrichment",
+      "file": "supermetrics.md",
+      "parser": "supermetrics_markdown",
+      "url": "https://docs.supermetrics.com/docs/linkedin-ads-fields.md",
+      "fetched_at": "2026-07-21",
+      "_fetch": "curl -sL https://docs.supermetrics.com/docs/linkedin-ads-fields.md -o server/modules/linkedin-ads/catalog_sources/supermetrics.md   # DO NOT COMMIT this file (enrichment snapshot only)"
+    }
+  ],
+  "section_tier_map": {
+    "COST": "core",
+    "CLICKS": "core",
+    "IMPRESSION": "core",
+    "TIME": "core",
+    "STRUCTURE": "core",
+    "CONVERSION": "standard",
+    "SOCIAL ACTIONS": "standard",
+    "PERFORMANCE": "standard",
+    "VIDEO": "advanced",
+    "DEMOGRAPHICS": "advanced",
+    "REVENUE ATTRIBUTION": "advanced"
+  },
+  "field_tier_overrides": {
+    "cost": "core",
+    "costInUsd": "core",
+    "impressions": "core",
+    "clicks": "core",
+    "conversions": "core",
+    "leads": "core",
+    "date": "core",
+    "campaign_id": "core",
+    "campaign_group_id": "core",
+    "externalWebsitePostClickConversions": "standard",
+    "externalWebsitePostViewConversions": "standard",
+    "pivotValues": "standard",
+    "pivot_ACCOUNT": "standard",
+    "pivot_CAMPAIGN": "standard",
+    "pivot_CAMPAIGN_GROUP": "standard",
+    "pivot_CARD_INDEX": "standard",
+    "pivot_COMPANY": "standard",
+    "pivot_CONVERSATION_NODE": "standard",
+    "pivot_CONVERSATION_NODE_OPTION_INDEX": "standard",
+    "pivot_CONVERSION": "standard",
+    "pivot_CREATIVE": "standard",
+    "pivot_EVENT_STAGE": "standard",
+    "pivot_IMPRESSION_DEVICE_TYPE": "standard",
+    "pivot_MEMBER_COMPANY": "standard",
+    "pivot_MEMBER_COMPANY_SIZE": "standard",
+    "pivot_MEMBER_COUNTRY_V2": "standard",
+    "pivot_MEMBER_COUNTY": "standard",
+    "pivot_MEMBER_INDUSTRY": "standard",
+    "pivot_MEMBER_JOB_FUNCTION": "standard",
+    "pivot_MEMBER_JOB_TITLE": "standard",
+    "pivot_MEMBER_REGION_V2": "standard",
+    "pivot_MEMBER_SENIORITY": "standard",
+    "pivot_OBJECTIVE_TYPE": "standard",
+    "pivot_PLACEMENT_NAME": "standard",
+    "pivot_SERVING_LOCATION": "standard",
+    "pivot_SHARE": "standard"
+  },
+  "default_tier": "standard",
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 20,
+    "structural_note": "LinkedIn adAnalytics takes a fields= list (metrics + pivots) over a date range on the selected sponsored account. The probe batches up to 20 fields per analytics request over a 1-day window; a batch that returns an invalid_request is bisected so the exact rejected field is captured."
+  },
+  "pivot_compatibility": {
+    "max_pivots_per_request": 1,
+    "default_pivot": "CAMPAIGN",
+    "pivot_fields": [
+      "pivot_ACCOUNT",
+      "pivot_CAMPAIGN",
+      "pivot_CAMPAIGN_GROUP",
+      "pivot_CARD_INDEX",
+      "pivot_COMPANY",
+      "pivot_CONVERSION",
+      "pivot_CREATIVE",
+      "pivot_MEMBER_COMPANY",
+      "pivot_MEMBER_COMPANY_SIZE",
+      "pivot_MEMBER_COUNTRY_V2",
+      "pivot_MEMBER_COUNTY",
+      "pivot_MEMBER_INDUSTRY",
+      "pivot_MEMBER_JOB_FUNCTION",
+      "pivot_MEMBER_JOB_TITLE",
+      "pivot_MEMBER_REGION_V2",
+      "pivot_MEMBER_SENIORITY",
+      "pivot_PLACEMENT_NAME",
+      "pivot_SERVING_LOCATION"
+    ],
+    "_note": "LinkedIn adAnalytics accepts exactly ONE pivot per request (AI-53 verifie 2026-07-19). Selecting >1 pivot_* dimension is refused BEFORE any API call with an InvalidRequestError. The pivot value is the ENUM portion after 'pivot_' (e.g. pivot_MEMBER_COUNTRY_V2 -> MEMBER_COUNTRY_V2). The default pivot CAMPAIGN is applied when no pivot_* dimension is selected."
+  },
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {
+    "REVENUE ATTRIBUTION": "Requires the separate attributedRevenueMetrics finder, not the adAnalytics fields param."
+  },
+  "_tier_note": "pivot_* fields demoted to standard (25.9): LinkedIn accepts exactly ONE pivot per request, so a core tier would make the tier-core default selection carry 14 pivots and auto-refuse. They stay exposed and selectable one at a time."
+}

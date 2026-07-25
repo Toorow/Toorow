@@ -1,0 +1,2386 @@
+{
+  "api_version": "v13",
+  "catalog_version": "1",
+  "connector": "microsoft-ads",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Microsoft Ads v13 report column 'AbsoluteTopImpressionRatePercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "absolute_top_impression_rate_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "AbsoluteTopImpressionRatePercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AbsoluteTopImpressionShareLostToBudgetPercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "absolute_top_impression_share_lost_to_budget_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "AbsoluteTopImpressionShareLostToBudgetPercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AbsoluteTopImpressionShareLostToRankPercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "absolute_top_impression_share_lost_to_rank_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "AbsoluteTopImpressionShareLostToRankPercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AbsoluteTopImpressionSharePercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "absolute_top_impression_share_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "AbsoluteTopImpressionSharePercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AccountId' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "account_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ACCOUNT",
+      "source_field": "AccountId",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AccountName' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "account_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ACCOUNT",
+      "source_field": "AccountName",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AccountNumber' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "account_number",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ACCOUNT",
+      "source_field": "AccountNumber",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AccountStatus' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "account_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ACCOUNT",
+      "source_field": "AccountStatus",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdDescription' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_description",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdDescription",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdDescription2' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_description2",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdDescription2",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdDistribution' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "ad_distribution",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "VISITOR",
+      "source_field": "AdDistribution",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdGroupCriterionId' (attribute -- guide 'Columns that group the data'). Available in: SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_group_criterion_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "QUERY",
+      "source_field": "AdGroupCriterionId",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdGroupId' (attribute -- guide 'Columns that group the data'). Available in: AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "ad_group_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupId",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdGroupLabels' (attribute -- guide 'Columns that group the data'). Available in: AdGroupPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_group_labels",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupLabels",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdGroupName' (attribute -- guide 'Columns that group the data'). Available in: AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "ad_group_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupName",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdGroupStatus' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "ad_group_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupStatus",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdGroupType' (attribute -- guide 'Columns that group the data'). Available in: AdGroupPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_group_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "AdGroupType",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdId' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance, KeywordPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdId",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdLabels' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_labels",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdLabels",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdRelevance' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_relevance",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "KEYWORD",
+      "source_field": "AdRelevance",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdStatus' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdStatus",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdStrength' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_strength",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdStrength",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdStrengthActionItems' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_strength_action_items",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdStrengthActionItems",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdTitle' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_title",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdTitle",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AdType' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance, KeywordPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "ad_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "AdType",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AgeGroup' (attribute -- guide 'Columns that group the data'). Available in: AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "age_group",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "VISITOR",
+      "source_field": "AgeGroup",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AllConversionRate' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "all_conversion_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "AllConversionRate",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AllConversions' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "all_conversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "AllConversions",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AllConversionsQualified' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "all_conversions_qualified",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "AllConversionsQualified",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AllCostPerConversion' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "all_cost_per_conversion",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "AllCostPerConversion",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AllReturnOnAdSpend' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "all_return_on_ad_spend",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "AllReturnOnAdSpend",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AllRevenue' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "all_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "AllRevenue",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AllRevenuePerConversion' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "all_revenue_per_conversion",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "AllRevenuePerConversion",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AppInstalls' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "app_installs",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "AppInstalls",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AssetGroupId' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "asset_group_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "AssetGroupId",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AssetGroupName' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "asset_group_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "AssetGroupName",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AssetGroupStatus' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "asset_group_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "AssetGroupStatus",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Assists' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "assists",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BASIC",
+      "source_field": "Assists",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AudienceImpressionLostToBudgetPercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "audience_impression_lost_to_budget_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "AudienceImpressionLostToBudgetPercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AudienceImpressionLostToRankPercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "audience_impression_lost_to_rank_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "AudienceImpressionLostToRankPercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AudienceImpressionSharePercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "audience_impression_share_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "AudienceImpressionSharePercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AverageCpc' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "average_cpc",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BASIC",
+      "source_field": "AverageCpc",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AverageCpm' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "average_cpm",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BASIC",
+      "source_field": "AverageCpm",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AverageCPV' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "average_cpv",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIDEO VIEW",
+      "source_field": "AverageCPV",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AveragePosition' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "average_position",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BASIC",
+      "source_field": "AveragePosition",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AverageWatchTimePerImpression' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "average_watch_time_per_impression",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIDEO VIEW",
+      "source_field": "AverageWatchTimePerImpression",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'AverageWatchTimePerVideoView' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "average_watch_time_per_video_view",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIDEO VIEW",
+      "source_field": "AverageWatchTimePerVideoView",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'BaseCampaignId' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "base_campaign_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "BaseCampaignId",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'BidMatchType' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "bid_match_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "VISITOR",
+      "source_field": "BidMatchType",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'BidStrategyType' (attribute -- guide 'Columns that group the data'). Available in: KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "bid_strategy_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BUDGET",
+      "source_field": "BidStrategyType",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'BudgetAssociationStatus' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance.",
+      "exposure": "exposed",
+      "field_id": "budget_association_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BUDGET",
+      "source_field": "BudgetAssociationStatus",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'BudgetName' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance.",
+      "exposure": "exposed",
+      "field_id": "budget_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BUDGET",
+      "source_field": "BudgetName",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'BudgetStatus' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance.",
+      "exposure": "exposed",
+      "field_id": "budget_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BUDGET",
+      "source_field": "BudgetStatus",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'BusinessName' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "business_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "BusinessName",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CampaignId' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "campaign_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignId",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CampaignLabels' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance.",
+      "exposure": "exposed",
+      "field_id": "campaign_labels",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignLabels",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CampaignName' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "campaign_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignName",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CampaignStatus' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "campaign_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignStatus",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CampaignType' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, AdPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "campaign_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CAMPAIGN",
+      "source_field": "CampaignType",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'City' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "city",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "City",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ClickSharePercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "click_share_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "ClickSharePercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Clicks' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BASIC",
+      "source_field": "Clicks",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CompletedVideoViews' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "completed_video_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO VIEW",
+      "source_field": "CompletedVideoViews",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ConversionDelay' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "conversion_delay",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionDelay",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ConversionRate' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "conversion_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionRate",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Conversions' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "conversions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONVERSIONS",
+      "source_field": "Conversions",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ConversionsQualified' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "conversions_qualified",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ConversionsQualified",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CostPerAssist' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "cost_per_assist",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "CostPerAssist",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CostPerConversion' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "cost_per_conversion",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "CostPerConversion",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CostPerDownload' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "cost_per_download",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "CostPerDownload",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CostPerInstall' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "cost_per_install",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "CostPerInstall",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CostPerSale' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "cost_per_sale",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "CostPerSale",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Country' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "Country",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'County' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "county",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "County",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CPI' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "cpi",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "CPI",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CPP' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "cpp",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "CPP",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CPS' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "cps",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "CPS",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Ctr' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "ctr",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BASIC",
+      "source_field": "Ctr",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CurrencyCode' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "currency_code",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ACCOUNT",
+      "source_field": "CurrencyCode",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CurrentMaxCpc' (attribute -- guide 'Columns that group the data'). Available in: KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "current_max_cpc",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "KEYWORD",
+      "source_field": "CurrentMaxCpc",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CustomParameters' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "custom_parameters",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DESTINATION",
+      "source_field": "CustomParameters",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CustomerId' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "customer_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ACCOUNT",
+      "source_field": "CustomerId",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'CustomerName' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "customer_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ACCOUNT",
+      "source_field": "CustomerName",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'DeliveredMatchType' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "delivered_match_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "VISITOR",
+      "source_field": "DeliveredMatchType",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'DestinationUrl' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance, KeywordPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "destination_url",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DESTINATION",
+      "source_field": "DestinationUrl",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'DeviceOS' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "device_os",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "VISITOR",
+      "source_field": "DeviceOS",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'DeviceType' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "device_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "VISITOR",
+      "source_field": "DeviceType",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'DisplayUrl' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "display_url",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "DisplayUrl",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Downloads' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "downloads",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "Downloads",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ExactMatchImpressionSharePercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "exact_match_impression_share_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "ExactMatchImpressionSharePercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ExpectedCtr' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "expected_ctr",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "KEYWORD",
+      "source_field": "ExpectedCtr",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ExtendedCost' (performance statistic -- guide 'Columns that group the data'). Available in: AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "extended_cost",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BASIC",
+      "source_field": "ExtendedCost",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'FinalAppUrl' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "final_app_url",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DESTINATION",
+      "source_field": "FinalAppUrl",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'FinalMobileUrl' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "final_mobile_url",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DESTINATION",
+      "source_field": "FinalMobileUrl",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'FinalUrl' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "final_url",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DESTINATION",
+      "source_field": "FinalUrl",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'FinalUrlSuffix' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "final_url_suffix",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DESTINATION",
+      "source_field": "FinalUrlSuffix",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'FirstPageBid' (attribute -- guide 'Columns that group the data'). Available in: KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "first_page_bid",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "KEYWORD",
+      "source_field": "FirstPageBid",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Gender' (attribute -- guide 'Columns that group the data'). Available in: AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "gender",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "VISITOR",
+      "source_field": "Gender",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Goal' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "goal",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GOAL",
+      "source_field": "Goal",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'GoalId' (attribute -- guide 'Columns that group the data'). Available in: AdGroupPerformance, AdPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "goal_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GOAL",
+      "source_field": "GoalId",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'GoalType' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "goal_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "GOAL",
+      "source_field": "GoalType",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Headline' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "headline",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "Headline",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'HistoricalAdRelevance' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, KeywordPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "historical_ad_relevance",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "KEYWORD",
+      "source_field": "HistoricalAdRelevance",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'HistoricalExpectedCtr' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, KeywordPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "historical_expected_ctr",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "KEYWORD",
+      "source_field": "HistoricalExpectedCtr",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'HistoricalLandingPageExperience' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, KeywordPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "historical_landing_page_experience",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "KEYWORD",
+      "source_field": "HistoricalLandingPageExperience",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'HistoricalQualityScore' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, KeywordPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "historical_quality_score",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "KEYWORD",
+      "source_field": "HistoricalQualityScore",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ImpressionLostToBudgetPercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "impression_lost_to_budget_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "ImpressionLostToBudgetPercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ImpressionLostToRankAggPercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "impression_lost_to_rank_agg_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "ImpressionLostToRankAggPercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ImpressionSharePercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "impression_share_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "ImpressionSharePercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Impressions' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "BASIC",
+      "source_field": "Impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Installs' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance.",
+      "exposure": "exposed",
+      "field_id": "installs",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "Installs",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Keyword' (attribute -- guide 'Columns that group the data'). Available in: KeywordPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "keyword",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "KEYWORD",
+      "source_field": "Keyword",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'KeywordId' (attribute -- guide 'Columns that group the data'). Available in: KeywordPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "keyword_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "KEYWORD",
+      "source_field": "KeywordId",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'KeywordLabels' (attribute -- guide 'Columns that group the data'). Available in: KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "keyword_labels",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "KEYWORD",
+      "source_field": "KeywordLabels",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'KeywordStatus' (attribute -- guide 'Columns that group the data'). Available in: KeywordPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "keyword_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "KEYWORD",
+      "source_field": "KeywordStatus",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LandingPageExperience' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "landing_page_experience",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "KEYWORD",
+      "source_field": "LandingPageExperience",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Language' (attribute -- guide 'Columns that group the data'). Available in: AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "language",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "VISITOR",
+      "source_field": "Language",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LocationId' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "location_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "LocationId",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LocationType' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "location_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "LocationType",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LongHeadline' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "long_headline",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "LongHeadline",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LowQualityClicks' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "low_quality_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "LOW QUALITY TRAFFIC",
+      "source_field": "LowQualityClicks",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LowQualityClicksPercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "low_quality_clicks_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "LOW QUALITY TRAFFIC",
+      "source_field": "LowQualityClicksPercent",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LowQualityConversionRate' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "low_quality_conversion_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "LOW QUALITY TRAFFIC",
+      "source_field": "LowQualityConversionRate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LowQualityConversions' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "low_quality_conversions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "LOW QUALITY TRAFFIC",
+      "source_field": "LowQualityConversions",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LowQualityConversionsQualified' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "low_quality_conversions_qualified",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "LOW QUALITY TRAFFIC",
+      "source_field": "LowQualityConversionsQualified",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LowQualityGeneralClicks' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "low_quality_general_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "LOW QUALITY TRAFFIC",
+      "source_field": "LowQualityGeneralClicks",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LowQualityImpressions' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "low_quality_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "LOW QUALITY TRAFFIC",
+      "source_field": "LowQualityImpressions",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LowQualityImpressionsPercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "low_quality_impressions_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "LOW QUALITY TRAFFIC",
+      "source_field": "LowQualityImpressionsPercent",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'LowQualitySophisticatedClicks' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "low_quality_sophisticated_clicks",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "LOW QUALITY TRAFFIC",
+      "source_field": "LowQualitySophisticatedClicks",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Mainline1Bid' (attribute -- guide 'Columns that group the data'). Available in: KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "mainline1_bid",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "KEYWORD",
+      "source_field": "Mainline1Bid",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'MainlineBid' (attribute -- guide 'Columns that group the data'). Available in: KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "mainline_bid",
+      "kind": "dimension",
+      "physical_type": "decimal",
+      "section": "KEYWORD",
+      "source_field": "MainlineBid",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'MetroArea' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "metro_area",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "MetroArea",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'MostSpecificLocation' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "most_specific_location",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "MostSpecificLocation",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Neighborhood' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "neighborhood",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "Neighborhood",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Network' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "network",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "VISITOR",
+      "source_field": "Network",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'NewCustomerConversionRate' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "new_customer_conversion_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "NEW CUSTOMER",
+      "source_field": "NewCustomerConversionRate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'NewCustomerConversions' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "new_customer_conversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "NEW CUSTOMER",
+      "source_field": "NewCustomerConversions",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'NewCustomerCount' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "new_customer_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "NEW CUSTOMER",
+      "source_field": "NewCustomerCount",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'NewCustomerCPA' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "new_customer_cpa",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "NEW CUSTOMER",
+      "source_field": "NewCustomerCPA",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'NewCustomerReturnOnAdSpend' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "new_customer_return_on_ad_spend",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "NEW CUSTOMER",
+      "source_field": "NewCustomerReturnOnAdSpend",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'NewCustomerRevenue' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "new_customer_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "NEW CUSTOMER",
+      "source_field": "NewCustomerRevenue",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'NewCustomerSpend' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "new_customer_spend",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "NEW CUSTOMER",
+      "source_field": "NewCustomerSpend",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Path1' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "path1",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "Path1",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Path2' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "path2",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "Path2",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'PhoneCalls' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance.",
+      "exposure": "exposed",
+      "field_id": "phone_calls",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CALL TRACKING",
+      "source_field": "PhoneCalls",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'PhoneImpressions' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance.",
+      "exposure": "exposed",
+      "field_id": "phone_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CALL TRACKING",
+      "source_field": "PhoneImpressions",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'PostClickDownloadRate' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "post_click_download_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "PostClickDownloadRate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'PostClickInstallRate' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "post_click_install_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "PostClickInstallRate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'PostInstallPurchaseRate' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "post_install_purchase_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "PostInstallPurchaseRate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'PostInstallSubscriptionRate' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "post_install_subscription_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "PostInstallSubscriptionRate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'PostalCode' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "postal_code",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "PostalCode",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ProximityTargetLocation' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "proximity_target_location",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "ProximityTargetLocation",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Ptr' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "ptr",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CALL TRACKING",
+      "source_field": "Ptr",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Purchases' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "purchases",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "Purchases",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'QualityImpact' (attribute -- guide 'Columns that group the data'). Available in: KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "quality_impact",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "KEYWORD",
+      "source_field": "QualityImpact",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'QualityScore' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "quality_score",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "KEYWORD",
+      "source_field": "QualityScore",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Radius' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "radius",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "LOCATION",
+      "source_field": "Radius",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'RelativeCtr' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "relative_ctr",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "RelativeCtr",
+      "tier": "standard"
+    },
+    {
+      "description": "Report surface marker for 'AdDynamicTextPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: AdDynamicTextPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_ad_dynamic_text_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "AdDynamicTextPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'AdExtensionByAdReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: AdExtensionByAdReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_ad_extension_by_ad",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "AdExtensionByAdReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'AdExtensionByKeywordReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: AdExtensionByKeywordReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_ad_extension_by_keyword",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "AdExtensionByKeywordReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'AdExtensionDetailReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: AdExtensionDetailReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_ad_extension_detail",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "AdExtensionDetailReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'AppsPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: AppsPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_apps_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "AppsPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'AssetGroupPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: AssetGroupPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_asset_group_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "AssetGroupPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'AssetPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: AssetPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_asset_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "AssetPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'AudiencePerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: AudiencePerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_audience_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "AudiencePerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'BidStrategyReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: BidStrategyReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_bid_strategy",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "BidStrategyReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'BudgetSummaryReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: BudgetSummaryReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_budget_summary",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "BudgetSummaryReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'CallDetailReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: CallDetailReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_call_detail",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "CallDetailReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'CategoryClickCoverageReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: CategoryClickCoverageReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_category_click_coverage",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "CategoryClickCoverageReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'CategoryInsightsReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: CategoryInsightsReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_category_insights",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "CategoryInsightsReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'CombinationPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: CombinationPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_combination_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "CombinationPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'ConversionPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: ConversionPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_conversion_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "ConversionPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'DestinationUrlPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: DestinationUrlPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_destination_url_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "DestinationUrlPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'DSAAutoTargetPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: DSAAutoTargetPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_dsa_auto_target_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "DSAAutoTargetPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'DSACategoryPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: DSACategoryPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_dsa_category_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "DSACategoryPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'DSASearchQueryPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: DSASearchQueryPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_dsa_search_query_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "DSASearchQueryPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'FeedItemPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: FeedItemPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_feed_item_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "FeedItemPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'GoalsAndFunnelsReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: GoalsAndFunnelsReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_goals_and_funnels",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "GoalsAndFunnelsReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'HotelDimensionPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: HotelDimensionPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_hotel_dimension_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "HotelDimensionPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'HotelGroupPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: HotelGroupPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_hotel_group_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "HotelGroupPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'MMMPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: MMMPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_mmm_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "MMMPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'MSClickIdPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: MSClickIdPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_ms_click_id_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "MSClickIdPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'NegativeKeywordConflictReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: NegativeKeywordConflictReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_negative_keyword_conflict",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "NegativeKeywordConflictReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'ProductDimensionPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: ProductDimensionPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_product_dimension_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "ProductDimensionPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'ProductMatchCountReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: ProductMatchCountReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_product_match_count",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "ProductMatchCountReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'ProductNegativeKeywordConflictReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: ProductNegativeKeywordConflictReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_product_negative_keyword_conflict",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "ProductNegativeKeywordConflictReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'ProductPartitionPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: ProductPartitionPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_product_partition_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "ProductPartitionPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'ProductPartitionUnitPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: ProductPartitionUnitPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_product_partition_unit_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "ProductPartitionUnitPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'ProductSearchQueryPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: ProductSearchQueryPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_product_search_query_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "ProductSearchQueryPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'ProfessionalDemographicsAudienceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: ProfessionalDemographicsAudienceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_professional_demographics_audience",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "ProfessionalDemographicsAudienceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'PublisherUsagePerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: PublisherUsagePerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_publisher_usage_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "PublisherUsagePerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'SearchCampaignChangeHistoryReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: SearchCampaignChangeHistoryReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_search_campaign_change_history",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "SearchCampaignChangeHistoryReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'SearchInsightPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: SearchInsightPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_search_insight_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "SearchInsightPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'SearchTermLandingPageReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: SearchTermLandingPageReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_search_term_landing_page",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "SearchTermLandingPageReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'ShareOfVoiceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: ShareOfVoiceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_share_of_voice",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "ShareOfVoiceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'TravelQueryInsightReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: TravelQueryInsightReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_travel_query_insight",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "TravelQueryInsightReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Report surface marker for 'UserLocationPerformanceReportRequest' (v13 reporting data object). This report type exists in the API but its column enum is NOT yet integrally cataloged -- it is excluded (report-type-next-tier), never planned. The 8 covered report types are the executable surface of catalog_daily.",
+      "exclusion_reason": "report-type-next-tier: UserLocationPerformanceReportRequest is a distinct v13 report surface whose column enum is not yet integrally cataloged (the catalog integrally covers the 8 primary report types: Campaign, Account, AdGroup, Ad, Keyword, SearchQuery, Geographic, AgeGenderAudience). It ships in a next tier with its full live XSD enum -- never 'planned'.",
+      "exposure": "excluded",
+      "field_id": "report_surface_user_location_performance",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REPORT SURFACES",
+      "source_field": "UserLocationPerformanceReportRequest",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ReturnOnAdSpend' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "return_on_ad_spend",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ReturnOnAdSpend",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Revenue' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "Revenue",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'RevenuePerAssist' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "revenue_per_assist",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "RevenuePerAssist",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'RevenuePerConversion' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "revenue_per_conversion",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "RevenuePerConversion",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'RevenuePerInstall' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "revenue_per_install",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "RevenuePerInstall",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'RevenuePerSale' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "revenue_per_sale",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "RevenuePerSale",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Sales' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance.",
+      "exposure": "exposed",
+      "field_id": "sales",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "Sales",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'SearchQuery' (attribute -- guide 'Columns that group the data'). Available in: SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "search_query",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "QUERY",
+      "source_field": "SearchQuery",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Spend' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "spend",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "BASIC",
+      "source_field": "Spend",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'State' (attribute -- guide 'Columns that group the data'). Available in: GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "state",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LOCATION",
+      "source_field": "State",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Status' (attribute -- guide 'Columns that group the data'). Available in: AdGroupPerformance.",
+      "exposure": "exposed",
+      "field_id": "status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD GROUP",
+      "source_field": "Status",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'Subscriptions' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, GeographicPerformance.",
+      "exposure": "exposed",
+      "field_id": "subscriptions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "APP CAMPAIGNS",
+      "source_field": "Subscriptions",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TimePeriod' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience. Required for every aggregation except Summary; carries the Daily bucket date (canonical 'date').",
+      "exposure": "exposed",
+      "field_id": "time_period",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "TIME",
+      "source_field": "TimePeriod",
+      "tier": "core"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TitlePart1' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "title_part1",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "TitlePart1",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TitlePart2' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "title_part2",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "TitlePart2",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TitlePart3' (attribute -- guide 'Columns that group the data'). Available in: AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "title_part3",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "AD",
+      "source_field": "TitlePart3",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TopImpressionRatePercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance, AgeGenderAudience. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "top_impression_rate_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "TopImpressionRatePercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TopImpressionShareLostToBudgetPercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "top_impression_share_lost_to_budget_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "TopImpressionShareLostToBudgetPercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TopImpressionShareLostToRankPercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "top_impression_share_lost_to_rank_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "TopImpressionShareLostToRankPercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TopImpressionSharePercent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "top_impression_share_percent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PROMINENCE",
+      "source_field": "TopImpressionSharePercent",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TopVsOther' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, SearchQueryPerformance.",
+      "exposure": "exposed",
+      "field_id": "top_vs_other",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "VISITOR",
+      "source_field": "TopVsOther",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TotalWatchTimeInMS' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "total_watch_time_in_ms",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO VIEW",
+      "source_field": "TotalWatchTimeInMS",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'TrackingTemplate' (attribute -- guide 'Columns that group the data'). Available in: CampaignPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance.",
+      "exposure": "exposed",
+      "field_id": "tracking_template",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DESTINATION",
+      "source_field": "TrackingTemplate",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'UnknownCustomerConversions' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "unknown_customer_conversions",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "NEW CUSTOMER",
+      "source_field": "UnknownCustomerConversions",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'UnknownCustomerRevenue' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance.",
+      "exposure": "exposed",
+      "field_id": "unknown_customer_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "NEW CUSTOMER",
+      "source_field": "UnknownCustomerRevenue",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'VideoCompletionRate' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "video_completion_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "VIDEO VIEW",
+      "source_field": "VideoCompletionRate",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'VideoViews' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "video_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO VIEW",
+      "source_field": "VideoViews",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'VideoViewsAt25Percent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "video_views_at25_percent",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO VIEW",
+      "source_field": "VideoViewsAt25Percent",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'VideoViewsAt50Percent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "video_views_at50_percent",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO VIEW",
+      "source_field": "VideoViewsAt50Percent",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'VideoViewsAt75Percent' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance.",
+      "exposure": "exposed",
+      "field_id": "video_views_at75_percent",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "VIDEO VIEW",
+      "source_field": "VideoViewsAt75Percent",
+      "tier": "advanced"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ViewThroughConversions' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "view_through_conversions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversions",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ViewThroughConversionsQualified' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "view_through_conversions_qualified",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughConversionsQualified",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ViewThroughRate' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance. Provider-computed ratio/derived/averaged statistic: NON-ADDITIVE (AD-4) -- never SUM across rows; lands RAW at day grain when selected; prefer semantic-layer computation from stored numerators and denominators. Percent-valued CSV cells carry a trailing '%' -- coerced by CATALOG physical_type (decimal), never by column-name suffix.",
+      "exposure": "exposed",
+      "field_id": "view_through_rate",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughRate",
+      "tier": "standard"
+    },
+    {
+      "description": "Microsoft Ads v13 report column 'ViewThroughRevenue' (performance statistic -- guide 'Columns that group the data'). Available in: CampaignPerformance, AccountPerformance, AdGroupPerformance, AdPerformance, KeywordPerformance, GeographicPerformance, AgeGenderAudience.",
+      "exposure": "exposed",
+      "field_id": "view_through_revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CONVERSIONS",
+      "source_field": "ViewThroughRevenue",
+      "tier": "standard"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://learn.microsoft.com/en-us/advertising/reporting-service/reporting-data-objects?view=bingads-13"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://docs.supermetrics.com/docs/microsoft-advertising-bing-fields.md"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://raw.githubusercontent.com/airbytehq/airbyte/master/airbyte-integrations/connectors/source-bing-ads/manifest.yaml"
+    }
+  ]
+}

@@ -1,0 +1,284 @@
+{
+    "schema_version": "1.2",
+    "name": "woocommerce",
+    "display_name": "WooCommerce",
+    "public_catalog": {
+        "visibility": "public",
+        "category": "commerce_billing",
+        "onboarding_modes": [
+            "connector_pull"
+        ],
+        "verification": {
+            "status": "blocked",
+            "reason_code": "live_evidence_not_ratified",
+            "follow_up": "Ratify against a live WooCommerce store (a local WordPress + WooCommerce install is enough; no client required)."
+        }
+    },
+    "module_kind": "kpi",
+    "auth_type": "basic",
+    "report_profiles": [
+        {
+            "id": "orders_daily",
+            "display_name": "Orders (daily sales of record)",
+            "metrics": [
+                "revenue",
+                "refund_amount",
+                "orders_count"
+            ],
+            "dimensions": [
+                "date",
+                "transaction_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 100,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        },
+        {
+            "id": "catalog_daily",
+            "display_name": "Orders -- catalog-driven (any field, order grain)",
+            "metrics": [
+                "revenue",
+                "refund_amount",
+                "orders_count"
+            ],
+            "dimensions": [
+                "date",
+                "transaction_id"
+            ],
+            "extraction_capabilities": {
+                "row_limit": 100,
+                "filters_supported": true,
+                "realtime": false
+            },
+            "extraction_path": "custom_pull",
+            "verification_expected_rows_per_day": null
+        }
+    ],
+    "canonical_metric_mapping": {
+        "total": "revenue",
+        "total_refunded": "refund_amount",
+        "order": "orders_count"
+    },
+    "canonical_dimension_mapping": {
+        "order_id": "order_id",
+        "transaction_id": "transaction_id"
+    },
+    "quota": {
+        "window_seconds": 1,
+        "budget_points": 4,
+        "read_cost": 1,
+        "write_cost": 10
+    },
+    "widget_ref": "ui://core/daily-report",
+    "_quota_note": "WooCommerce imposes NO provider-side rate limit -- the API is served by the merchant's own WordPress server. The quota profile here is a COURTESY pacing budget (protect the merchant's store from an aggressive backfill), not a provider bucket. window 1s / 4 points ~= 4 req/s sustained. The real backstop is the 429 handler (core.quota.RateLimitError), which only fires if a WAF / security plugin (Wordfence, Cloudflare) in front of the store returns 429 + Retry-After. Recalibrate per store if needed.",
+    "canonical_metric_mapping_note": "WooCommerce REST API v3 Order object (verified against https://woocommerce.github.io/woocommerce-rest-api-docs/, 2026-07-21): order.total (TTC order amount, additive) -> revenue; sum of abs(order.refunds[].total) -> refund_amount (WooCommerce reports refund totals as NEGATIVE amounts; the connector takes abs() explicitly, DEDICATED positive column, NEVER subtracted silently from revenue -- decision REFERENCE shopify 15.4 / stripe 15.7); 1 per order -> orders_count. transaction_id is order.transaction_id (payment-gateway reference, OFTEN EMPTY on manual payments) exposed as a DETAIL dimension and the GA4 x WooCommerce join key (Epic 17), measured by a >=X% presence test rather than assumed present.",
+    "_sales_of_record_status_note": "Only orders with status in {completed, processing} count as a sale (decision Jean 2026-07-21). The pull filters status=completed,processing on /orders; on-hold / pending / failed / cancelled / trash are NEVER landed as revenue. This is the WooCommerce equivalent of a settled sale.",
+    "_error_map_note": "WooCommerce / WordPress REST return {code, message, data:{status}}. 401 woocommerce_rest_authentication_error = expired/invalid consumer key/secret or bad signature -> auth_expired; 403 woocommerce_rest_cannot_view = the key lacks the 'read' scope -> permission_denied; 400 rest_invalid_param / any 400 = invalid request (drift signal) -> invalid_request; 404 rest_no_route = the /wc/v3 route is absent (WooCommerce not installed / plugin disabled / wrong base URL) -> invalid_request; 5xx = the merchant's WordPress server is unstable -> provider_transient (retryable). 429 (only if a WAF/security plugin sits in front) keeps raising core.quota.RateLimitError (breaker path).",
+    "error_map": {
+        "401:woocommerce_rest_authentication_error": "auth_expired",
+        "401:woocommerce_rest_cannot_view": "auth_expired",
+        "403:woocommerce_rest_cannot_view": "permission_denied",
+        "403:woocommerce_rest_authentication_error": "permission_denied",
+        "400:rest_invalid_param": "invalid_request",
+        "400:rest_missing_callback_param": "invalid_request",
+        "404:rest_no_route": "invalid_request"
+    },
+    "_account_topology_note": "WooCommerce is store-scoped: one consumer key/secret pair = one merchant store, identified by its own base URL (https://{store}/wp-json/wc/v3). There is NO account hierarchy to discover or select. The base URL and Basic-auth credentials are resolved from the connection's Nango credential at pull time (nango_client.get_basic_credentials -- Basic auth, not OAuth). account_topology is therefore absent by design, not by omission. Env-var store URLs are FORBIDDEN (doctrine epic-25 point 5).",
+    "source_capabilities": {
+        "contract_version": "1",
+        "field_discovery": {
+            "mode": "static",
+            "allowed_targets": []
+        },
+        "fields": [
+            {
+                "field_id": "revenue",
+                "source_field": "total",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "revenue exposed by WooCommerce (order.total).",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "revenue",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "refund_amount",
+                "source_field": "total_refunded",
+                "kind": "metric",
+                "physical_type": "decimal",
+                "description": "refund amount exposed by WooCommerce (abs sum of refunds[].total).",
+                "semantic_hints": [
+                    "revenue",
+                    "currency"
+                ],
+                "canonical_target": "refund_amount",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "orders_count",
+                "source_field": "order",
+                "kind": "metric",
+                "physical_type": "integer",
+                "description": "orders count exposed by WooCommerce (1 per order).",
+                "semantic_hints": [
+                    "conversion",
+                    "count"
+                ],
+                "canonical_target": "orders_count",
+                "aggregation": "sum",
+                "non_additive": false
+            },
+            {
+                "field_id": "date",
+                "source_field": "date_created",
+                "kind": "dimension",
+                "physical_type": "date",
+                "description": "date exposed by WooCommerce (order.date_created).",
+                "semantic_hints": [
+                    "date"
+                ],
+                "canonical_target": "date",
+                "aggregation": "none",
+                "non_additive": false
+            },
+            {
+                "field_id": "transaction_id",
+                "source_field": "transaction_id",
+                "kind": "dimension",
+                "physical_type": "string",
+                "description": "payment transaction id exposed by WooCommerce (order.transaction_id).",
+                "semantic_hints": [
+                    "identifier"
+                ],
+                "canonical_target": "transaction_id",
+                "aggregation": "none",
+                "non_additive": false
+            }
+        ],
+        "reports": [
+            {
+                "id": "orders_daily",
+                "selection_mode": "exact_bundle",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "revenue",
+                    "refund_amount",
+                    "orders_count"
+                ],
+                "dimensions": [
+                    "date",
+                    "transaction_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "transaction_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "page",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 100,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull"
+                }
+            },
+            {
+                "id": "catalog_daily",
+                "selection_mode": "catalog_driven",
+                "availability": {
+                    "status": "selectable"
+                },
+                "metrics": [
+                    "revenue",
+                    "refund_amount",
+                    "orders_count"
+                ],
+                "dimensions": [
+                    "date",
+                    "transaction_id"
+                ],
+                "supported_grains": [
+                    [
+                        "date",
+                        "transaction_id"
+                    ]
+                ],
+                "compatibility": [],
+                "filters": [
+                    {
+                        "field_id": "date",
+                        "operators": [
+                            "gte",
+                            "lte"
+                        ]
+                    }
+                ],
+                "pagination": {
+                    "mode": "page",
+                    "completeness": "bounded",
+                    "max_pages": 1000,
+                    "row_limit": 100,
+                    "truncation_signal": "logged"
+                },
+                "quota_cost": {
+                    "read_points": 1,
+                    "unit": "request"
+                },
+                "incremental": {
+                    "mode": "date_window",
+                    "cursor_field": null
+                },
+                "cadence": {
+                    "minimum_interval_minutes": 1440,
+                    "supported_modes": [
+                        "manual",
+                        "daily"
+                    ]
+                },
+                "dispatch": {
+                    "callable": "pull_catalog_daily"
+                }
+            }
+        ]
+    }
+}

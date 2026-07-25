@@ -1,0 +1,39 @@
+# EXAMPLE dbt profile for toorow.
+#
+# Copy to ~/.dbt/profiles.yml (or set DBT_PROFILES_DIR) and fill in real values.
+# NEVER commit the real profiles.yml — it is gitignored. No secrets in repo
+# (ARCHITECTURE-SPINE §Consistency: secrets only in Secret Manager / env).
+#
+# Story 1.4 adds a 'local' DuckDB target for the local dev loop (zero infra).
+# Switch to 'bigquery' target for real GCP without any SQL model changes.
+#
+# Auth: prefer Application Default Credentials (gcloud auth application-default
+# login) or the toorow-local-dev service account key sourced out-of-band —
+# do NOT paste a key into this file.
+
+connector:
+  target: local   # Default: DuckDB local fallback (Story 1.4)
+  outputs:
+
+    # --- LOCAL FALLBACK (DuckDB) ---
+    # Zero infrastructure. Fastest dev loop.
+    # TOOROW_DUCKDB_PATH env var sets the database file path.
+    local:
+      type: duckdb
+      path: "{{ env_var('TOOROW_DUCKDB_PATH', 'server/modules/google-analytics/seeds/local.duckdb') }}"
+      # DuckDB schema config: staging models land in 'main_staging', marts in 'main_marts'
+      # (dbt-duckdb suffixes schema names with the custom_schema_name)
+      threads: 1
+
+    # --- PRODUCTION (BigQuery) ---
+    # Switch to this target for real GCP. No SQL model changes required.
+    bigquery:
+      type: bigquery
+      method: oauth  # or service-account (keyfile path via env, not committed)
+      project: "{{ env_var('GCP_PROJECT_ID') }}"  # dev GCP project id (from infra output)
+      dataset: marts  # default dataset for models; sources read from raw_* datasets
+      location: EU
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 300
+      job_retries: 1

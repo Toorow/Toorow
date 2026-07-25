@@ -1,0 +1,17 @@
+{
+  "id": "post_deploy_regressions",
+  "display_name": "Régressions post-déploiement",
+  "metrics": ["average_position", "clicks", "impressions"],
+  "dimensions": ["date", "page"],
+  "layout": {
+    "chart_type": "line",
+    "order_by": "date",
+    "top_n": 20
+  },
+  "narrative_prompt": "Analyse SEO post-déploiement: compare position et clics ±7j autour des événements de contexte de type déploiement. Cite l'événement. Limite à 150 chars.",
+  "date_window": {
+    "default_days": 60,
+    "min_days": 21,
+    "max_days": 180
+  }
+}

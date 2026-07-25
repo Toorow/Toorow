@@ -1,0 +1,50 @@
+[
+  {
+    "channel": "google / organic",
+    "sessions": 19406.0
+  },
+  {
+    "channel": "google / cpc",
+    "sessions": 9277.0
+  },
+  {
+    "channel": "direct",
+    "sessions": 6225.0
+  },
+  {
+    "channel": "facebook / cpc",
+    "sessions": 4995.0
+  },
+  {
+    "channel": "newsletter / email",
+    "sessions": 3140.0
+  },
+  {
+    "channel": "bing / organic",
+    "sessions": 2468.0
+  },
+  {
+    "channel": "linkedin / cpc",
+    "sessions": 2002.0
+  },
+  {
+    "channel": "youtube / referral",
+    "sessions": 1433.0
+  },
+  {
+    "channel": "partner.example.com / referral",
+    "sessions": 1187.0
+  },
+  {
+    "channel": "instagram / social",
+    "sessions": 929.0
+  },
+  {
+    "channel": "reddit / referral",
+    "sessions": 691.0
+  },
+  {
+    "channel": "unknown",
+    "sessions": 609.0
+  }
+]

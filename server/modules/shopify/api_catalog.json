@@ -1,0 +1,821 @@
+{
+  "api_version": "2026-07",
+  "catalog_version": "1",
+  "connector": "shopify",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "The city, town, or village of the billing address.",
+      "exposure": "exposed",
+      "field_id": "billing_address_city",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing_address.city",
+      "tier": "advanced"
+    },
+    {
+      "description": "The name of the country of the billing address.",
+      "exposure": "exposed",
+      "field_id": "billing_address_country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing_address.country",
+      "tier": "advanced"
+    },
+    {
+      "description": "The two-letter code (ISO 3166-1 alpha-2) for the country of the billing address.",
+      "exposure": "exposed",
+      "field_id": "billing_address_country_code",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing_address.country_code",
+      "tier": "advanced"
+    },
+    {
+      "description": "The name of the region (province, state, prefecture, etc.) of the billing address.",
+      "exposure": "exposed",
+      "field_id": "billing_address_province",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing_address.province",
+      "tier": "advanced"
+    },
+    {
+      "description": "The postal code of the billing address.",
+      "exposure": "exposed",
+      "field_id": "billing_address_zip",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "BILLING ADDRESS",
+      "source_field": "billing_address.zip",
+      "tier": "advanced"
+    },
+    {
+      "description": "Whether the customer consented to receive email updates from the shop.",
+      "exposure": "exposed",
+      "field_id": "buyer_accepts_marketing",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "ORDER",
+      "source_field": "buyer_accepts_marketing",
+      "tier": "core"
+    },
+    {
+      "description": "The reason why the order was canceled. Values: customer, fraud, inventory, declined, other.",
+      "exposure": "exposed",
+      "field_id": "cancel_reason",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "cancel_reason",
+      "tier": "core"
+    },
+    {
+      "description": "The date and time when the order was canceled.",
+      "exposure": "exposed",
+      "field_id": "cancelled_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ORDER",
+      "source_field": "cancelled_at",
+      "tier": "core"
+    },
+    {
+      "description": "The date and time when the order was closed.",
+      "exposure": "exposed",
+      "field_id": "closed_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ORDER",
+      "source_field": "closed_at",
+      "tier": "core"
+    },
+    {
+      "description": "Whether inventory has been reserved for the order.",
+      "exposure": "exposed",
+      "field_id": "confirmed",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "ORDER",
+      "source_field": "confirmed",
+      "tier": "core"
+    },
+    {
+      "description": "The date and time when the order was created. Day-grain date extracted for reporting.",
+      "exposure": "exposed",
+      "field_id": "created_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ORDER",
+      "source_field": "created_at",
+      "tier": "core"
+    },
+    {
+      "description": "The three-letter code (ISO 4217 format) for the shop currency.",
+      "exposure": "exposed",
+      "field_id": "currency",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "currency",
+      "tier": "core"
+    },
+    {
+      "description": "The current subtotal price of the order in the shop currency after returns and adjustments.",
+      "exposure": "exposed",
+      "field_id": "current_subtotal_price",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "current_subtotal_price",
+      "tier": "core"
+    },
+    {
+      "description": "The current total price of the order in the shop currency. Includes returns and adjustments.",
+      "exposure": "exposed",
+      "field_id": "current_total_price",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "current_total_price",
+      "tier": "core"
+    },
+    {
+      "description": "The current total tax of the order in the shop currency after returns and adjustments.",
+      "exposure": "exposed",
+      "field_id": "current_total_tax",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "current_total_tax",
+      "tier": "core"
+    },
+    {
+      "description": "Whether the customer has consented to receive marketing material by email.",
+      "exposure": "exposed",
+      "field_id": "customer_accepts_marketing",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "CUSTOMER",
+      "source_field": "customer.accepts_marketing",
+      "tier": "standard"
+    },
+    {
+      "description": "The city from the customer's default address.",
+      "exposure": "exposed",
+      "field_id": "customer_city",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER GEO",
+      "source_field": "customer.default_address.city",
+      "tier": "standard"
+    },
+    {
+      "description": "The country from the customer's default address.",
+      "exposure": "exposed",
+      "field_id": "customer_country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER GEO",
+      "source_field": "customer.default_address.country",
+      "tier": "standard"
+    },
+    {
+      "description": "The country code from the customer's default address.",
+      "exposure": "exposed",
+      "field_id": "customer_country_code",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER GEO",
+      "source_field": "customer.default_address.country_code",
+      "tier": "standard"
+    },
+    {
+      "description": "The date and time when the customer was created.",
+      "exposure": "exposed",
+      "field_id": "customer_created_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "CUSTOMER",
+      "source_field": "customer.created_at",
+      "tier": "standard"
+    },
+    {
+      "description": "The unique email address of the customer.",
+      "exposure": "exposed",
+      "field_id": "customer_email",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER",
+      "source_field": "customer.email",
+      "tier": "standard"
+    },
+    {
+      "description": "The customer's first name.",
+      "exposure": "exposed",
+      "field_id": "customer_first_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER",
+      "source_field": "customer.first_name",
+      "tier": "standard"
+    },
+    {
+      "description": "The ID of the customer.",
+      "exposure": "exposed",
+      "field_id": "customer_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER",
+      "source_field": "customer.id",
+      "tier": "standard"
+    },
+    {
+      "description": "The customer's last name.",
+      "exposure": "exposed",
+      "field_id": "customer_last_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER",
+      "source_field": "customer.last_name",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of orders associated with this customer.",
+      "exposure": "exposed",
+      "field_id": "customer_orders_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "CUSTOMER",
+      "source_field": "customer.orders_count",
+      "tier": "standard"
+    },
+    {
+      "description": "The customer's phone number.",
+      "exposure": "exposed",
+      "field_id": "customer_phone",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER",
+      "source_field": "customer.phone",
+      "tier": "standard"
+    },
+    {
+      "description": "Tags that the shop owner has attached to the customer.",
+      "exposure": "exposed",
+      "field_id": "customer_tags",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "CUSTOMER",
+      "source_field": "customer.tags",
+      "tier": "standard"
+    },
+    {
+      "description": "The total amount of money that the customer has spent across their order history.",
+      "exposure": "exposed",
+      "field_id": "customer_total_spent",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "CUSTOMER",
+      "source_field": "customer.total_spent",
+      "tier": "standard"
+    },
+    {
+      "description": "date exposed by Shopify. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "created_at",
+      "tier": "core"
+    },
+    {
+      "description": "The customer's email address.",
+      "exposure": "exposed",
+      "field_id": "email",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "email",
+      "tier": "core"
+    },
+    {
+      "description": "The status of payments associated with the order. Values: pending, authorized, partially_paid, paid, partially_refunded, refunded, voided.",
+      "exposure": "exposed",
+      "field_id": "financial_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "financial_status",
+      "tier": "core"
+    },
+    {
+      "description": "The order's status in terms of fulfilled line items. Values: fulfilled, null, partial, restocked.",
+      "exposure": "exposed",
+      "field_id": "fulfillment_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "fulfillment_status",
+      "tier": "core"
+    },
+    {
+      "description": "The ID of the order, used for API calls. Referred to as order ID.",
+      "exposure": "exposed",
+      "field_id": "id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "id",
+      "tier": "core"
+    },
+    {
+      "description": "The URL for the page where the buyer landed when they entered the shop.",
+      "exposure": "exposed",
+      "field_id": "landing_site",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TRAFFIC SOURCE",
+      "source_field": "landing_site",
+      "tier": "standard"
+    },
+    {
+      "description": "How far along an order is in terms of line item fulfillment.",
+      "exposure": "exposed",
+      "field_id": "line_item_fulfillment_status",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].fulfillment_status",
+      "tier": "standard"
+    },
+    {
+      "description": "Whether the line item is a gift card.",
+      "exposure": "exposed",
+      "field_id": "line_item_gift_card",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].gift_card",
+      "tier": "standard"
+    },
+    {
+      "description": "A unique identifier for a line item in the order.",
+      "exposure": "exposed",
+      "field_id": "line_item_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].id",
+      "tier": "standard"
+    },
+    {
+      "description": "The name of the product variant (title + variant title).",
+      "exposure": "exposed",
+      "field_id": "line_item_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].name",
+      "tier": "standard"
+    },
+    {
+      "description": "The price of the item before discounts have been applied in the shop currency.",
+      "exposure": "exposed",
+      "field_id": "line_item_price",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].price",
+      "tier": "standard"
+    },
+    {
+      "description": "The number of items ordered.",
+      "exposure": "exposed",
+      "field_id": "line_item_quantity",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].quantity",
+      "tier": "standard"
+    },
+    {
+      "description": "The item's SKU (stock keeping unit).",
+      "exposure": "exposed",
+      "field_id": "line_item_sku",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].sku",
+      "tier": "standard"
+    },
+    {
+      "description": "The title of the product in the order at time of sale.",
+      "exposure": "exposed",
+      "field_id": "line_item_title",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].title",
+      "tier": "standard"
+    },
+    {
+      "description": "The total amount of the discount allocated to the line item in the shop currency.",
+      "exposure": "exposed",
+      "field_id": "line_item_total_discount",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].total_discount",
+      "tier": "standard"
+    },
+    {
+      "description": "The name of the item's supplier.",
+      "exposure": "exposed",
+      "field_id": "line_item_vendor",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LINE ITEM",
+      "source_field": "line_items[].vendor",
+      "tier": "standard"
+    },
+    {
+      "description": "The order name, generated by combining the order_number property with the order prefix and suffix configured in merchant settings.",
+      "exposure": "exposed",
+      "field_id": "name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "name",
+      "tier": "core"
+    },
+    {
+      "description": "An optional note that a shop owner can attach to the order.",
+      "exposure": "exposed",
+      "field_id": "note",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "note",
+      "tier": "core"
+    },
+    {
+      "description": "Count of orders (1 per order record).",
+      "exposure": "exposed",
+      "field_id": "order",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "ORDER",
+      "source_field": "order",
+      "tier": "core"
+    },
+    {
+      "description": "The order's position in the shop's count of orders starting at 1001.",
+      "exposure": "exposed",
+      "field_id": "order_number",
+      "kind": "dimension",
+      "physical_type": "integer",
+      "section": "ORDER",
+      "source_field": "order_number",
+      "tier": "core"
+    },
+    {
+      "description": "orders count exposed by Shopify. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+      "exposure": "exposed",
+      "field_id": "orders_count",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "order",
+      "tier": "core"
+    },
+    {
+      "description": "The list of payment gateways used for the order.",
+      "exposure": "exposed",
+      "field_id": "payment_gateway_names",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "payment_gateway_names",
+      "tier": "core"
+    },
+    {
+      "description": "The customer's phone number for receiving SMS notifications.",
+      "exposure": "exposed",
+      "field_id": "phone",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "phone",
+      "tier": "core"
+    },
+    {
+      "description": "The three-letter code (ISO 4217 format) for the currency that the customer used at checkout.",
+      "exposure": "exposed",
+      "field_id": "presentment_currency",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "presentment_currency",
+      "tier": "core"
+    },
+    {
+      "description": "The date and time when an order was submitted.",
+      "exposure": "exposed",
+      "field_id": "processed_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ORDER",
+      "source_field": "processed_at",
+      "tier": "core"
+    },
+    {
+      "description": "The ID of the product that the line item belongs to.",
+      "exposure": "exposed",
+      "field_id": "product_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PRODUCT",
+      "source_field": "line_items[].product_id",
+      "tier": "standard"
+    },
+    {
+      "description": "The website where the customer clicked a link to the shop.",
+      "exposure": "exposed",
+      "field_id": "referring_site",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "TRAFFIC SOURCE",
+      "source_field": "referring_site",
+      "tier": "standard"
+    },
+    {
+      "description": "refund amount exposed by Shopify. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+      "exposure": "exposed",
+      "field_id": "refund_amount",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "total_refunded",
+      "tier": "core"
+    },
+    {
+      "description": "The date and time when the refund was created.",
+      "exposure": "exposed",
+      "field_id": "refund_created_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "REFUND",
+      "source_field": "refunds[].created_at",
+      "tier": "core"
+    },
+    {
+      "description": "The unique identifier of the refund.",
+      "exposure": "exposed",
+      "field_id": "refund_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REFUND",
+      "source_field": "refunds[].id",
+      "tier": "core"
+    },
+    {
+      "description": "An optional note attached to a refund.",
+      "exposure": "exposed",
+      "field_id": "refund_note",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "REFUND",
+      "source_field": "refunds[].note",
+      "tier": "core"
+    },
+    {
+      "description": "The amount of the refund transaction. Sum across transactions for total_refunded.",
+      "exposure": "exposed",
+      "field_id": "refund_transaction_amount",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "REFUND",
+      "source_field": "refunds[].transactions[].amount",
+      "tier": "core"
+    },
+    {
+      "description": "revenue exposed by Shopify. Platform contract field carried from the module manifest; official-name divergence (if any) is documented in ROLLOUT_NOTES.md and adjudicated by the 25.6 live probe.",
+      "exposure": "exposed",
+      "field_id": "revenue",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "PLATFORM CONTRACT",
+      "source_field": "total_price",
+      "tier": "core"
+    },
+    {
+      "description": "The city, town, or village of the shipping address.",
+      "exposure": "exposed",
+      "field_id": "shipping_address_city",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SHIPPING ADDRESS",
+      "source_field": "shipping_address.city",
+      "tier": "advanced"
+    },
+    {
+      "description": "The name of the country of the shipping address.",
+      "exposure": "exposed",
+      "field_id": "shipping_address_country",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SHIPPING ADDRESS",
+      "source_field": "shipping_address.country",
+      "tier": "advanced"
+    },
+    {
+      "description": "The two-letter code (ISO 3166-1 alpha-2) for the country of the shipping address.",
+      "exposure": "exposed",
+      "field_id": "shipping_address_country_code",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SHIPPING ADDRESS",
+      "source_field": "shipping_address.country_code",
+      "tier": "advanced"
+    },
+    {
+      "description": "The name of the region (province, state, prefecture, etc.) of the shipping address.",
+      "exposure": "exposed",
+      "field_id": "shipping_address_province",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SHIPPING ADDRESS",
+      "source_field": "shipping_address.province",
+      "tier": "advanced"
+    },
+    {
+      "description": "The postal code of the shipping address.",
+      "exposure": "exposed",
+      "field_id": "shipping_address_zip",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SHIPPING ADDRESS",
+      "source_field": "shipping_address.zip",
+      "tier": "advanced"
+    },
+    {
+      "description": "The SKU of the product variant (product-level alias of line_item_sku).",
+      "exposure": "exposed",
+      "field_id": "sku",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PRODUCT",
+      "source_field": "line_items[].sku",
+      "tier": "standard"
+    },
+    {
+      "description": "The source of the checkout. Values: web, pos, shopify_draft_order, iphone, android.",
+      "exposure": "exposed",
+      "field_id": "source_name",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "source_name",
+      "tier": "core"
+    },
+    {
+      "description": "The price of the order in the shop currency after discounts but before shipping and taxes.",
+      "exposure": "exposed",
+      "field_id": "subtotal_price",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "subtotal_price",
+      "tier": "core"
+    },
+    {
+      "description": "Tags attached to the order, formatted as a string of comma-separated values.",
+      "exposure": "exposed",
+      "field_id": "tags",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "tags",
+      "tier": "core"
+    },
+    {
+      "description": "Whether this is a test order.",
+      "exposure": "exposed",
+      "field_id": "test",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "ORDER",
+      "source_field": "test",
+      "tier": "core"
+    },
+    {
+      "description": "The total discounts applied to the price of the order in the shop currency.",
+      "exposure": "exposed",
+      "field_id": "total_discounts",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "total_discounts",
+      "tier": "core"
+    },
+    {
+      "description": "The sum of all line item prices in the shop currency.",
+      "exposure": "exposed",
+      "field_id": "total_line_items_price",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "total_line_items_price",
+      "tier": "core"
+    },
+    {
+      "description": "The total outstanding amount of the order in the shop currency.",
+      "exposure": "exposed",
+      "field_id": "total_outstanding",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "total_outstanding",
+      "tier": "core"
+    },
+    {
+      "description": "The sum of all line item prices, discounts, shipping, taxes, and tips in the shop currency.",
+      "exposure": "exposed",
+      "field_id": "total_price",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "total_price",
+      "tier": "core"
+    },
+    {
+      "description": "The total amount refunded on this order. Positive value. Never subtracted from total_price silently.",
+      "exposure": "exposed",
+      "field_id": "total_refunded",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "REFUND",
+      "source_field": "total_refunded",
+      "tier": "core"
+    },
+    {
+      "description": "The sum of all the taxes applied to the order in the shop currency.",
+      "exposure": "exposed",
+      "field_id": "total_tax",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "ORDER",
+      "source_field": "total_tax",
+      "tier": "core"
+    },
+    {
+      "description": "The ID of the payment transaction (kind=sale/capture) from the order's transactions array. Used as the GA4 x Shopify join key. Absent on draft/free orders.",
+      "exposure": "exposed",
+      "field_id": "transaction_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "ORDER",
+      "source_field": "transaction_id",
+      "tier": "core"
+    },
+    {
+      "description": "The date and time when the order was last modified.",
+      "exposure": "exposed",
+      "field_id": "updated_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "ORDER",
+      "source_field": "updated_at",
+      "tier": "core"
+    },
+    {
+      "description": "The ID of the product variant.",
+      "exposure": "exposed",
+      "field_id": "variant_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "PRODUCT",
+      "source_field": "line_items[].variant_id",
+      "tier": "standard"
+    }
+  ],
+  "generated_at": "2026-07-21T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "official",
+      "url": "https://shopify.dev/docs/api/admin-rest/latest/resources/order"
+    },
+    {
+      "fetched_at": "2026-07-21",
+      "kind": "enrichment",
+      "url": "https://docs.supermetrics.com/docs/shopify-fields.md"
+    }
+  ]
+}

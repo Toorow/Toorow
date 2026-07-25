@@ -1,0 +1,263 @@
+/**
+ * first-publication.css — page-specific styles for FirstPublication.
+ *
+ * Faithful port of the inline <style> block in
+ *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
+ *     mockups/first-publication.html
+ *
+ * Shell/layout classes (frame, sidebar, topbar, object, local-tabs, full-main,
+ * page-header, header-actions, panel, signal-label, signal-mark, action-link,
+ * buttons) live in application.css and are global. This file only adds the
+ * first-publication page widgets: publication-grid, readiness-panel (head /
+ * score / grid / item / foot), phase-panel (phase-list / phase / phase-mark /
+ * phase-copy / phase-time / history-progress) and the degraded-note.
+ *
+ * The mockup's <style> ships two size passes: a compact base and a "full-main"
+ * override pass (the second half of its style block) that enlarges paddings and
+ * type. Since this React screen always renders in the full-main context, the
+ * declarations below fold BOTH passes together into their final values, so what
+ * you see equals the mockup's rendered result.
+ *
+ * Tokenized: colors reference the application.css CSS variables ONLY. The three
+ * soft ring / track fills that the mockup writes as raw hex (#dff2e8 success
+ * ring, #e7e1ff info ring, #eceaf2 neutral progress track) and the amber
+ * degraded-note surface (#f1d9b7 / #fffaf2 / #6b4c21) are semantic tints, so
+ * they are reconstructed from the semantic vars via color-mix() rather than
+ * hardcoded — no brand/semantic hex literals live in this file.
+ */
+
+/* Two independent tracks side by side: readiness evidence (wide) + the named
+   phase timeline (narrow). */
+.publication-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(330px, 0.65fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.readiness-panel,
+.phase-panel {
+  min-height: 500px;
+  padding: 30px;
+}
+
+/* ---- Readiness panel: the evidence for the usable-now version ------------- */
+.readiness-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+.readiness-head h2 {
+  margin: 0;
+  font: 600 19px "Lexend", sans-serif;
+}
+.readiness-head p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.readiness-score {
+  min-width: 150px;
+  text-align: right;
+}
+.readiness-score strong {
+  display: block;
+  font: 600 30px "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.readiness-score span {
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+}
+.readiness-item {
+  min-height: 122px;
+  padding: 23px 20px;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+.readiness-item:nth-child(3n) {
+  border-right: 0;
+}
+.readiness-item:nth-last-child(-n + 3) {
+  border-bottom: 0;
+}
+.readiness-item > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.readiness-item strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.readiness-item small {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.readiness-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.readiness-foot span {
+  color: var(--muted);
+}
+.readiness-foot code {
+  font: 12px "JetBrains Mono", monospace;
+}
+
+/* ---- Phase panel: the named first-pull timeline --------------------------- */
+.phase-panel h2 {
+  margin: 0;
+  font: 600 19px "Lexend", sans-serif;
+}
+.phase-panel > p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.phase-list {
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 0;
+}
+.phase {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 14px;
+  min-height: 78px;
+}
+/* The connecting spine between phase marks. */
+.phase:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 18px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--line);
+}
+.phase-mark {
+  position: relative;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  /* success ring = a soft success tint (mockup #dff2e8). */
+  border: 4px solid color-mix(in srgb, var(--success) 20%, var(--surface));
+  border-radius: 50%;
+  background: var(--success);
+}
+.phase.running .phase-mark {
+  /* running ring = a soft info tint (mockup #e7e1ff). */
+  border-color: color-mix(in srgb, var(--info) 22%, var(--surface));
+  background: var(--info);
+}
+.phase-copy strong {
+  display: block;
+  font-size: 14px;
+}
+.phase-copy small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.phase-time {
+  color: var(--muted);
+  font: 12px "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.history-progress {
+  height: 6px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  /* neutral track (mockup #eceaf2) — a faint neutral tint of the info bar. */
+  background: color-mix(in srgb, var(--info) 10%, var(--page));
+}
+.history-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--info);
+}
+
+/* ---- Degraded / last-known-good preservation note ------------------------- */
+.degraded-note {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 19px 21px;
+  /* amber surface — soft warning tint (mockup #fffaf2 / #f1d9b7 / #6b4c21). */
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--surface));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+  color: color-mix(in srgb, var(--warning) 70%, var(--ink));
+  font-size: 13px;
+  line-height: 1.6;
+}
+.degraded-note strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink);
+}
+
+/* Object-header row — the datastream identity the mockup places in the topbar,
+   rendered inline here so the screen is a self-contained fragment. Mirrors the
+   .ds-object-header rule in datastream-overview.css (kept page-scoped, not in
+   application.css). */
+.ds-object-header {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  padding: 0 32px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+/* full-main padding override the mockup applies for this screen. */
+.first-publication.full-main {
+  padding: 40px 48px 56px;
+}
+.first-publication .page-header {
+  align-items: center;
+  margin-bottom: 34px;
+}
+.first-publication .page-header p {
+  margin-top: 11px;
+  line-height: 1.6;
+}
+
+/* One-column reflow for narrow viewports (mockup grid collapses). */
+@media (max-width: 900px) {
+  .publication-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .readiness-panel,
+  .phase-panel {
+    min-height: 0;
+  }
+}
