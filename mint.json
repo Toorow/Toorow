@@ -1,0 +1,70 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Toorow",
+  "logo": {
+    "light": "/toorow_logo_horizontal_dark.png",
+    "dark": "/toorow_logo_horizontal_light.png"
+  },
+  "favicon": "/favicon.ico",
+  "colors": {
+    "primary": "#FF99C8",
+    "light": "#F7CAD0",
+    "dark": "#F77FB4"
+  },
+  "topbarLinks": [
+    {
+      "name": "Website",
+      "url": "https://toorow.com"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Open console",
+    "url": "https://app.toorow.com"
+  },
+  "navigation": [
+    {
+      "group": "Product Overview",
+      "pages": [
+        "index",
+        "introduction"
+      ]
+    },
+    {
+      "group": "Core Features & Analytics",
+      "pages": [
+        "universal-datastreams",
+        "file-source-ingestion",
+        "semantic-layer",
+        "anomaly-detection-method",
+        "agentic-daily-insights"
+      ]
+    },
+    {
+      "group": "AI Agents & MCP Protocol",
+      "pages": [
+        "mcp-host-integration",
+        "agent-context",
+        "agent-tools",
+        "agent-rules",
+        "use-cases-library"
+      ]
+    },
+    {
+      "group": "Self-Hosted Deployment",
+      "pages": [
+        "self-hosting",
+        "quickstart",
+        "prerequisites",
+        "cloud-hosting"
+      ]
+    },
+    {
+      "group": "Self-Hosted Engineering & Connectors",
+      "pages": [
+        "adding-a-connector",
+        "constraints",
+        "repository-boundary"
+      ]
+    }
+  ]
+}
