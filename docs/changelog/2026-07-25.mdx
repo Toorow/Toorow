@@ -1,0 +1,28 @@
+---
+title: "Phase A launch: MCP control plane and unified marketing data"
+description: "Toorow's Phase A release delivers the sovereign MCP control plane, universal datastreams, semantic layer, anomaly detection, and daily agent briefings."
+---
+
+The first Toorow release is here. Phase A delivers the full sovereign MCP control plane for agentic marketing analytics — unified data, governed agent tools, and automated insights.
+
+## New features
+
+- **Sovereign MCP control plane.** Connect Claude, Cursor, or any FastMCP host to your marketing data over Streamable HTTP. Agents receive a short text summary alongside a rich `structuredContent` payload for MCP widgets. See [MCP host integration](/mcp-host-integration).
+- **Universal Datastreams.** A single ingestion pipeline unifies API connectors (GA4, Meta Ads, TikTok Ads, LinkedIn Ads, Search Console, Shopify, Stripe, Mailgun, Klaviyo), external BigQuery objects, and managed CSV / Google Sheets feeds. Every pull is immutable and versioned with a ULID `pull_id`. See [Universal Datastreams](/universal-datastreams).
+- **Canonical semantic layer.** A single daily fact surface harmonizes additive metrics across every connector, with dedicated semantic views for non-additive ratios (CTR, CPA, ROAS, average position) so agents never mis-aggregate. See [Semantic Layer](/semantic-layer).
+- **Anomaly detection.** Rolling 30-day z-scores flag unusual movement per project, connector, and metric. See [Anomaly Detection Method](/anomaly-detection-method).
+- **Agentic daily briefings.** A nightly scheduler builds marts, runs data-quality checks, and synthesizes a morning briefing agents can pull via `get_morning_briefing`. Register real-world **Context Events** to annotate anomalies with candidate context (never causal). See [Agentic Daily Insights](/agentic-daily-insights).
+- **Agent tools & rules.** A curated FastMCP tool surface (`get_daily_report`, `get_source_capabilities`, per-source reports) plus enforced [Agent Rules](/agent-rules) for capability discovery, tenant scoping, and non-causal phrasing. Browse the full [Agent Tools reference](/agent-tools).
+- **Multi-tenant isolation.** Per-tenant encryption and an organization-rooted resource graph (AD-5) keep inbound identity, OAuth scopes, and datasets strictly isolated per project. See [Security Constraints](/constraints) and [Repository Boundary](/repository-boundary).
+- **Deployment options.** Ship on managed Cloud (Firebase Hosting + Cloud Run in `europe-west1`, scale-to-zero) or bring your own infrastructure. See [Cloud Hosting](/cloud-hosting) and [Self-Hosting Guide](/self-hosting).
+
+## Updates
+
+- **Extensible connector modules.** Connectors are self-contained, auto-discovered at boot, and shipped with manifests, staging SQL, dbt marts, and golden-pull conformance tests. See [Adding a Connector](/adding-a-connector).
+- **Provenance and quality on every metric.** Freshness, data-quality baselines, and alerts now accompany every value served to an agent.
+
+## Fixes
+
+- **Production auth hardening.** The deploy workflow now gates on CI and enforces a stricter production authentication default.
+- **Container healthchecks.** The server image ships with a `HEALTHCHECK` and a pinned `uv` version for reproducible builds.
+- **Environment defaults.** `.env.example` ships with safer auth defaults out of the box.
