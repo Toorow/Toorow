@@ -1,0 +1,28 @@
+---
+title: Toorow product changelog and release notes
+description: Weekly release notes for Toorow — new features, updates, and fixes across MCP agent tools, connectors, ingestion, semantic layer, and hosting.
+---
+
+<Update label="July 25, 2026">
+
+This week's release delivers the first end-to-end version of Toorow: a sovereign, self-hostable MCP control plane for governed marketing analytics, plus a new file-source ingestion path for offline media plans and panels.
+
+## New features
+
+- **Universal Datastreams ingestion layer.** Ingest marketing data from three source families through one governed pipeline: built-in API connectors (GA4, Search Console, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, Mailgun, Klaviyo), external BigQuery objects, and managed CSV / Excel / Google Sheets feeds. See [Universal Datastreams & Ingestion](/universal-datastreams).
+- **File-source ingestion for media plans, panels, and TGI extracts.** Turn messy human-maintained files into standardized, reconcilable data, whether they arrive by upload or by email. See [File-Source Ingestion](/file-source-ingestion).
+- **Canonical semantic layer.** A single daily fact surface (`fact_daily_kpi`) harmonizes additive metrics — impressions, clicks, spend, conversions, revenue — across every connector into one canonical model, with derived ratios exposed through semantic views. See [Semantic Layer & Canonical Marts](/semantic-layer).
+- **FastMCP agent tools.** AI agents can now discover schemas, query metrics, and pull context through a governed MCP interface — no raw credentials, no provider APIs, no direct table access. See [FastMCP Agent Tools Reference](/agent-tools) and [Agent Context & Metadata Discovery](/agent-context).
+- **Dual-channel MCP response model.** Every agent response ships a short contextual text summary alongside a structured payload that host clients render as rich MCP widget cards. See [MCP Host Integration](/mcp-host-integration) and the [Use Cases Library](/use-cases-library).
+- **Agentic daily insights.** Automated daily narratives summarize what changed across projects, ranked by significance. See [Agentic Daily Insights](/agentic-daily-insights).
+- **Anomaly detection.** Rolling-window z-score surveillance flags metric anomalies and enriches them with candidate context events. See [Anomaly Detection Method](/anomaly-detection-method).
+- **Per-project multi-tenancy and isolation.** Inbound identity, provider OAuth scopes, and dataset access are strictly scoped per project, with per-tenant encryption for stored credentials. See [Repository Boundary](/repository-boundary) and [Architecture Constraints](/constraints).
+- **Cloud and self-hosted deployment paths.** Run Toorow as a managed service on Google Cloud (Cloud Run + Firebase Hosting) or self-host on your own infrastructure with a full environment variable reference. See [Cloud Hosting Architecture](/cloud-hosting) and [Self-Hosting Guide](/self-hosting).
+- **Connector extensibility contract.** Add new sources through self-contained connector modules — manifest, staging SQL, dbt marts, and 4-layer conformance tests — auto-discovered at boot. See [Add a connector](/adding-a-connector).
+
+## Updates
+
+- **Agent rules and system instructions.** Published invariants that governed agents must follow when consuming Toorow tools, including freshness, provenance, and data-quality expectations. See [Agent Rules](/agent-rules).
+- **Alerting and tracing.** Freshness checks, data-quality baselines, and trace propagation now accompany every metric served, so agent answers are auditable end-to-end.
+
+</Update>
