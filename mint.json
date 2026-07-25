@@ -26,17 +26,10 @@
   ],
   "navigation": [
     {
-      "group": "Getting Started",
+      "group": "Overview",
       "pages": [
         "index",
-        "introduction",
-        "quickstart"
-      ]
-    },
-    {
-      "group": "Cloud & Hosting Architecture",
-      "pages": [
-        "cloud-hosting"
+        "introduction"
       ]
     },
     {
@@ -50,7 +43,7 @@
       ]
     },
     {
-      "group": "Core Analytics & Datastreams",
+      "group": "Core Features & Analytics",
       "pages": [
         "universal-datastreams",
         "semantic-layer",
@@ -59,17 +52,24 @@
       ]
     },
     {
-      "group": "Architecture & Security",
+      "group": "Installation & Setup",
       "pages": [
+        "quickstart",
+        "prerequisites",
+        "self-hosting",
+        "cloud-hosting"
+      ]
+    },
+    {
+      "group": "Infrastructure & Security",
+      "pages": [
+        "constraints",
         "repository-boundary"
       ]
     },
     {
-      "group": "Self-Hosted & Engineering",
+      "group": "Connector Engineering",
       "pages": [
-        "self-hosting",
-        "prerequisites",
-        "constraints",
         "adding-a-connector"
       ]
     }
