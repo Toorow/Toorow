@@ -2,15 +2,15 @@
   "$schema": "https://mintlify.com/schema.json",
   "name": "Toorow",
   "logo": {
-    "light": "/toorow_logo_horizontal_dark.webp",
-    "dark": "/toorow_logo_horizontal_light.webp"
+    "light": "/toorow_logo_horizontal_dark.png",
+    "dark": "/toorow_logo_horizontal_light.png"
   },
   "favicon": "/favicon.ico",
   "font": {
     "family": "Plus Jakarta Sans",
     "headings": {
       "family": "Lexend",
-      "weight": 800
+      "weight": 500
     }
   },
   "colors": {
@@ -18,16 +18,6 @@
     "light": "#818cf8",
     "dark": "#312e81"
   },
-  "tabs": [
-    {
-      "name": "Cloud (Managed)",
-      "url": "cloud-hosting"
-    },
-    {
-      "name": "Self-Hosted",
-      "url": "self-hosting"
-    }
-  ],
   "navigation": [
     {
       "group": "Getting Started",
@@ -49,17 +39,16 @@
       ]
     },
     {
-      "group": "Architecture & Security",
+      "group": "Cloud (Managed)",
       "pages": [
-        "constraints",
-        "repository-boundary"
+        "cloud-hosting"
       ]
     },
     {
-      "group": "Deployment & Hosting",
+      "group": "Self-Hosted",
       "pages": [
-        "cloud-hosting",
-        "self-hosting"
+        "self-hosting",
+        "constraints"
       ]
     },
     {
@@ -74,7 +63,8 @@
     {
       "group": "Connector Development",
       "pages": [
-        "adding-a-connector"
+        "adding-a-connector",
+        "repository-boundary"
       ]
     }
   ]
