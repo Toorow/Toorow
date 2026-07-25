@@ -92,6 +92,12 @@ jobs:
           service_account: ${{ secrets.GCP_SA_EMAIL }}
 
       - name: Deploy to Cloud Run (dev)
+        # --update-env-vars, NEVER --set-env-vars: the live services carry ~19
+        # variables that were set out-of-band and are absent from this file
+        # (PLATFORM_DB_URL and the OAuth/Nango secrets, ALLOWED_HOST's real
+        # multi-host list, TENANT_KEY_*, TOOROW_INVITATION_ORIGIN, ...).
+        # --set-env-vars REPLACES the whole set, so the first run of this
+        # workflow would have wiped them and taken the service down.
         run: |
           gcloud run deploy mcp-server \
             --image "europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_DEV }}/connector/mcp-server:${{ github.sha }}" \
@@ -102,7 +108,7 @@ jobs:
             --min-instances=0 \
             --max-instances=4 \
             --set-secrets "NANGO_ENCRYPTION_KEY=nango-encryption-key:latest,TOOROW_STATIC_TOKEN=connector-static-token:latest" \
-            --set-env-vars "HOST_HEADER_VALIDATION=strict,ALLOWED_HOST=${{ vars.CLOUD_RUN_HOSTNAME_DEV }},FASTMCP_HTTP_ALLOWED_HOSTS=${{ vars.CLOUD_RUN_HOSTNAME_DEV }},PORT=8080,TOOROW_AUTH_MODE=static,TOOROW_BQ_PROVISION_ENABLED=1,GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_DEV }}" \
+            --update-env-vars "HOST_HEADER_VALIDATION=strict,ALLOWED_HOST=${{ vars.CLOUD_RUN_HOSTNAME_DEV }},FASTMCP_HTTP_ALLOWED_HOSTS=${{ vars.CLOUD_RUN_HOSTNAME_DEV }},PORT=8080,TOOROW_AUTH_MODE=static,TOOROW_BQ_PROVISION_ENABLED=1,GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_DEV }}" \
             --quiet
 
   # ---------------------------------------------------------------------------
@@ -155,5 +161,5 @@ jobs:
             --min-instances=0 \
             --max-instances=4 \
             --set-secrets "NANGO_ENCRYPTION_KEY=nango-encryption-key:latest" \
-            --set-env-vars "HOST_HEADER_VALIDATION=strict,ALLOWED_HOST=${{ vars.CLOUD_RUN_HOSTNAME_PROD }},FASTMCP_HTTP_ALLOWED_HOSTS=${{ vars.CLOUD_RUN_HOSTNAME_PROD }},PORT=8080,TOOROW_AUTH_MODE=oauth,TOOROW_JWT_JWKS_URI=${{ vars.TOOROW_JWT_JWKS_URI }},TOOROW_JWT_ISSUER=${{ vars.TOOROW_JWT_ISSUER }},TOOROW_JWT_AUDIENCE=${{ vars.TOOROW_JWT_AUDIENCE }},TOOROW_BQ_PROVISION_ENABLED=1,GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_PROD }}" \
+            --update-env-vars "HOST_HEADER_VALIDATION=strict,ALLOWED_HOST=${{ vars.CLOUD_RUN_HOSTNAME_PROD }},FASTMCP_HTTP_ALLOWED_HOSTS=${{ vars.CLOUD_RUN_HOSTNAME_PROD }},PORT=8080,TOOROW_AUTH_MODE=oauth,TOOROW_JWT_JWKS_URI=${{ vars.TOOROW_JWT_JWKS_URI }},TOOROW_JWT_ISSUER=${{ vars.TOOROW_JWT_ISSUER }},TOOROW_JWT_AUDIENCE=${{ vars.TOOROW_JWT_AUDIENCE }},TOOROW_BQ_PROVISION_ENABLED=1,GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_PROD }}" \
             --quiet

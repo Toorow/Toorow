@@ -12,13 +12,13 @@ Data quality is a first-class citizen in **toorow**. Every ingestion pull execut
 Implemented in `server/core/dq_monitors.py`, these five monitors run automatically after every ingestion cycle:
 
 ```mermaid
-flowgraph LR
-    A[Raw Ingestion Landings] --> B[Volume Monitor]
-    A --> C[Timeliness & Freshness]
-    A --> D[Duplication Monitor]
-    A --> E[Schema Drift Monitor]
-    A --> F[Date Format Integrity]
-    B & C & D & E & F --> G[DQ Ledger & Alert Dispatch]
+flowchart LR
+    A["Raw Ingestion Landings"] --> B["Volume Monitor"]
+    A --> C["Timeliness & Freshness"]
+    A --> D["Duplication Monitor"]
+    A --> E["Schema Drift Monitor"]
+    A --> F["Date Format Integrity"]
+    B & C & D & E & F --> G["DQ Ledger & Alert Dispatch"]
 ```
 
 ### 1. Volume Anomaly Monitor (`volume`)
