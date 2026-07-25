@@ -1,0 +1,36 @@
+---
+title: Toorow product changelog
+description: Weekly updates covering new features, improvements, and fixes shipped in the Toorow MCP marketing analytics platform and its connectors.
+---
+
+<Update label="July 25, 2026" description="Phase A launch">
+
+Toorow's first production-ready release lands this week: a governed, multi-tenant MCP platform for unified marketing analytics with connectors across GA4, Meta Ads, TikTok, LinkedIn, Shopify, Stripe, and more.
+
+## New features
+
+**Universal Datastreams ingestion.** A single pipeline for pulling marketing data from API connectors, external BigQuery objects, and managed CSV/Sheets feeds. Every pull is versioned with an immutable `pull_id` and preserves full joint grain so no dimension is silently dropped. See [Universal Datastreams](/universal-datastreams).
+
+**Canonical semantic layer.** `fact_daily_kpi` harmonizes additive metrics — impressions, clicks, spend, conversions, revenue — across every connector, and ratio metrics like CTR, CPA, and ROAS are computed on-the-fly through dbt semantic views to prevent double-counted math. See [Semantic Layer](/semantic-layer).
+
+**Anomaly detection.** Rolling 30-day z-scores flag unusual movements per project, connector, and metric, with a built-in anti-double-count guard when parallel breakdown dimensions exist. See [Anomaly Detection Method](/anomaly-detection-method).
+
+**Agentic daily insights.** A nightly scheduler runs ingestion, quality checks, and anomaly detection, then synthesizes a morning briefing that agents can pull with `get_morning_briefing(project_id)`. Business context events (launches, redesigns, price changes) are correlated with anomalies for instant explanations. See [Agentic Daily Insights](/agentic-daily-insights).
+
+**MCP host integration.** External LLM hosts like Claude Desktop and Cursor connect through FastMCP over streamable HTTP. Responses use a dual-channel model — a compact text summary for the model, and `structuredContent` streamed to a self-contained React widget — keeping large payloads out of the context window. See [MCP Host Integration](/mcp-host-integration).
+
+**Multi-tenant isolation.** Each user brings their own accounts. OAuth tokens are isolated per tenant, encrypted at rest, and refreshed automatically. Every tool call is bound to the authorizing human and captured in the audit log. See [Repository Boundary](/repository-boundary).
+
+**Connector library.** Ten connectors ship in the initial module set: Google Analytics 4, Google Search Console, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, Klaviyo, GitHub, and a generic connector — each auto-discovered at boot with its own dbt staging models and conformance tests. See [Adding a Connector](/adding-a-connector) to build your own.
+
+**Cloud and self-hosted deployment.** Toorow is available as a managed cloud offering and as a self-hosted deployment on your own stack. See [Cloud Hosting](/cloud-hosting) and [Self-Hosting](/self-hosting).
+
+## Updates
+
+**Docs restructure.** Installation, prerequisites, quickstart, and setup guides are now scoped strictly to the self-hosted path so cloud users no longer see infrastructure steps that don't apply to them. See [Prerequisites](/prerequisites) and [Quickstart](/quickstart).
+
+## Fixes
+
+**Deployment hardening.** Production deploys now require a green CI gate before rollout, authentication defaults to on in production environments, and the container image ships with a proper healthcheck.
+
+</Update>
