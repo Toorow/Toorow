@@ -1,0 +1,31 @@
+---
+title: Changelog
+description: Product updates and improvements shipped to Toorow, week by week.
+---
+
+## Week of July 20, 2026
+
+Toorow is now live. This week's release delivers the full Phase A platform: a governed MCP control plane for AI agents to query unified marketing data, with end-to-end tenancy, provenance, and quality guarantees.
+
+### New features
+
+- **MCP server for AI agents.** Agents can now connect to Toorow through the Model Context Protocol to query marketing indicators without ever touching raw credentials or provider APIs. See [MCP host integration](/mcp-host-integration).
+- **Universal datastreams.** Ingest metrics from GA4, Search Console, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, Klaviyo, and more into a single canonical model. See [Universal datastreams](/universal-datastreams).
+- **Semantic layer with governance.** A dbt-backed semantic model unifies metrics across sources with MDM dictionary enforcement, so agents and dashboards see one consistent definition of every KPI. See [Semantic layer](/semantic-layer).
+- **Agentic daily insights.** Toorow now generates a daily briefing that surfaces anomalies, pacing risks, and cross-source trends automatically. See [Agentic daily insights](/agentic-daily-insights).
+- **Anomaly detection.** Every metric ships with baseline modeling and drift alerts, so agents and users are notified when something looks off. See [Anomaly detection method](/anomaly-detection-method).
+- **File source ingestion.** Bring your own CSV, Excel, or Google Sheets data alongside API-based connectors. See [File source ingestion](/file-source-ingestion).
+- **Cloud (Managed) and Self-Hosted deployments.** Choose the managed cloud offering or run Toorow on your own infrastructure with the same feature set. See [Cloud hosting](/cloud-hosting) and [Self-hosting](/self-hosting).
+- **Agent context, tools, and rules.** Give your agents guardrails, tool access policies, and shared business context out of the box. See [Agent context](/agent-context), [Agent tools](/agent-tools), and [Agent rules](/agent-rules).
+
+### Updates
+
+- **Multi-tenant isolation.** Inbound identity, provider OAuth scopes, and dataset access are now strictly scoped per project, with per-tenant encryption keys. See [Repository boundary](/repository-boundary).
+- **Data quality and lineage.** Freshness, provenance, and DQ baselines accompany every metric served to agents, so answers are auditable end-to-end.
+- **Dual-channel agent responses.** Agents receive a concise text summary while MCP widgets receive a structured payload for rich visual cards — no extra work required from integrators.
+- **Extensible connector modules.** Adding a new source is a self-contained module with a manifest, staging SQL, dbt marts, and conformance tests. See [Adding a connector](/adding-a-connector).
+- **Zero-telemetry policy.** Platform constraints are documented and enforced. See [Constraints](/constraints).
+
+### Bug fixes
+
+- Fixed logo rendering in dark mode so the Toorow wordmark stays legible across themes.
