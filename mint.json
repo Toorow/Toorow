@@ -66,16 +66,11 @@
       ]
     },
     {
-      "group": "Security & Governance",
+      "group": "Self-Hosted Engineering & Connectors",
       "pages": [
+        "adding-a-connector",
         "constraints",
         "repository-boundary"
-      ]
-    },
-    {
-      "group": "Connector Engineering",
-      "pages": [
-        "adding-a-connector"
       ]
     }
   ]
