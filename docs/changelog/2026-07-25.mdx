@@ -1,0 +1,34 @@
+---
+title: "Week of July 25, 2026"
+description: "Phase A goes live: MCP platform, 10 connectors, semantic marts, anomaly detection, and daily briefings."
+---
+
+Toorow's Phase A launch delivers a governed, multi-tenant MCP platform for unified marketing analytics. Here's what's new for users this week.
+
+## New features
+
+**Model Context Protocol (MCP) server** — Connect Claude Desktop, Cursor, or any FastMCP-compatible host to Toorow and let agents query governed marketing data through a dual-channel response model: a compact text summary for the LLM plus a rich structured payload for embedded widgets. See the [MCP host integration guide](/mcp-host-integration).
+
+**Ten source connectors** — Auto-discovered connector modules now cover Google Analytics 4, Google Search Console, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, Klaviyo, GitHub, and a generic connector. Bring your own accounts; credentials stay isolated per tenant. Details in [universal datastreams](/universal-datastreams).
+
+**Canonical semantic layer** — Raw source data lands in BigQuery and is harmonized through dbt into a daily fact surface (`fact_daily_kpi`) plus ratio views for CTR, CPA, ROAS, and average position. "Cost" and "sessions" now mean the same thing across every source. See the [semantic layer overview](/semantic-layer).
+
+**Anomaly detection** — Rolling z-score surveillance with severity thresholds, an anti-double-count guard, and business-context event citations so agents can explain *why* a metric moved. Read the [anomaly detection method](/anomaly-detection-method).
+
+**Agentic daily insights** — Automated morning briefings synthesize the previous day's KPIs, anomalies, and context events into a single narrative surface. See [agentic daily insights](/agentic-daily-insights).
+
+**File and sheet ingestion** — Bring in offline media plans, budgets, and objectives via managed CSV, Excel, and Google Sheets feeds alongside API sources. See [file source ingestion](/file-source-ingestion).
+
+**Cloud and self-hosted deployment paths** — Run Toorow on the maintained Cloud Run stack or deploy on your own infrastructure with the full `.env` reference. Compare options in [cloud hosting](/cloud-hosting) and [self-hosting](/self-hosting).
+
+## Updates
+
+**Multi-tenant isolation** — Every OAuth token, dataset, and tool call is bound to the authorizing user and scoped per project, with an append-only audit log for every operation.
+
+**Per-tenant encryption** — Credentials are encrypted at rest with per-tenant keys and refreshed automatically for scheduled and interactive jobs.
+
+**Business context events** — Annotate launches, sales, tracking incidents, and other events so anomaly detection and agent narratives account for them automatically. See [agent context](/agent-context).
+
+**Governance and observability** — Connection health, sync performance, and agent traffic are monitored end-to-end with tracing through Langfuse. Review the [platform constraints](/constraints).
+
+**Connector extensibility contract** — Ship a new source with a manifest, staging SQL, dbt marts, and a golden-pull conformance test. Walkthrough in [adding a connector](/adding-a-connector).
