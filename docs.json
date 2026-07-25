@@ -2,10 +2,10 @@
   "$schema": "https://mintlify.com/schema.json",
   "name": "Toorow",
   "logo": {
-    "light": "/public/toorow_logo_horizontal_dark.png",
-    "dark": "/public/toorow_logo_horizontal_light.png"
+    "light": "/toorow_logo_horizontal_dark.webp",
+    "dark": "/toorow_logo_horizontal_light.webp"
   },
-  "favicon": "/public/favicon.ico",
+  "favicon": "/favicon.ico",
   "font": {
     "family": "Plus Jakarta Sans",
     "headings": {
