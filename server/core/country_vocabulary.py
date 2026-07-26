@@ -1,4 +1,20 @@
-"""Canonical country vocabulary backed by the governed dbt seed (AD-4)."""
+"""Canonical country vocabulary backed by the governed dbt seed (AD-4).
+
+MDM boundary (Story 37.9).  This module owns exactly ONE thing: the **legal set
+of canonical values** — the ISO 3166-1 alpha-2 codes, identical for every
+client, plus the spellings the platform ships for everybody.
+
+It deliberately does NOT own per-client spelling repair.  Teaching the platform
+that one client's provider writes ``Deutschland`` by editing the shared seed
+would impose that client's decision on every other client.  That resolution is a
+conformed-dimension value mapping and lives in the MDM layer
+(``core.dimension_conformance``), bridged by ``core.geographic_conformance``.
+
+``normalize_country_value`` therefore stays PURE and seed-only: it answers "is
+this a value the platform knows for everyone?" and returns ``None`` otherwise.
+``None`` is not a dead end any more — ``geographic_conformance`` turns it into a
+governed suggestion.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +27,17 @@ from pathlib import Path
 
 _CODE_RE = re.compile(r"^[A-Z]{2}$")
 _REPO_ROOT = Path(__file__).parents[2]
+
+# The conformed-dimension identifier under which country value mappings are
+# governed in app.dimension_value_mappings.  It is the geography module naming
+# its OWN dimension (the same string the fact carries as
+# ``breakdown_dimension``); AD-2 forbids a provider vocabulary or a foreign
+# dimension name inside the generic conformance core, and none is added there.
+# Overridable so a deployment can rename its country partition without a code
+# change.
+CANONICAL_COUNTRY_DIMENSION = (
+    os.environ.get("TOOROW_COUNTRY_DIMENSION", "country").strip() or "country"
+)
 
 
 class CountryVocabularyError(RuntimeError):

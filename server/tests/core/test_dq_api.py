@@ -5,7 +5,8 @@ Tests:
   - GET /api/dq/issues: 401; 422 bad monitor/status; 200 list with filtering
   - POST /api/dq/issues/{id}/acknowledge: 401; 404 unknown id; 403 wrong project; 200 ack
   - GET /api/dq/history: 401; 422 missing/bad params; 200 success_rate calcul; AD-5 (H1)
-  - GET /api/dq/datastream-freshness: 401; 422; 200 shape (vrai schema: state+actual_rows); AD-5 (H1)
+  - GET /api/dq/datastream-freshness: 401; 422; 200 shape
+    (vrai schema: state+actual_rows); AD-5 (H1)
   - POST /api/dq/evaluate: 401; 422; 200 trigger deterministe (H2); 429 rate-limit; audit; AD-5 (H1)
 
 Schema reel app.pull_jobs : state (pas status), completed_at (pas row_count), pull_id FK.
@@ -105,7 +106,11 @@ def test_dq_summary_missing_project_id():
 
 
 def test_dq_summary_returns_5_monitors():
-    """Story 13.3: summary doit exposer 5 moniteurs dont dq_date_format."""
+    """Story 13.3 + 37.9: summary expose le registre complet des moniteurs DQ.
+
+    Le compte n'est plus fige : Story 37.9 ajoute dq_geography. On assert le
+    REGISTRE (_DQ_TYPES) et la presence de chaque moniteur, pas un nombre.
+    """
     app = _make_test_app(auth_ok=True)
     client = TestClient(app, raise_server_exceptions=False)
 
@@ -150,13 +155,23 @@ def test_dq_summary_returns_5_monitors():
     assert resp.status_code == 200
     data = resp.json()
     assert "monitors" in data
-    assert len(data["monitors"]) == 5, f"attendu 5 moniteurs, recu {len(data['monitors'])}"
+    import core.dq_api as dq_api_mod
+
     types = [m["type"] for m in data["monitors"]]
+    assert types == list(dq_api_mod._DQ_TYPES), (
+        f"le summary doit exposer tout le registre _DQ_TYPES, recu {types}"
+    )
     assert "dq_volume" in types
     assert "dq_timeliness" in types
     assert "dq_duplication" in types
     assert "dq_schema" in types
-    assert "dq_date_format" in types, "dq_date_format doit etre visible dans le summary (Story 13.3)"
+    assert "dq_date_format" in types, (
+        "dq_date_format doit etre visible dans le summary (Story 13.3)"
+    )
+    assert "dq_geography" in types, (
+        "dq_geography doit etre visible dans le summary (Story 37.9): sans lui, la "
+        "geographie non resolue reste invisible aux surfaces de supervision DQ"
+    )
     for m in data["monitors"]:
         assert "healthy_pct" in m
         assert "unresolved_count" in m
@@ -166,6 +181,7 @@ def test_dq_summary_returns_5_monitors():
 def test_dq_summary_date_format_label():
     """dq_date_format doit porter le label 'Lignes rejetees'."""
     import core.dq_api as dq_api_mod
+
     assert "dq_date_format" in dq_api_mod._MONITOR_LABELS
     assert dq_api_mod._MONITOR_LABELS["dq_date_format"] == "Lignes rejetees"
 
@@ -221,14 +237,20 @@ def test_dq_issues_returns_list():
             "warning",
             None,
             "Volume anormal pour 'Stream A' le 2026-07-12: 5 lignes | meta="
-            "{\"datastream_id\":\"ds_1\",\"datastream_name\":\"Stream A\","
-            "\"module_name\":\"mod_a\"}",
+            '{"datastream_id":"ds_1","datastream_name":"Stream A",'
+            '"module_name":"mod_a"}',
             "proj_1",
         )
     ]
     col_names = [
-        "id", "type", "window_date", "fired_at", "severity",
-        "acknowledged_at", "message", "project_id",
+        "id",
+        "type",
+        "window_date",
+        "fired_at",
+        "severity",
+        "acknowledged_at",
+        "message",
+        "project_id",
     ]
 
     with patch("core.db.get_connection") as mock_gc:
@@ -496,7 +518,9 @@ def test_dq_history_5_monitors_present():
 
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data["monitors"]) == 5
+    import core.dq_api as dq_api_mod
+
+    assert [m["type"] for m in data["monitors"]] == list(dq_api_mod._DQ_TYPES)
     for m in data["monitors"]:
         # M4 : success_rate=null quand evaluated_days=0 (jamais evalue).
         assert m["success_rate"] is None, (
@@ -589,8 +613,13 @@ def test_dq_freshness_returns_datastreams():
 
     # Colonnes reelles de la requete principale (C1 fix: state + verdict + actual_rows)
     col_names_main = [
-        "datastream_id", "datastream_name", "module_name",
-        "last_pull_at", "last_state", "last_verdict", "row_count",
+        "datastream_id",
+        "datastream_name",
+        "module_name",
+        "last_pull_at",
+        "last_state",
+        "last_verdict",
+        "row_count",
     ]
     # state='done', verdict='ok', actual_rows=1500
     fake_main_row_tuples = [
@@ -744,6 +773,7 @@ def test_dq_evaluate_triggers_run_and_audit():
     client = TestClient(app, raise_server_exceptions=False)
 
     import core.dq_api as dq_api_mod
+
     dq_api_mod._evaluate_calls.pop("proj_eval_1", None)
 
     run_called_event = threading.Event()
@@ -753,9 +783,14 @@ def test_dq_evaluate_triggers_run_and_audit():
         captured["project_id"] = project_id
         run_called_event.set()
         return {
-            "evaluated": 2, "volume_issues": 0, "timeliness_issues": 0,
-            "duplication_issues": 0, "schema_issues": 0, "date_format_issues": 0,
-            "total_issues": 0, "errors": 0,
+            "evaluated": 2,
+            "volume_issues": 0,
+            "timeliness_issues": 0,
+            "duplication_issues": 0,
+            "schema_issues": 0,
+            "date_format_issues": 0,
+            "total_issues": 0,
+            "errors": 0,
         }
 
     mock_gc, _, _ = _make_db_for_evaluate(allow_access=True)
@@ -792,6 +827,7 @@ def test_dq_evaluate_triggers_run_and_audit():
 def test_dq_evaluate_rate_limited():
     """Le 3e appel rapide doit recevoir 429."""
     import core.dq_api as dq_api_mod
+
     dq_api_mod._evaluate_calls.pop("proj_rl", None)
 
     app = _make_test_app(auth_ok=True)
@@ -817,9 +853,14 @@ def test_dq_evaluate_rate_limited():
         patch("core.dq_monitors.run_dq_monitors") as mock_run,
     ):
         mock_run.return_value = {
-            "evaluated": 0, "volume_issues": 0, "timeliness_issues": 0,
-            "duplication_issues": 0, "schema_issues": 0, "date_format_issues": 0,
-            "total_issues": 0, "errors": 0,
+            "evaluated": 0,
+            "volume_issues": 0,
+            "timeliness_issues": 0,
+            "duplication_issues": 0,
+            "schema_issues": 0,
+            "date_format_issues": 0,
+            "total_issues": 0,
+            "errors": 0,
         }
         resp1 = client.post("/api/dq/evaluate?project_id=proj_rl")
         resp2 = client.post("/api/dq/evaluate?project_id=proj_rl")
@@ -836,6 +877,7 @@ def test_dq_evaluate_rate_limited():
 def test_dq_evaluate_rate_limited_per_project():
     """Le rate-limit est par project_id : deux projets differents ne s'interferent pas."""
     import core.dq_api as dq_api_mod
+
     dq_api_mod._evaluate_calls.pop("proj_a", None)
     dq_api_mod._evaluate_calls.pop("proj_b", None)
 
@@ -861,9 +903,14 @@ def test_dq_evaluate_rate_limited_per_project():
         patch("core.dq_monitors.run_dq_monitors") as mock_run,
     ):
         mock_run.return_value = {
-            "evaluated": 0, "volume_issues": 0, "timeliness_issues": 0,
-            "duplication_issues": 0, "schema_issues": 0, "date_format_issues": 0,
-            "total_issues": 0, "errors": 0,
+            "evaluated": 0,
+            "volume_issues": 0,
+            "timeliness_issues": 0,
+            "duplication_issues": 0,
+            "schema_issues": 0,
+            "date_format_issues": 0,
+            "total_issues": 0,
+            "errors": 0,
         }
         client.post("/api/dq/evaluate?project_id=proj_a")
         client.post("/api/dq/evaluate?project_id=proj_a")
@@ -892,7 +939,8 @@ def _make_gc_closed():
     cur = MagicMock()
     cur.__enter__ = MagicMock(return_value=cur)
     cur.__exit__ = MagicMock(return_value=False)
-    # identity n'est pas membre (is_member=False) mais le projet a des membres (project_has_members=True)
+    # identity n'est pas membre (is_member=False) mais le projet a des membres
+    # (project_has_members=True)
     cur.fetchone = MagicMock(return_value=(False, True, False))
     cur.fetchall = MagicMock(return_value=[])
     conn.cursor.return_value.__enter__ = lambda s: cur
@@ -951,6 +999,7 @@ def test_dq_evaluate_ad5_allowed_for_member():
     client = TestClient(app, raise_server_exceptions=False)
 
     import core.dq_api as dq_api_mod
+
     dq_api_mod._evaluate_calls.pop("proj_member", None)
 
     # is_member=True, project_has_members=True => granted
@@ -975,9 +1024,7 @@ def test_dq_evaluate_ad5_allowed_for_member():
     ):
         resp = client.post("/api/dq/evaluate?project_id=proj_member")
 
-    assert resp.status_code == 200, (
-        f"identity membre doit avoir acces, recu {resp.status_code}"
-    )
+    assert resp.status_code == 200, f"identity membre doit avoir acces, recu {resp.status_code}"
 
 
 # ---------------------------------------------------------------------------
@@ -998,6 +1045,7 @@ def test_dq_evaluate_acl_db_down_fail_closed():
     client = TestClient(app, raise_server_exceptions=False)
 
     import core.dq_api as dq_api_mod
+
     dq_api_mod._evaluate_calls.pop("proj_db_down", None)
 
     # get_connection() reussit, mais identity_has_project_access raise -> fail-closed.
@@ -1036,6 +1084,7 @@ def test_dq_evaluate_acl_db_down_get_connection_fails():
     client = TestClient(app, raise_server_exceptions=False)
 
     import core.dq_api as dq_api_mod
+
     dq_api_mod._evaluate_calls.pop("proj_db_total_down", None)
 
     with (
@@ -1063,8 +1112,7 @@ def test_enforce_project_scope_fail_closed_swallows_exception():
         )
 
     assert result is False, (
-        "_enforce_project_scope(fail_closed=True) doit retourner False sur exception "
-        "(pas propager)"
+        "_enforce_project_scope(fail_closed=True) doit retourner False sur exception (pas propager)"
     )
 
 
@@ -1077,9 +1125,7 @@ def test_enforce_project_scope_fail_open_propagates_exception():
         side_effect=RuntimeError("simulated cursor error"),
     ):
         try:
-            dq_api_mod._enforce_project_scope(
-                "proj_x", "user@test", MagicMock(), fail_closed=False
-            )
+            dq_api_mod._enforce_project_scope("proj_x", "user@test", MagicMock(), fail_closed=False)
             raised = False
         except RuntimeError:
             raised = True
@@ -1105,10 +1151,18 @@ def test_dq_issues_filter_accepts_dq_date_format():
         cur.__enter__ = MagicMock(return_value=cur)
         cur.__exit__ = MagicMock(return_value=False)
         cur.fetchall = MagicMock(return_value=[])
-        cur.description = _col_desc([
-            "id", "type", "window_date", "fired_at", "severity",
-            "acknowledged_at", "message", "project_id",
-        ])
+        cur.description = _col_desc(
+            [
+                "id",
+                "type",
+                "window_date",
+                "fired_at",
+                "severity",
+                "acknowledged_at",
+                "message",
+                "project_id",
+            ]
+        )
 
         conn.cursor.return_value.__enter__ = lambda s: cur
         conn.cursor.return_value.__exit__ = MagicMock(return_value=False)

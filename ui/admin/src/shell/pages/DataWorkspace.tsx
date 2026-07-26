@@ -1,132 +1,68 @@
 /**
- * DataWorkspace — faithful React port of the validated Data-workspace mockup.
+ * DataWorkspace — the Data overview surface.
  *
- * Source of visual truth:
+ * Visual lineage:
  *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
  *     mockups/data-workspace.html
  *
  * The application shell (ApplicationShell.tsx) already renders the frame,
  * sidebar (including the Data nav tree), topbar, and <main className="main">.
- * The mockup's left "Data tree" (Data overview / Datastreams / Sources /
- * Imports / Modules) is SIDEBAR NAV and belongs to the shell — NOT this page.
- * This component renders ONLY the page body that lives inside <main>: the page
- * header, the three data-summary cards, and the fleet table with per-data-type
- * groupings.
+ * This component renders ONLY the page body: the page header, the three
+ * data-summary cards, and the fleet table grouped by source family.
  *
- * Styling: application.css (global, via the shell) supplies every class used
- * here (data-summary, summary-card, fleet, fleet-table, .type-row, .name,
- * .number, signal-label, provider-logo, page-header, header-actions, .selector,
- * .secondary-button, .action-link/.primary). data-workspace.css is a documented
- * stub — the mockup added no page-specific CSS for this body. Colors come only
- * from the application.css CSS variables; numbers use Geist tabular via .number.
+ * Data:
+ *   GET /api/datastreams?project_id=…  -> the fleet rows (Epic-8/12 read-model,
+ *       with Epic-42 published_state / published_at and migration-093 data_role)
+ *   GET /api/connections?project_id=…  -> the connected-sources card
  *
- * Data: the fleet table maps to GET /api/datastreams (the Epic-8/12 read-model,
- * reused by DatastreamOpsList). That endpoint DOES expose name, source_kind,
- * last publication and next_run_at — but NOT the mockup's data-type grouping,
- * the "freshness age" column ("3h"), a published-date distinct from status, or a
- * provider→logo mapping. So the fleet rows are enriched with mockup-literal
- * fields (flagged // TODO(api)) and, when the API is silent, the whole table
- * falls back to the mockup's literal rows so the page renders finished with no
- * backend. The three summary cards have no endpoint at all — mockup literals.
+ * WHAT WAS REMOVED
+ * ----------------
+ * The page used to open on a literal fleet (Campaign performance, Search
+ * performance, Website acquisition, Media plan 2026) and a literal summary that
+ * asserted "Published data: Trusted", "Complete through 22 Jul 2026", "6 healthy
+ * · 1 needs attention" and "4 connected sources · All authorizations usable".
+ * Both were KEPT on `if (!resp.ok) return;` and on an empty array — so a broken
+ * API, and a project with no Datastreams at all, both reported a healthy,
+ * trusted, fully published fleet. "Published data: Trusted" is the single most
+ * consequential claim on this screen and it was a constant.
+ *
+ * Now each of the two loads carries its own state: a failure is said, an empty
+ * list is rendered as empty, and no summary figure is shown for a load that did
+ * not succeed. Header/table controls are rendered only when the shell wires a
+ * handler for them.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "../application.css";
 import "./data-workspace.css";
 import { apiFetch } from "../../lib/apiFetch";
 
 /** Provider logo assets that actually exist under public/connectors/. Anything not
- *  in this map has NO asset yet — see the GAP list; we still reference
- *  /connectors/<name>.svg rather than hand-draw a provider glyph. */
+ *  in this map has NO asset yet — the row renders without a logo rather than
+ *  borrowing another vendor's mark. */
 const PROVIDER_LOGOS: Record<string, { src: string; alt: string }> = {
   meta: { src: "/connectors/meta.svg", alt: "Meta" },
-  "google-ads": { src: "/connectors/google-ads.svg", alt: "Google Ads" },
-  "google-analytics": { src: "/connectors/google-analytics.svg", alt: "Google Analytics" },
-  "google-sheets": { src: "/connectors/google-sheets.svg", alt: "Google Sheets" },
+  "google-ads": { src: "/connectors/google-ads.png", alt: "Google Ads" },
+  "google-analytics": { src: "/connectors/google-analytics.png", alt: "Google Analytics" },
+  "google-sheets": { src: "/connectors/google-sheets.png", alt: "Google Sheets" },
 };
 
 type Signal = "success" | "warning" | "error" | "info";
 
 interface FleetRowVM {
-  /** stable key + click-through id */
   id: string;
-  /** provider logo key into PROVIDER_LOGOS */
   provider: string;
   name: string;
   dataType: string;
-  freshness: string; // e.g. "3h" — TODO(api): no age field on the read-model
-  nextRun: string; // e.g. "06:00" | "Retry pending" | "Daily"
-  published: string; // e.g. "22 Jul" — TODO(api): distinct published date
+  freshness: string;
+  nextRun: string;
+  published: string;
   status: { label: string; signal: Signal };
 }
 
 interface FleetGroupVM {
-  /** the .type-row heading (data type grouping) */
   type: string;
   rows: FleetRowVM[];
 }
-
-/**
- * The mockup's literal fleet — the source of visual truth and the no-backend
- * fallback. Grouped by data type with a .type-row heading per group, exactly as
- * the mockup renders it.
- */
-const MOCKUP_FLEET: FleetGroupVM[] = [
-  {
-    type: "Paid media",
-    rows: [
-      {
-        id: "campaign-performance",
-        provider: "meta",
-        name: "Campaign performance",
-        dataType: "Spend",
-        freshness: "3h",
-        nextRun: "06:00",
-        published: "22 Jul",
-        status: { label: "Healthy", signal: "success" },
-      },
-      {
-        id: "search-performance",
-        provider: "google-ads",
-        name: "Search performance",
-        dataType: "Spend",
-        freshness: "26h",
-        nextRun: "Retry pending",
-        published: "21 Jul",
-        status: { label: "Needs attention", signal: "warning" },
-      },
-    ],
-  },
-  {
-    type: "Analytics",
-    rows: [
-      {
-        id: "website-acquisition",
-        provider: "google-analytics",
-        name: "Website acquisition",
-        dataType: "Context",
-        freshness: "4h",
-        nextRun: "06:15",
-        published: "22 Jul",
-        status: { label: "Healthy", signal: "success" },
-      },
-    ],
-  },
-  {
-    type: "Files & plans",
-    rows: [
-      {
-        id: "media-plan-2026",
-        provider: "google-sheets",
-        name: "Media plan 2026",
-        dataType: "Forecast & plan",
-        freshness: "1d",
-        nextRun: "Daily",
-        published: "22 Jul",
-        status: { label: "Healthy", signal: "success" },
-      },
-    ],
-  },
-];
 
 /** The (superset) datastream summary GET /api/datastreams returns. Only the
  *  fields this page reads are declared; the rest are permitted. */
@@ -174,18 +110,18 @@ function publishedDateOf(ds: DatastreamSummary): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-/** Map an API source_kind to a provider logo key. Best-effort; unknowns fall
- *  through to a null provider (rendered without a logo). */
+/** Map an API module/source kind to a provider logo key. */
 function providerOf(ds: DatastreamSummary): string {
   // module_name is the connector (e.g. "google_sheets"); source_kind is only the
   // ingestion MECHANISM (connector_pull/external_bq/managed_feed), so it must not
   // win for provider detection.
   const k = (ds.module_name || ds.source_kind || "").toLowerCase();
   if (k.includes("meta") || k.includes("facebook")) return "meta";
-  if (k.includes("google_ads") || k.includes("google-ads") || k.includes("googleads")) return "google-ads";
+  if (k.includes("google_ads") || k.includes("google-ads") || k.includes("googleads"))
+    return "google-ads";
   if (k.includes("analytics") || k.includes("ga4")) return "google-analytics";
   if (k.includes("sheet")) return "google-sheets";
-  return k; // unknown key -> handled at render; listed as a GAP
+  return k;
 }
 
 /** Derive a signal + label, preferring the published execution state. */
@@ -212,16 +148,12 @@ function nextRunOf(ds: DatastreamSummary): string {
   }
 }
 
-/** Connection health as returned by GET /api/connections (nested object). Only
- *  the status this page reads is declared; other fields are permitted. */
+/** Connection health as returned by GET /api/connections (nested object). */
 interface ConnectionHealthVM {
   status?: "ok" | "stale" | "revoked" | string | null;
   [k: string]: unknown;
 }
 
-/** A single connection row from GET /api/connections. Response envelope is
- *  { connections: ConnectionSummary[] }. Only the fields this page reads are
- *  declared. */
 interface ConnectionSummary {
   id: string;
   health?: ConnectionHealthVM | null;
@@ -231,35 +163,6 @@ interface ConnectionSummary {
 interface ConnectionsResponseVM {
   connections?: ConnectionSummary[];
 }
-
-/**
- * Summary-card figures. Every field carries a mockup-literal fallback so the
- * three top cards still render finished when no backend answers. Cards are
- * populated from real sources as each API responds (fleet + connections),
- * independently — a silent /api/connections leaves only "Connected sources"
- * on its literal while the fleet-derived cards still upgrade to real.
- */
-interface SummaryVM {
-  publishedTrust: string; // "Trusted" | "Attention"
-  publishedTrustSignal: Signal;
-  publishedThrough: string; // "Complete through 22 Jul 2026"
-  activeCount: number;
-  fleetHealthNote: string; // "6 healthy · 1 needs attention"
-  sourcesCount: string; // e.g. "4"
-  sourcesNote: string; // "All authorizations usable" | "N need attention"
-}
-
-/** Literal summary — the mockup source of visual truth and the no-backend
- *  fallback for the three top cards. */
-const MOCKUP_SUMMARY: SummaryVM = {
-  publishedTrust: "Trusted",
-  publishedTrustSignal: "success",
-  publishedThrough: "Complete through 22 Jul 2026",
-  activeCount: MOCKUP_FLEET.reduce((n, g) => n + g.rows.length, 0),
-  fleetHealthNote: "6 healthy · 1 needs attention",
-  sourcesCount: "4",
-  sourcesNote: "All authorizations usable",
-};
 
 /** Latest published_at across all API rows, formatted "22 Jul 2026"; null when
  *  no row carries a parseable published_at. */
@@ -278,57 +181,7 @@ function latestPublishedThrough(rows: DatastreamSummary[]): string | null {
   })}`;
 }
 
-/** Derive the fleet-driven summary fields from the real datastream rows:
- *  active count, published-data trust (Trusted unless any row is non-healthy),
- *  completeness date, and a healthy / needs-attention breakdown note. */
-function summaryFromFleet(rows: DatastreamSummary[]): Pick<
-  SummaryVM,
-  "publishedTrust" | "publishedTrustSignal" | "publishedThrough" | "activeCount" | "fleetHealthNote"
-> {
-  let healthy = 0;
-  let attention = 0;
-  for (const ds of rows) {
-    if (statusOf(ds).signal === "success") healthy += 1;
-    else attention += 1;
-  }
-  const allTrusted = attention === 0;
-  const through = latestPublishedThrough(rows);
-  const note =
-    attention === 0
-      ? `${healthy} healthy`
-      : `${healthy} healthy · ${attention} needs attention`;
-  return {
-    publishedTrust: allTrusted ? "Trusted" : "Attention",
-    publishedTrustSignal: allTrusted ? "success" : "warning",
-    publishedThrough: through ?? MOCKUP_SUMMARY.publishedThrough,
-    activeCount: rows.length,
-    fleetHealthNote: note,
-  };
-}
-
-/** Derive the connected-sources fields from GET /api/connections rows. A source
- *  is "usable" when its health status is "ok" (or absent/unknown, treated as
- *  not-yet-a-problem is too optimistic — we count only "ok" as usable and every
- *  other explicit status as needing attention). */
-function summaryFromConnections(rows: ConnectionSummary[]): Pick<
-  SummaryVM,
-  "sourcesCount" | "sourcesNote"
-> {
-  let attention = 0;
-  for (const c of rows) {
-    const status = (c.health?.status ?? "").toString().toLowerCase();
-    if (status !== "ok") attention += 1;
-  }
-  return {
-    sourcesCount: String(rows.length),
-    sourcesNote: attention === 0 ? "All authorizations usable" : `${attention} need attention`,
-  };
-}
-
-/** Build the grouped view-model from the API rows. Since the read-model has no
- *  data-type grouping, freshness age, or published-date, every API row lands in
- *  a single "Datastreams" group and borrows mockup-literal cells for the columns
- *  the API cannot answer. */
+/** Build the grouped view-model from the API rows. */
 function fleetFromApi(rows: DatastreamSummary[]): FleetGroupVM[] {
   const byFamily = new Map<string, FleetRowVM[]>();
   for (const ds of rows) {
@@ -338,7 +191,7 @@ function fleetFromApi(rows: DatastreamSummary[]): FleetGroupVM[] {
       id: ds.id,
       provider,
       name: ds.name,
-      dataType: ds.data_role || "—", // REAL from migration 093 (data_role)
+      dataType: ds.data_role || "—",
       freshness: freshnessOf(ds),
       nextRun: nextRunOf(ds),
       published: publishedDateOf(ds),
@@ -354,13 +207,24 @@ function fleetFromApi(rows: DatastreamSummary[]): FleetGroupVM[] {
   return groups;
 }
 
+type FleetState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ok"; rows: DatastreamSummary[]; groups: FleetGroupVM[] };
+
+type ConnectionsState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ok"; rows: ConnectionSummary[] };
+
 interface DataWorkspaceProps {
   projectId?: string;
   apiBase?: string;
   onOpenDatastream?: (id: string) => void;
-  /** Header actions — wired by the shell/router when available. */
+  /** Header/summary actions — rendered ONLY when the shell wires them. */
   onAddDatastream?: () => void;
   onOpenModules?: () => void;
+  onOpenSources?: () => void;
 }
 
 export default function DataWorkspace({
@@ -369,158 +233,204 @@ export default function DataWorkspace({
   onOpenDatastream,
   onAddDatastream,
   onOpenModules,
+  onOpenSources,
 }: DataWorkspaceProps) {
-  // Start from the mockup literal so the page renders finished with no backend;
-  // swap in the real fleet if /api/datastreams answers with rows.
-  const [groups, setGroups] = useState<FleetGroupVM[]>(MOCKUP_FLEET);
-  // Summary cards start on the mockup literal and upgrade field-group by
-  // field-group as each real source answers (fleet -> cards 1 & 2; connections
-  // -> card 3). Each source is independent, so a silent one keeps only its own
-  // fields on the literal fallback.
-  const [summary, setSummary] = useState<SummaryVM>(MOCKUP_SUMMARY);
+  const [fleet, setFleet] = useState<FleetState>({ status: "loading" });
+  const [connections, setConnections] = useState<ConnectionsState>({ status: "loading" });
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const resp = await apiFetch(
-          `${apiBase}/api/datastreams?project_id=${encodeURIComponent(projectId)}`,
-        );
-        if (!resp.ok) return; // keep the literal fallback on error
-        const data = (await resp.json()) as DatastreamSummary[];
-        if (cancelled || !Array.isArray(data) || data.length === 0) return;
-        setGroups(fleetFromApi(data));
-        const fleetSummary = summaryFromFleet(data);
-        setSummary((prev) => ({ ...prev, ...fleetSummary }));
-      } catch {
-        /* keep the literal fallback offline */
-      }
+  const loadFleet = useCallback(async () => {
+    setFleet({ status: "loading" });
+    try {
+      const resp = await apiFetch(
+        `${apiBase}/api/datastreams?project_id=${encodeURIComponent(projectId)}`,
+      );
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = (await resp.json()) as DatastreamSummary[];
+      const rows = Array.isArray(data) ? data : [];
+      setFleet({ status: "ok", rows, groups: fleetFromApi(rows) });
+    } catch (err) {
+      setFleet({ status: "error", message: err instanceof Error ? err.message : String(err) });
     }
-    void load();
-    return () => {
-      cancelled = true;
-    };
   }, [projectId, apiBase]);
 
-  // Connected-sources card: count + authorization-health note from the real
-  // /api/connections list. Independent of the fleet fetch; on error/silence the
-  // card keeps its mockup-literal fields.
-  useEffect(() => {
-    let cancelled = false;
-    async function loadConnections() {
-      try {
-        const resp = await apiFetch(
-          `${apiBase}/api/connections?project_id=${encodeURIComponent(projectId)}`,
-        );
-        if (!resp.ok) return; // keep the literal fallback on error
-        const data = (await resp.json()) as ConnectionsResponseVM;
-        const rows = data?.connections;
-        if (cancelled || !Array.isArray(rows) || rows.length === 0) return;
-        const connSummary = summaryFromConnections(rows);
-        setSummary((prev) => ({ ...prev, ...connSummary }));
-      } catch {
-        /* keep the literal fallback offline */
-      }
+  const loadConnections = useCallback(async () => {
+    setConnections({ status: "loading" });
+    try {
+      const resp = await apiFetch(
+        `${apiBase}/api/connections?project_id=${encodeURIComponent(projectId)}`,
+      );
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = (await resp.json()) as ConnectionsResponseVM;
+      setConnections({ status: "ok", rows: Array.isArray(data?.connections) ? data.connections : [] });
+    } catch (err) {
+      setConnections({
+        status: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
+  }, [projectId, apiBase]);
+
+  useEffect(() => {
+    void loadFleet();
+  }, [loadFleet]);
+
+  useEffect(() => {
     void loadConnections();
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, apiBase]);
+  }, [loadConnections]);
+
+  // ---- Summary figures: computed ONLY from a successful read ---------------
+  let publishedTrust = "—";
+  let publishedTrustSignal: Signal = "info";
+  let publishedThrough = "Loading…";
+  let activeCount = "—";
+  let fleetHealthNote = "Loading…";
+
+  if (fleet.status === "error") {
+    publishedThrough = "Not available — the fleet could not be loaded";
+    fleetHealthNote = "Not available — the fleet could not be loaded";
+  } else if (fleet.status === "ok") {
+    const healthy = fleet.rows.filter((ds) => statusOf(ds).signal === "success").length;
+    const attention = fleet.rows.length - healthy;
+    activeCount = String(fleet.rows.length);
+    if (fleet.rows.length === 0) {
+      publishedTrust = "No data";
+      publishedTrustSignal = "info";
+      publishedThrough = "No Datastream publishes into this project yet";
+      fleetHealthNote = "No Datastream configured";
+    } else {
+      publishedTrust = attention === 0 ? "Trusted" : "Attention";
+      publishedTrustSignal = attention === 0 ? "success" : "warning";
+      publishedThrough =
+        latestPublishedThrough(fleet.rows) ?? "No publication recorded yet";
+      fleetHealthNote =
+        attention === 0 ? `${healthy} healthy` : `${healthy} healthy · ${attention} need attention`;
+    }
+  }
+
+  let sourcesCount = "—";
+  let sourcesNote = "Loading…";
+  if (connections.status === "error") {
+    sourcesNote = "Not available — the authorizations could not be loaded";
+  } else if (connections.status === "ok") {
+    sourcesCount = String(connections.rows.length);
+    const attention = connections.rows.filter(
+      (c) => (c.health?.status ?? "").toString().toLowerCase() !== "ok",
+    ).length;
+    sourcesNote =
+      connections.rows.length === 0
+        ? "No source connected yet"
+        : attention === 0
+          ? "All authorizations usable"
+          : `${attention} need attention`;
+  }
+
+  const groups = fleet.status === "ok" ? fleet.groups : [];
 
   return (
     <>
       <div className="page-header">
         <div>
           <h1>Data</h1>
-          <p>Sources, Datastreams, imports and optional modules for Acme Growth.</p>
-          {/* TODO(api): project name ("Acme Growth") from scope context */}
+          <p>Sources, Datastreams, imports and optional modules for this project.</p>
         </div>
-        <div className="header-actions">
-          {/* TODO(api): Modules manager surface */}
-          <button className="secondary-button" type="button" onClick={() => onOpenModules?.()}>
-            Modules
-          </button>
-          {/* TODO(api): Add-Datastream launches the create wizard */}
-          <a
-            className="primary-button action-link primary"
-            href="#"
-            onClick={(e) => {
-              e.preventDefault();
-              onAddDatastream?.();
-            }}
-          >
-            + Add Datastream
-          </a>
-        </div>
+        {(onOpenModules || onAddDatastream) && (
+          <div className="header-actions">
+            {onOpenModules && (
+              <button className="secondary-button" type="button" onClick={() => onOpenModules()}>
+                Modules
+              </button>
+            )}
+            {onAddDatastream && (
+              <button className="primary-button" type="button" onClick={() => onAddDatastream()}>
+                + Add Datastream
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <section className="data-summary">
-        {/* Published-data trust + completeness date derived from the fleet
-            (published_state across /api/datastreams). Falls back to the mockup
-            literal when the fleet fetch is silent. */}
         <article className="panel summary-card">
           <span>Published data</span>
-          <strong>{summary.publishedTrust}</strong>
-          <p>{summary.publishedThrough}</p>
+          <strong className={`dw-trust dw-trust-${publishedTrustSignal}`}>{publishedTrust}</strong>
+          <p>{publishedThrough}</p>
         </article>
         <article className="panel summary-card">
           <span>Active Datastreams</span>
-          <strong>{summary.activeCount}</strong>
-          {/* Healthy / needs-attention breakdown from the real fleet rows. */}
-          <p>{summary.fleetHealthNote}</p>
+          <strong>{activeCount}</strong>
+          <p>{fleetHealthNote}</p>
         </article>
-        {/* Connected-sources count + authorization health from /api/connections
-            (health.status). Falls back to the mockup literal when silent. */}
-        <a
-          className="panel summary-card"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            // TODO(api): navigate to Sources
-          }}
-        >
-          <span>Connected sources</span>
-          <strong>{summary.sourcesCount}</strong>
-          <p>{summary.sourcesNote}</p>
-        </a>
+        {onOpenSources ? (
+          <button
+            className="panel summary-card"
+            type="button"
+            onClick={() => onOpenSources()}
+          >
+            <span>Connected sources</span>
+            <strong>{sourcesCount}</strong>
+            <p>{sourcesNote}</p>
+          </button>
+        ) : (
+          <article className="panel summary-card">
+            <span>Connected sources</span>
+            <strong>{sourcesCount}</strong>
+            <p>{sourcesNote}</p>
+          </article>
+        )}
       </section>
 
       <section className="panel fleet">
         <div className="fleet-head">
           <h2>Datastreams</h2>
-          <div className="fleet-tools">
-            {/* TODO(api): status filter — not wired */}
-            <button className="selector" type="button">
-              All statuses
-            </button>
-            {/* TODO(api): Datastream search — not wired */}
-            <button className="selector" type="button">
-              Search Datastreams
+        </div>
+
+        {fleet.status === "loading" && (
+          <p className="dw-status" role="status">
+            Loading the Datastreams…
+          </p>
+        )}
+
+        {fleet.status === "error" && (
+          <div className="dw-load-error" role="alert">
+            <span className="signal-label error">
+              <span className="signal-mark" />
+              Could not load the Datastreams
+            </span>
+            <p>
+              {fleet.message}. No Datastream is being listed and no figure above is being
+              reported — this is a loading failure, not an empty project.
+            </p>
+            <button className="secondary-button" type="button" onClick={() => void loadFleet()}>
+              Retry
             </button>
           </div>
-        </div>
-        <table className="fleet-table">
-          <thead>
-            <tr>
-              <th>Datastream</th>
-              <th>Data type</th>
-              <th>Freshness</th>
-              <th>Next run</th>
-              <th>Published</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((group) => (
-              <FleetGroup
-                key={group.type}
-                group={group}
-                onOpenDatastream={onOpenDatastream}
-              />
-            ))}
-          </tbody>
-        </table>
+        )}
+
+        {fleet.status === "ok" && groups.length === 0 && (
+          <p className="dw-status">
+            No Datastream is configured in this project yet.
+          </p>
+        )}
+
+        {fleet.status === "ok" && groups.length > 0 && (
+          <table className="fleet-table">
+            <thead>
+              <tr>
+                <th>Datastream</th>
+                <th>Data type</th>
+                <th>Freshness</th>
+                <th>Next run</th>
+                <th>Published</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((group) => (
+                <FleetGroup key={group.type} group={group} onOpenDatastream={onOpenDatastream} />
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
     </>
   );
@@ -544,16 +454,13 @@ function FleetGroup({
             <div className="name">
               <ProviderLogo provider={row.provider} />
               {onOpenDatastream ? (
-                <a
+                <button
                   className="name-link"
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    onOpenDatastream(row.id);
-                  }}
+                  type="button"
+                  onClick={() => onOpenDatastream(row.id)}
                 >
                   {row.name}
-                </a>
+                </button>
               ) : (
                 row.name
               )}
@@ -577,13 +484,12 @@ function FleetGroup({
 
 function ProviderLogo({ provider }: { provider: string }) {
   const logo = PROVIDER_LOGOS[provider];
-  // If a provider has no asset we still reference /connectors/<name>.svg (never
-  // hand-draw a provider glyph) — the broken-image case is a listed GAP.
-  const src = logo?.src ?? `/connectors/${provider}.svg`;
-  const alt = logo?.alt ?? provider;
+  // No asset for this provider: render no logo rather than a broken image or
+  // another vendor's mark.
+  if (!logo) return null;
   return (
     <span className="provider-logo">
-      <img src={src} alt={alt} />
+      <img src={logo.src} alt={logo.alt} />
     </span>
   );
 }

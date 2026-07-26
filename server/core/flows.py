@@ -800,22 +800,49 @@ def _upsert_versioned_datastream(
 ) -> dict:
     """Route schema-version-2 writes through the immutable intent service."""
 
-    from core.datastream_intents import save_datastream_intent  # noqa: PLC0415
+    from core.datastream_intents import (  # noqa: PLC0415
+        DatastreamIntentConflict,
+        DatastreamIntentNotFound,
+        DatastreamIntentUnavailable,
+        replay_datastream_intent,
+        save_datastream_intent,
+    )
 
     intent = doc["intent"]
     source = intent["source"]
+    flow_id = doc.get("id")
+
+    # Outcome-unknown retries must resolve immutable evidence before consulting
+    # mutable provider state. A credential may be revoked after the first commit;
+    # that must not turn a successful create into a second shell or a 404/503.
+    try:
+        replay = replay_datastream_intent(
+            project_id=project_id,
+            intent=intent,
+            idempotency_key=doc["idempotency_key"],
+            conn=conn,
+            datastream_id=flow_id,
+        )
+    except DatastreamIntentConflict as exc:
+        raise FlowConflictError("idempotency_conflict") from exc
+    if replay is not None:
+        flow_id = replay["datastream_id"]
+        row = ds_module.get_datastream(flow_id, project_id, conn)
+        if row is None:
+            raise FlowScopeError(f"Datastream {flow_id} introuvable dans le projet {project_id}")
+        after_flow = _datastream_row_to_flow(row, [])
+        return {
+            "kind": "datastream",
+            "id": flow_id,
+            "changed": False,
+            "flow": after_flow,
+            "diff": {"current_plan_version_id": {"after": replay["id"]}},
+            "plan_version": replay,
+        }
+
     capabilities = None
     connection_ref_id = source.get("connection_ref_id")
     if connection_ref_id:
-        if not _connection_ref_belongs(connection_ref_id, project_id, conn):
-            raise FlowValidationError(
-                [
-                    {
-                        "path": "/intent/source/connection_ref_id",
-                        "message": "connection_ref_id est introuvable dans ce projet.",
-                    }
-                ]
-            )
         from core.source_capabilities import (  # noqa: PLC0415
             SourceCapabilitiesNotFound,
             SourceCapabilitiesUnavailable,
@@ -835,7 +862,6 @@ def _upsert_versioned_datastream(
         except SourceCapabilitiesUnavailable as exc:
             raise FlowUnavailableError("Catalogue source indisponible") from exc
 
-    flow_id = doc.get("id")
     if flow_id is None:
         shell = ds_module.create_datastream(
             {
@@ -854,11 +880,6 @@ def _upsert_versioned_datastream(
     elif ds_module.get_datastream(flow_id, project_id, conn) is None:
         raise FlowScopeError(f"Datastream {flow_id} introuvable dans le projet {project_id}")
 
-    from core.datastream_intents import (  # noqa: PLC0415
-        DatastreamIntentConflict,
-        DatastreamIntentNotFound,
-        DatastreamIntentUnavailable,
-    )
     from core.geographic_reporting import fetch_project_geographic_posture
 
     geographic_posture = fetch_project_geographic_posture(project_id, conn)
@@ -893,7 +914,6 @@ def _upsert_versioned_datastream(
         "diff": {"current_plan_version_id": {"after": version["id"]}},
         "plan_version": version,
     }
-
 
 def _normalise_mappings(mappings: list[dict]) -> list[dict]:
     """Canonicalise + sort a mappings array for stable diff comparison."""

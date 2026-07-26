@@ -78,6 +78,20 @@ def test_resolve_org_role_non_disabled_anonymous_does_query(monkeypatch):
     conn.cursor.assert_called()
 
 
+def test_production_never_opens_an_unclaimed_organization(monkeypatch):
+    from core.project_access import resolve_org_role
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    monkeypatch.setenv("TOOROW_EPIC36_PRODUCTION_ENABLED", "true")
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.fetchone.return_value = ("active", False, None)
+    conn = MagicMock()
+    conn.cursor.return_value = cur
+
+    assert resolve_org_role("org_unclaimed", "outsider@example.com", conn) is None
+
 # ---------------------------------------------------------------------------
 # Live-Postgres helpers (direct SQL; mirrors the 21.1-21.4 fixtures).
 # ---------------------------------------------------------------------------
@@ -728,8 +742,8 @@ def _mk_credential(cur, cred_id: str, proj_id: str, owner_org_id: str | None) ->
     """Insert a connection_ref row with optional owner_org_id (None = legacy/NULL)."""
     cur.execute(
         "INSERT INTO app.connection_ref "
-        "(id, provider, nango_connection_id, project_id, owner_org_id) "
-        "VALUES (%s, %s, %s, %s, %s)",
+        "(id, provider, nango_connection_id, project_id, owner_org_id, owner_identity) "
+        "VALUES (%s, %s, %s, %s, %s, 'tester@example.com')",
         (cred_id, "google-analytics", f"nango-{cred_id}", proj_id, owner_org_id),
     )
 
@@ -1041,8 +1055,8 @@ async def test_null_owner_credential_create_grant_returns_404(monkeypatch):
                 # credential with owner_org_id deliberately left NULL (legacy).
                 cur.execute(
                     "INSERT INTO app.connection_ref "
-                    "(id, provider, nango_connection_id, project_id) "
-                    "VALUES (%s, %s, %s, %s)",
+                    "(id, provider, nango_connection_id, project_id, owner_org_id, owner_identity) "
+                    "VALUES (%s, %s, %s, %s, 'org_test_fixture', 'tester@example.com')",
                     (cred, "google-analytics", f"nango-{suffix}", proj),
                 )
                 # Register the account via direct SQL so the FK exists and the
@@ -1088,8 +1102,8 @@ async def test_null_owner_credential_revoke_grant_returns_404(monkeypatch):
                 _mk_project(cur, proj, org, suffix)
                 cur.execute(
                     "INSERT INTO app.connection_ref "
-                    "(id, provider, nango_connection_id, project_id) "
-                    "VALUES (%s, %s, %s, %s)",
+                    "(id, provider, nango_connection_id, project_id, owner_org_id, owner_identity) "
+                    "VALUES (%s, %s, %s, %s, 'org_test_fixture', 'tester@example.com')",
                     (cred, "google-analytics", f"nango-{suffix}", proj),
                 )
             conn.commit()
@@ -1216,8 +1230,8 @@ async def test_register_credential_account_null_owner_org_returns_404(monkeypatc
                 # owner_org_id LEFT NULL intentionally.
                 cur.execute(
                     "INSERT INTO app.connection_ref "
-                    "(id, provider, nango_connection_id, project_id) "
-                    "VALUES (%s, %s, %s, %s)",
+                    "(id, provider, nango_connection_id, project_id, owner_org_id, owner_identity) "
+                    "VALUES (%s, %s, %s, %s, 'org_test_fixture', 'tester@example.com')",
                     (cred, "google-analytics", f"nango-{suffix}", proj),
                 )
             conn.commit()

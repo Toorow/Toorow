@@ -10,7 +10,7 @@
  * buttons) live in application.css and are global. This file only adds the
  * first-publication page widgets: publication-grid, readiness-panel (head /
  * score / grid / item / foot), phase-panel (phase-list / phase / phase-mark /
- * phase-copy / phase-time / history-progress) and the degraded-note.
+ * phase-copy / phase-time), the load/empty states and the degraded-note.
  *
  * The mockup's <style> ships two size passes: a compact base and a "full-main"
  * override pass (the second half of its style block) that enlarges paddings and
@@ -190,19 +190,29 @@
   font: 12px "Geist", "Plus Jakarta Sans", sans-serif;
   font-variant-numeric: tabular-nums;
 }
-.history-progress {
-  height: 6px;
-  margin-top: 9px;
-  overflow: hidden;
-  border-radius: 999px;
-  /* neutral track (mockup #eceaf2) — a faint neutral tint of the info bar. */
-  background: color-mix(in srgb, var(--info) 10%, var(--page));
+/* ---- Load / empty states: a failure is said, never an empty result. ------- */
+.fp-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
 }
-.history-progress i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--info);
+.fp-load-error {
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--surface));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--error) 7%, var(--surface));
+}
+.fp-load-error p {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+/* A value the read-model does not carry: shown as absent, not as a number. */
+.readiness-item strong.fp-unreported {
+  color: var(--muted);
+  font-weight: 500;
 }
 
 /* ---- Degraded / last-known-good preservation note ------------------------- */

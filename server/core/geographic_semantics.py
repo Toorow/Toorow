@@ -8,15 +8,20 @@ rows for tracked markets, Other markets, and Unknown.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Iterable, Mapping, Sequence
+
+if TYPE_CHECKING:  # pragma: no cover - typing only, avoids an import cycle
+    from core.geographic_conformance import CountryResolver
 
 from core import report_dictionary
-from core.country_vocabulary import normalize_country_value
-from core.geographic_reporting import LOCAL_MARKETS, GeographicPosture
+from core.country_vocabulary import CANONICAL_COUNTRY_DIMENSION, normalize_country_value
+from core.geographic_reporting import LOCAL_MARKETS, GeographicPosture, Market
 
 OTHER_MARKETS = "__other_markets__"
 UNKNOWN_MARKET = "__unknown_market__"
-COUNTRY_PARTITION = "country"
+OTHER_MARKETS_LABEL = "Other markets"
+UNKNOWN_MARKET_LABEL = "Unknown"
+COUNTRY_PARTITION = CANONICAL_COUNTRY_DIMENSION
 
 
 class GeographicAggregationError(ValueError):
@@ -31,13 +36,56 @@ class MarketGroupingResult:
     excluded_parallel_rows: int
 
 
-def _bucket(raw_value: object, tracked: frozenset[str]) -> tuple[str, str, str | None, str]:
-    canonical = normalize_country_value(raw_value)
+@dataclass(frozen=True, slots=True)
+class _Bucket:
+    id: str
+    label: str
+    kind: str
+    country_codes: tuple[str, ...]
+
+    @property
+    def market_code(self) -> str | None:
+        """Historical single-code field, kept for pre-37.8 payload readers."""
+
+        return self.country_codes[0] if len(self.country_codes) == 1 else None
+
+
+_OTHER_BUCKET = _Bucket(OTHER_MARKETS, OTHER_MARKETS_LABEL, "other", ())
+_UNKNOWN_BUCKET = _Bucket(UNKNOWN_MARKET, UNKNOWN_MARKET_LABEL, "unknown", ())
+
+
+def _market_index(posture: GeographicPosture) -> dict[str, Market]:
+    """Country code -> owning market. Disjunction is guaranteed upstream."""
+
+    return {
+        code: market for market in posture.markets for code in market.country_codes
+    }
+
+
+def _bucket(
+    raw_value: object,
+    index: Mapping[str, Market],
+    resolver: "CountryResolver | None" = None,
+    connector: object = None,
+) -> _Bucket:
+    """Classify a country row by **market membership**, not by code equality.
+
+    Resolution is the governed two-step of Story 37.9: the shared seed first,
+    then the client's CONFIRMED conformance mappings (``resolver``).  Because
+    this runs in the read layer, confirming a mapping reclassifies retained rows
+    on the next read with no fact rewrite.
+    """
+
+    if resolver is not None:
+        canonical = resolver(raw_value, connector)
+    else:
+        canonical = normalize_country_value(raw_value)
     if canonical is None:
-        return UNKNOWN_MARKET, "Unknown", None, "unknown"
-    if canonical in tracked:
-        return canonical, canonical, canonical, "tracked"
-    return OTHER_MARKETS, "Other markets", None, "other"
+        return _UNKNOWN_BUCKET
+    market = index.get(canonical)
+    if market is not None:
+        return _Bucket(market.id, market.label, "tracked", market.country_codes)
+    return _OTHER_BUCKET
 
 
 def _require_number(row: Mapping[str, object], field: str, metric: str) -> float:
@@ -88,6 +136,8 @@ def _aggregate(group: Sequence[Mapping[str, object]], metric: str) -> tuple[floa
 def group_market_reporting_rows(
     rows: Iterable[Mapping[str, object]],
     posture: GeographicPosture,
+    *,
+    resolver: "CountryResolver | None" = None,
 ) -> MarketGroupingResult:
     """Return Local-market semantic rows without mutating retained fact rows.
 
@@ -116,28 +166,35 @@ def group_market_reporting_rows(
             excluded_parallel_rows=0,
         )
 
-    tracked = frozenset(posture.country_codes)
+    index = _market_index(posture)
     groups: dict[tuple[object, ...], list[Mapping[str, object]]] = {}
-    bucket_meta: dict[tuple[object, ...], tuple[str, str | None, str]] = {}
+    bucket_meta: dict[tuple[object, ...], _Bucket] = {}
     dq: list[dict] = []
     identity_fields = ("project_id", "date", "connector", "metric", "pull_id", "loaded_at")
 
     for row in country_rows:
         raw_value = row.get("breakdown_value")
-        bucket_id, label, market_code, kind = _bucket(raw_value, tracked)
-        if kind == "unknown":
+        connector = row.get("connector")
+        bucket = _bucket(raw_value, index, resolver, connector)
+        if bucket.kind == "unknown":
             dq.append(
                 {
                     "code": "country_value_unmapped",
-                    "message": "Country value could not be mapped to the canonical vocabulary.",
+                    "message": (
+                        "Country value could not be mapped to the canonical vocabulary. "
+                        "Resolve it once as a governed conformance mapping; the shared "
+                        "vocabulary seed is never edited for one client."
+                    ),
                     "raw_value": raw_value,
-                    "connector": row.get("connector"),
+                    "connector": connector,
                     "pull_id": row.get("pull_id"),
+                    "canonical_dimension": COUNTRY_PARTITION,
+                    "repair_path": "dimension_conformance",
                 }
             )
-        key = tuple(row.get(field) for field in identity_fields) + (bucket_id,)
+        key = tuple(row.get(field) for field in identity_fields) + (bucket.id,)
         groups.setdefault(key, []).append(row)
-        bucket_meta[key] = (label, market_code, kind)
+        bucket_meta[key] = bucket
 
     def _sort_key(item: tuple[tuple[object, ...], list[Mapping[str, object]]]) -> tuple[str, ...]:
         key = item[0]
@@ -148,17 +205,19 @@ def group_market_reporting_rows(
     output: list[dict] = []
     for key, grouped in sorted(groups.items(), key=_sort_key):
         first = dict(grouped[0])
-        bucket_id = str(key[-1])
-        label, market_code, kind = bucket_meta[key]
+        bucket = bucket_meta[key]
+        # Non-additive metrics apply their declared rule AFTER grouping.
         value, rule = _aggregate(grouped, str(first.get("metric") or ""))
         first.update(
             {
                 "breakdown_dimension": "market",
-                "breakdown_value": bucket_id,
+                "breakdown_value": bucket.id,
                 "value": value,
-                "market_label": label,
-                "market_kind": kind,
-                "market_code": market_code,
+                "market_id": bucket.id,
+                "market_label": bucket.label,
+                "market_kind": bucket.kind,
+                "market_country_codes": list(bucket.country_codes),
+                "market_code": bucket.market_code,
                 "semantic_aggregation_rule": rule,
             }
         )
@@ -175,15 +234,41 @@ def group_market_reporting_rows(
 
 
 def market_bucket_descriptors(posture: GeographicPosture) -> list[dict[str, object]]:
-    """Accessible descriptors for the default Local-market split."""
+    """Accessible descriptors for the default Local-market split.
+
+    Each tracked descriptor carries the stable market id, the operator's label
+    and its member country codes.  ``bindable`` marks what a budget or objective
+    may bind to: never ``Other markets``, never ``Unknown``.
+    """
 
     if posture.mode != LOCAL_MARKETS:
         return []
     tracked = [
-        {"id": code, "label": code, "kind": "tracked", "country_code": code}
-        for code in posture.country_codes
+        {
+            "id": market.id,
+            "label": market.label,
+            "kind": "tracked",
+            "country_codes": list(market.country_codes),
+            "country_code": market.single_country_code,
+            "bindable": True,
+        }
+        for market in posture.markets
     ]
     return tracked + [
-        {"id": OTHER_MARKETS, "label": "Other markets", "kind": "other", "country_code": None},
-        {"id": UNKNOWN_MARKET, "label": "Unknown", "kind": "unknown", "country_code": None},
+        {
+            "id": OTHER_MARKETS,
+            "label": OTHER_MARKETS_LABEL,
+            "kind": "other",
+            "country_codes": [],
+            "country_code": None,
+            "bindable": False,
+        },
+        {
+            "id": UNKNOWN_MARKET,
+            "label": UNKNOWN_MARKET_LABEL,
+            "kind": "unknown",
+            "country_codes": [],
+            "country_code": None,
+            "bindable": False,
+        },
     ]

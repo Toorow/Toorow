@@ -13,6 +13,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { apiFetch } from "../lib/apiFetch";
 
 // Story 36.10 / UX-DR28 + UX-DR30: ONE honest first-pull progress + report
 // readiness view. Named phases with interval / rows / attempts / current
@@ -64,7 +65,13 @@ export interface FirstReportReadiness {
   historical_coverage: { state: string } | null;
   freshness: { last_pull_at: string | null; connection_health: string | null } | null;
   verification: { verdict: string | null; row_count: number | null } | null;
-  dq: { total_unresolved: number; monitors_unavailable: boolean; degraded: boolean } | null;
+  dq: {
+    total_unresolved: number;
+    monitors_unavailable: boolean;
+    degraded: boolean;
+    evaluated_days_30d?: number;
+    issue_count?: number;
+  } | null;
   mapping: { mapping_version_id: string; version_number: number; mapping_contract_version: string } | null;
   provenance: { content_hash: string | null; source_schema_hash: string | null } | null;
   exclusions: { kind: string; reason: string | null }[];
@@ -149,7 +156,7 @@ export default function RapportPretCard({
   projectId,
   datastreamId,
   apiBase = "",
-  apiToken = import.meta.env.VITE_ADMIN_API_TOKEN ?? "",
+  apiToken = "",
   onConnectHost,
 }: Props) {
   const [readiness, setReadiness] = useState<FirstReportReadiness | null>(null);
@@ -168,7 +175,7 @@ export default function RapportPretCard({
   }), [apiToken]);
 
   const fetchOnce = useCallback(async (): Promise<FirstReportReadiness> => {
-    const response = await fetch(
+    const response = await apiFetch(
       `${apiBase}/api/projects/${encodeURIComponent(projectId)}/datastreams/${encodeURIComponent(datastreamId)}/first-report/readiness`,
       { method: "GET", headers: headers(), cache: "no-store" },
     );

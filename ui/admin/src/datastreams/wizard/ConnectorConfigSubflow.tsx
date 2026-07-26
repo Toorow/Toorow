@@ -9,13 +9,13 @@
  *   - incompatibility explanations from the report's compatibility constraints;
  *   - the effective grain; quota / cost; supported cadence.
  *
- * Reuses the capability-catalog logic proven in PremierRapportCard (report /
+ * Reuses the capability-catalog logic proven in PremierReportCard (report /
  * grain / cost surfacing) rather than duplicating it wholesale — here it is
  * generalised to arbitrary metric/dimension selection instead of a single
  * recommended report.
  *
  * WCAG: searchable comboboxes are native TextFields with labelled results;
- * selection state is textual (chips + "Sélectionné" summaries), not colour.
+ * selection state is textual (chips + "Selected" summaries), not colour.
  */
 import { useMemo, useState } from "react";
 import {
@@ -32,6 +32,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { connectionBlockingReason, isConnectionUsable } from "./wizardLogic";
 import type {
   CapabilityField,
   CapabilityReport,
@@ -41,6 +42,7 @@ import type {
 
 interface Props {
   connections: ConnectionSummary[];
+  connectionsLoading: boolean;
   connectionRefId: string | null;
   onConnectionChange: (id: string) => void;
   capabilities: SourceCapabilities | null;
@@ -86,6 +88,7 @@ function reportFields(
 
 export default function ConnectorConfigSubflow({
   connections,
+  connectionsLoading,
   connectionRefId,
   onConnectionChange,
   capabilities,
@@ -132,30 +135,55 @@ export default function ConnectorConfigSubflow({
     <Stack spacing={3} data-testid="connector-config">
       <TextField
         select
-        label="Connexion"
+        label="Provider account"
         value={connectionRefId ?? ""}
-        onChange={(e) => onConnectionChange(e.target.value)}
+        onChange={(event) => onConnectionChange(event.target.value)}
         data-testid="connector-connection"
+        disabled={connectionsLoading || connections.length === 0}
         fullWidth
-        helperText="Une connexion autorisée de ce projet."
+        helperText={
+          connectionsLoading
+            ? "Loading project-authorized provider accounts..."
+            : connections.some(isConnectionUsable)
+              ? "Only active accounts with verified healthy access can be selected."
+              : "No healthy provider account is currently usable. Reconnect or repair one first."
+        }
         sx={{ maxWidth: 480 }}
       >
-        {connections.length === 0 && (
+        {connectionsLoading && (
           <MenuItem value="" disabled>
-            Aucune connexion autorisée
+            Loading provider accounts...
           </MenuItem>
         )}
-        {connections.map((c) => (
-          <MenuItem key={connectionRef(c)} value={connectionRef(c)}>
-            {c.display_name ?? c.provider ?? connectionRef(c)}
-            {c.status ? ` · ${c.status}` : ""}
+        {!connectionsLoading && connections.length === 0 && (
+          <MenuItem value="" disabled>
+            No project-authorized provider accounts
           </MenuItem>
-        ))}
+        )}
+        {connections.map((connection) => {
+          const id = connectionRef(connection);
+          const blocked = connectionBlockingReason(connection);
+          return (
+            <MenuItem key={id} value={id} disabled={blocked != null}>
+              {connection.display_name ??
+                connection.account_label ??
+                connection.nango_connection_id ??
+                connection.provider ??
+                id}
+              {blocked ? ` - unavailable: ${blocked}` : " - healthy"}
+            </MenuItem>
+          );
+        })}
       </TextField>
 
+      {connectionsLoading && (
+        <Typography color="text.secondary" role="status" data-testid="connections-loading">
+          Loading provider accounts...
+        </Typography>
+      )}
       {capabilitiesLoading && (
         <Typography color="text.secondary" role="status">
-          Chargement du catalogue de capacités…
+          Loading capability catalog...
         </Typography>
       )}
 
@@ -163,12 +191,12 @@ export default function ConnectorConfigSubflow({
         <>
           <TextField
             select
-            label="Rapport"
+            label="Report"
             value={reportId ?? ""}
             onChange={(e) => onReportChange(e.target.value)}
             data-testid="connector-report"
             fullWidth
-            helperText="Le rapport détermine les métriques, dimensions et grains disponibles."
+            helperText="The report determines the available metrics, dimensions, and grains."
             sx={{ maxWidth: 480 }}
           >
             {capabilities.reports.map((r) => (
@@ -179,7 +207,7 @@ export default function ConnectorConfigSubflow({
               >
                 {r.id}
                 {r.availability.status !== "selectable"
-                  ? ` · indisponible (${r.availability.reason_code ?? "?"})`
+                  ? ` - unavailable (${r.availability.reason_code ?? "?"})`
                   : ""}
               </MenuItem>
             ))}
@@ -199,16 +227,16 @@ export default function ConnectorConfigSubflow({
               >
                 <Box data-testid="metrics-picker">
                   <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
-                    Métriques
+                    Metrics
                   </Typography>
                   <TextField
-                    label="Rechercher une métrique"
+                    label="Search metrics"
                     value={metricQuery}
                     onChange={(e) => setMetricQuery(e.target.value)}
                     size="small"
                     fullWidth
                     type="search"
-                    slotProps={{ htmlInput: { "aria-label": "Rechercher une métrique" } }}
+                    slotProps={{ htmlInput: { "aria-label": "Search metrics" } }}
                     sx={{ mb: 1 }}
                   />
                   <List dense disablePadding sx={{ maxHeight: 260, overflowY: "auto" }}>
@@ -219,7 +247,7 @@ export default function ConnectorConfigSubflow({
                             <Checkbox
                               checked={selectedMetrics.includes(f.field_id)}
                               onChange={() => onToggleField(f.field_id, "metric")}
-                              slotProps={{ input: { "aria-label": `Métrique ${f.field_id}` } }}
+                              slotProps={{ input: { "aria-label": `Metric ${f.field_id}` } }}
                             />
                           }
                           label={
@@ -237,7 +265,7 @@ export default function ConnectorConfigSubflow({
                     ))}
                     {metricFields.length === 0 && (
                       <Typography variant="body2" color="text.secondary">
-                        Aucune métrique ne correspond.
+                        No metrics match.
                       </Typography>
                     )}
                   </List>
@@ -248,13 +276,13 @@ export default function ConnectorConfigSubflow({
                     Dimensions
                   </Typography>
                   <TextField
-                    label="Rechercher une dimension"
+                    label="Search dimensions"
                     value={dimensionQuery}
                     onChange={(e) => setDimensionQuery(e.target.value)}
                     size="small"
                     fullWidth
                     type="search"
-                    slotProps={{ htmlInput: { "aria-label": "Rechercher une dimension" } }}
+                    slotProps={{ htmlInput: { "aria-label": "Search dimensions" } }}
                     sx={{ mb: 1 }}
                   />
                   <List dense disablePadding sx={{ maxHeight: 260, overflowY: "auto" }}>
@@ -283,7 +311,7 @@ export default function ConnectorConfigSubflow({
                     ))}
                     {dimensionFields.length === 0 && (
                       <Typography variant="body2" color="text.secondary">
-                        Aucune dimension ne correspond.
+                        No dimensions match.
                       </Typography>
                     )}
                   </List>
@@ -293,7 +321,7 @@ export default function ConnectorConfigSubflow({
               {/* Selected summaries. */}
               <Box data-testid="selection-summary">
                 <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                  Sélection ({selectedMetrics.length} métrique(s),{" "}
+                  Selection ({selectedMetrics.length} metric(s),{" "}
                   {selectedDimensions.length} dimension(s))
                 </Typography>
                 <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
@@ -302,7 +330,7 @@ export default function ConnectorConfigSubflow({
                   ))}
                   {selectedSet.size === 0 && (
                     <Typography variant="body2" color="text.secondary">
-                      Rien de sélectionné pour l’instant.
+                      Nothing selected yet.
                     </Typography>
                   )}
                 </Stack>
@@ -312,7 +340,7 @@ export default function ConnectorConfigSubflow({
               {activeIncompatibilities.length > 0 && (
                 <Alert severity="warning" data-testid="incompatibility-explanations">
                   <Typography variant="subtitle2">
-                    Combinaisons incompatibles
+                    Incompatible combinations
                   </Typography>
                   <List dense disablePadding>
                     {activeIncompatibilities.map((c) => (
@@ -329,14 +357,14 @@ export default function ConnectorConfigSubflow({
               {/* Effective grain + quota/cost + supported cadence (AC3). */}
               <TextField
                 select
-                label="Grain effectif"
+                label="Effective grain"
                 value={grain.join(",")}
                 onChange={(e) =>
                   onGrainChange(e.target.value ? e.target.value.split(",") : [])
                 }
                 data-testid="connector-grain"
                 fullWidth
-                helperText="Uniquement des grains supportés par le rapport."
+                helperText="Only grains supported by the report."
                 sx={{ maxWidth: 480 }}
               >
                 {activeReport.supported_grains.map((g) => (
@@ -348,12 +376,12 @@ export default function ConnectorConfigSubflow({
 
               <Stack spacing={0.5} data-testid="quota-cadence">
                 <Typography variant="body2">
-                  <strong>Coût / quota :</strong> {activeReport.quota_cost.read_points}{" "}
+                  <strong>Cost / quota:</strong> {activeReport.quota_cost.read_points}{" "}
                   {activeReport.quota_cost.unit}
                 </Typography>
                 <Typography variant="body2">
-                  <strong>Cadence supportée :</strong>{" "}
-                  {activeReport.cadence.supported_modes.join(", ")} · intervalle minimum{" "}
+                  <strong>Supported cadence:</strong>{" "}
+                  {activeReport.cadence.supported_modes.join(", ")} · minimum interval{" "}
                   {activeReport.cadence.minimum_interval_minutes} min
                 </Typography>
               </Stack>

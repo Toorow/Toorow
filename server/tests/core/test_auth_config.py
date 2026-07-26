@@ -110,7 +110,7 @@ def test_oauth_mode_with_public_key_builds_verifier(monkeypatch):
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     monkeypatch.setenv("TOOROW_JWT_PUBLIC_KEY", pem_oneline)
     monkeypatch.delenv("TOOROW_JWKS_URI", raising=False)
-    monkeypatch.delenv("TOOROW_JWT_ISSUER", raising=False)
+    monkeypatch.setenv("TOOROW_JWT_ISSUER", "https://issuer.example")
     # review-2-3: audience is now MANDATORY in oauth mode (replay guard)
     monkeypatch.setenv("TOOROW_JWT_AUDIENCE", "connector-mcp")
 
@@ -129,7 +129,7 @@ def test_oauth_mode_with_real_pem_builds_verifier(monkeypatch):
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     monkeypatch.setenv("TOOROW_JWT_PUBLIC_KEY", kp.public_key)
     monkeypatch.delenv("TOOROW_JWKS_URI", raising=False)
-    monkeypatch.delenv("TOOROW_JWT_ISSUER", raising=False)
+    monkeypatch.setenv("TOOROW_JWT_ISSUER", "https://issuer.example")
     # review-2-3: audience is now MANDATORY in oauth mode (replay guard)
     monkeypatch.setenv("TOOROW_JWT_AUDIENCE", "connector-mcp")
 
@@ -150,6 +150,21 @@ def test_oauth_mode_missing_key_raises(monkeypatch):
     monkeypatch.delenv("TOOROW_JWKS_URI", raising=False)
 
     with pytest.raises(ValueError, match="TOOROW_JWT_PUBLIC_KEY"):
+        _reload_build(monkeypatch)
+
+
+def test_oauth_mode_missing_issuer_raises(monkeypatch):
+    """oauth mode refuses an unpinned issuer even when keys and audience exist."""
+    from fastmcp.server.auth.providers.jwt import RSAKeyPair
+
+    kp = RSAKeyPair.generate()
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    monkeypatch.setenv("TOOROW_JWT_PUBLIC_KEY", kp.public_key.replace("\n", "\\n"))
+    monkeypatch.delenv("TOOROW_JWKS_URI", raising=False)
+    monkeypatch.setenv("TOOROW_JWT_AUDIENCE", "connector-mcp")
+    monkeypatch.delenv("TOOROW_JWT_ISSUER", raising=False)
+
+    with pytest.raises(ValueError, match="TOOROW_JWT_ISSUER"):
         _reload_build(monkeypatch)
 
 

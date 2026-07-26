@@ -1351,7 +1351,15 @@ mcp.tool(get_daily_report, app=AppConfig(resource_uri=DAILY_REPORT_WIDGET_URI))
 
 
 def _load_project_geographic_posture(project_id: str):
-    """Best-effort posture + live coverage for every named-report execution path."""
+    """Best-effort posture + live coverage for every named-report execution path.
+
+    Story 37.8: the posture carries the client-defined MARKETS (stable id,
+    label, member country codes), and ``render_report`` projects them into
+    ``data.geography.markets`` / ``data.geography.buckets`` so every tool path
+    exposes the market split rather than raw ISO codes. A posture read failure
+    degrades to Global + an honest ``unavailable`` coverage, never to a silent
+    consolidated answer presented as a market split.
+    """
 
     from core import db as _core_db  # noqa: PLC0415
     from core.geographic_reporting import (  # noqa: PLC0415

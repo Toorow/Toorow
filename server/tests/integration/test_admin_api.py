@@ -476,8 +476,8 @@ class TestAdminApiIntegration:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        INSERT INTO app.projects (id, name, slug, created_by)
-                        VALUES (%s, 'Story 2.4 Integ', %s, 'integ-test')
+                        INSERT INTO app.projects (id, name, slug, created_by, org_id)
+                        VALUES (%s, 'Story 2.4 Integ', %s, 'integ-test', 'org_test_fixture')
                         ON CONFLICT (id) DO NOTHING
                         """,
                         (self._TEST_PROJECT_ID, self._TEST_PROJECT_ID),
@@ -592,7 +592,7 @@ class TestAdminApiIntegration:
             assert post_resp.status_code == 201
 
             # List connections -- the created row must appear
-            get_resp = client.get("/api/connections")
+            get_resp = client.get(f"/api/connections?project_id={self._TEST_PROJECT_ID}")
             assert get_resp.status_code == 200
             body = get_resp.json()
             assert "connections" in body
@@ -610,14 +610,17 @@ class TestOrphanPrevention:
             "core.admin_api.nango_client._list_connections_async",
             new_callable=AsyncMock,
             return_value=[{"connection_id": "some-other-conn", "provider": "p"}],
-        ):
+        ), patch(
+            "core.admin_api._resolve_connection_create_scope",
+            return_value=("org_test", False),
+        ), patch("core.db.get_connection"):
             client = TestClient(build_asgi_app(), raise_server_exceptions=False)
             resp = client.post(
                 "/api/connections",
                 json={
                     "provider": "test-provider",
                     "nango_connection_id": "nango-ghost-999",
-                    "project_id": "default",
+                    "project_id": "project-test",
                 },
             )
         assert resp.status_code == 409
@@ -632,7 +635,7 @@ class TestOrphanPrevention:
             json={
                 "provider": "BAD PROVIDER!",
                 "nango_connection_id": "x",
-                "project_id": "default",
+                "project_id": "project-test",
             },
         )
         assert resp.status_code == 400

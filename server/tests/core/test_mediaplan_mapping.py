@@ -107,9 +107,7 @@ def test_validate_split_sum_over_raises_with_observed_pct():
 
     # 0.80 + 0.30 = 1.10 -> "constaté : 110 %".
     with pytest.raises(MediaPlanValidationError) as exc:
-        validate_split_sum(
-            [Decimal("0.800000"), Decimal("0.300000")], campaign_ref="camp-A"
-        )
+        validate_split_sum([Decimal("0.800000"), Decimal("0.300000")], campaign_ref="camp-A")
     assert "110" in str(exc.value)
     assert "camp-A" in str(exc.value)
 
@@ -171,9 +169,7 @@ def _pg_reachable() -> bool:
         return False
 
 
-pg_available = pytest.mark.skipif(
-    not _pg_reachable(), reason="platform Postgres not reachable"
-)
+pg_available = pytest.mark.skipif(not _pg_reachable(), reason="platform Postgres not reachable")
 
 
 def _connect():
@@ -187,8 +183,9 @@ def _seed_project(conn) -> str:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
-            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system')
+            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by,
+                org_id)
+            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system', 'org_test_fixture')
             """,
             (project_id, "Map Test", project_id),
         )
@@ -327,13 +324,19 @@ def test_equireparti_across_two_lines_same_campaign():
     try:
         plan = _make_published_plan(conn, project_id)
         set_line_mappings(
-            conn, plan_id=plan["id"], line_key="social/prospecting",
-            entries=[{"connector": "meta-ads", "campaign_ref": "A"}], actor="tester",
+            conn,
+            plan_id=plan["id"],
+            line_key="social/prospecting",
+            entries=[{"connector": "meta-ads", "campaign_ref": "A"}],
+            actor="tester",
         )
         conn.commit()
         set_line_mappings(
-            conn, plan_id=plan["id"], line_key="social/retargeting",
-            entries=[{"connector": "meta-ads", "campaign_ref": "A"}], actor="tester",
+            conn,
+            plan_id=plan["id"],
+            line_key="social/retargeting",
+            entries=[{"connector": "meta-ads", "campaign_ref": "A"}],
+            actor="tester",
         )
         conn.commit()
 
@@ -375,7 +378,9 @@ def test_explicit_single_line_full_weight_ok_then_partial_rejected():
         plan = _make_published_plan(conn, project_id)
         # Single line owns campaign A at 1.0 -> valid.
         set_line_mappings(
-            conn, plan_id=plan["id"], line_key="social/prospecting",
+            conn,
+            plan_id=plan["id"],
+            line_key="social/prospecting",
             entries=[{"connector": "meta-ads", "campaign_ref": "A", "split_weight": "1.000000"}],
             actor="tester",
         )
@@ -386,7 +391,9 @@ def test_explicit_single_line_full_weight_ok_then_partial_rejected():
         # A 2nd line adds an explicit 0.30 -> campaign sum 1.30 -> 422.
         with pytest.raises(MediaPlanValidationError) as exc:
             set_line_mappings(
-                conn, plan_id=plan["id"], line_key="social/retargeting",
+                conn,
+                plan_id=plan["id"],
+                line_key="social/retargeting",
                 entries=[
                     {"connector": "meta-ads", "campaign_ref": "A", "split_weight": "0.300000"}
                 ],
@@ -413,8 +420,11 @@ def test_orphaned_on_reimport_then_reactivated():
     try:
         plan = _make_published_plan(conn, project_id)
         set_line_mappings(
-            conn, plan_id=plan["id"], line_key="social/prospecting",
-            entries=[{"connector": "meta-ads", "campaign_ref": "A"}], actor="tester",
+            conn,
+            plan_id=plan["id"],
+            line_key="social/prospecting",
+            entries=[{"connector": "meta-ads", "campaign_ref": "A"}],
+            actor="tester",
         )
         conn.commit()
 
@@ -430,9 +440,7 @@ def test_orphaned_on_reimport_then_reactivated():
         assert all(m["status"] == "orphaned" for m in line["mappings"])
 
         # v3: line comes back -> reactivated.
-        v3 = create_version_with_lines(
-            conn, plan_id=plan["id"], lines=_LINES, created_by="tester"
-        )
+        v3 = create_version_with_lines(conn, plan_id=plan["id"], lines=_LINES, created_by="tester")
         publish_version(conn, version_id=v3["id"], published_by="tester")
         conn.commit()
 
@@ -475,8 +483,7 @@ def test_shared_campaign_rebalances_to_one_on_orphan_and_reactivation():
     def _rebalanced_audit_count(conn_) -> int:
         with conn_.cursor() as cur:
             cur.execute(
-                "SELECT COUNT(*) FROM app.audit_log "
-                "WHERE action = 'media_plan.mapping.rebalanced'"
+                "SELECT COUNT(*) FROM app.audit_log WHERE action = 'media_plan.mapping.rebalanced'"
             )
             return int(cur.fetchone()[0])
 
@@ -486,12 +493,18 @@ def test_shared_campaign_rebalances_to_one_on_orphan_and_reactivation():
         plan = _make_published_plan(conn, project_id)
         # L1 (prospecting) and L2 (retargeting) both map A, implicit -> 0.5/0.5.
         set_line_mappings(
-            conn, plan_id=plan["id"], line_key="social/prospecting",
-            entries=[{"connector": "meta-ads", "campaign_ref": "A"}], actor="tester",
+            conn,
+            plan_id=plan["id"],
+            line_key="social/prospecting",
+            entries=[{"connector": "meta-ads", "campaign_ref": "A"}],
+            actor="tester",
         )
         set_line_mappings(
-            conn, plan_id=plan["id"], line_key="social/retargeting",
-            entries=[{"connector": "meta-ads", "campaign_ref": "A"}], actor="tester",
+            conn,
+            plan_id=plan["id"],
+            line_key="social/retargeting",
+            entries=[{"connector": "meta-ads", "campaign_ref": "A"}],
+            actor="tester",
         )
         conn.commit()
         assert _active_sum_for_a(conn, plan["id"]) == Decimal("1.000000")
@@ -514,9 +527,7 @@ def test_shared_campaign_rebalances_to_one_on_orphan_and_reactivation():
         assert _rebalanced_audit_count(conn) > rebalanced_before
 
         # v3: L1 comes back -> reactivated + re-equireparti to 0.5/0.5.
-        v3 = create_version_with_lines(
-            conn, plan_id=plan["id"], lines=_LINES, created_by="tester"
-        )
+        v3 = create_version_with_lines(conn, plan_id=plan["id"], lines=_LINES, created_by="tester")
         publish_version(conn, version_id=v3["id"], published_by="tester")
         conn.commit()
 
@@ -548,8 +559,11 @@ def test_unknown_line_rejected_422():
         plan = _make_published_plan(conn, project_id)
         with pytest.raises(MediaPlanValidationError) as exc:
             set_line_mappings(
-                conn, plan_id=plan["id"], line_key="does/not/exist",
-                entries=[{"connector": "meta-ads", "campaign_ref": "A"}], actor="tester",
+                conn,
+                plan_id=plan["id"],
+                line_key="does/not/exist",
+                entries=[{"connector": "meta-ads", "campaign_ref": "A"}],
+                actor="tester",
             )
         assert "inconnue de la version active" in str(exc.value)
         conn.rollback()
@@ -577,8 +591,11 @@ def test_unmapped_actuals_excludes_active_mappings():
     try:
         plan = _make_published_plan(conn, project_id)
         set_line_mappings(
-            conn, plan_id=plan["id"], line_key="social/prospecting",
-            entries=[{"connector": "meta-ads", "campaign_ref": "A"}], actor="tester",
+            conn,
+            plan_id=plan["id"],
+            line_key="social/prospecting",
+            entries=[{"connector": "meta-ads", "campaign_ref": "A"}],
+            actor="tester",
         )
         conn.commit()
 
@@ -676,8 +693,11 @@ def test_unmapped_actuals_out_of_line_window_spend_is_visible():
         plan = _make_published_plan(conn, project_id, lines=lines)
         # A is mapped ONLY to the early line [1-10 mars].
         set_line_mappings(
-            conn, plan_id=plan["id"], line_key="social/early",
-            entries=[{"connector": "meta-ads", "campaign_ref": "A"}], actor="tester",
+            conn,
+            plan_id=plan["id"],
+            line_key="social/early",
+            entries=[{"connector": "meta-ads", "campaign_ref": "A"}],
+            actor="tester",
         )
         conn.commit()
 
@@ -742,16 +762,22 @@ def test_for_update_serialises_concurrent_writes():
 
         # A takes the plan lock and maps prospecting -> A (holds txn open).
         set_line_mappings(
-            conn_a, plan_id=plan["id"], line_key="social/prospecting",
-            entries=[{"connector": "meta-ads", "campaign_ref": "A"}], actor="tester",
+            conn_a,
+            plan_id=plan["id"],
+            line_key="social/prospecting",
+            entries=[{"connector": "meta-ads", "campaign_ref": "A"}],
+            actor="tester",
         )
 
         b_done: list[str] = []
 
         def _run_b():
             set_line_mappings(
-                conn_b, plan_id=plan["id"], line_key="social/retargeting",
-                entries=[{"connector": "meta-ads", "campaign_ref": "A"}], actor="tester",
+                conn_b,
+                plan_id=plan["id"],
+                line_key="social/retargeting",
+                entries=[{"connector": "meta-ads", "campaign_ref": "A"}],
+                actor="tester",
             )
             conn_b.commit()
             b_done.append("ok")

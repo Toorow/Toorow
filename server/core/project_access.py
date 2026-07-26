@@ -269,7 +269,9 @@ def resolve_org_role(
     # "cannot suspend/remove the last owner" guard belongs to the delete/downgrade
     # paths built later).
     if not has_active_members:
-        return "owner"  # DEFAULT-OPEN: no active member -> caller acts as owner
+        if epic36_production_access_enabled(auth_mode=mode):
+            return None  # Production never exposes an unclaimed tenant implicitly.
+        return "owner"  # Legacy/dev compatibility outside the production gate.
     return str(role) if role is not None else None
 
 

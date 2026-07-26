@@ -529,8 +529,8 @@ async def test_seam_patch_cross_project_vsid_denied():
                 cur.execute(
                     """
                     INSERT INTO app.datastreams
-                        (id, project_id, name, module_name, created_by)
-                    VALUES (%s, %s, %s, 'google-analytics', 'test')
+                        (id, project_id, name, module_name, created_by, org_id)
+                    VALUES (%s, %s, %s, 'google-analytics', 'test', 'org_test_fixture')
                     """,
                     (ds_id, pid_a, f"stream-{uuid.uuid4().hex[:6]}"),
                 )
@@ -585,8 +585,8 @@ async def test_seam_patch_same_project_vsid_accepted():
                 cur.execute(
                     """
                     INSERT INTO app.datastreams
-                        (id, project_id, name, module_name, created_by)
-                    VALUES (%s, %s, %s, 'google-analytics', 'test')
+                        (id, project_id, name, module_name, created_by, org_id)
+                    VALUES (%s, %s, %s, 'google-analytics', 'test', 'org_test_fixture')
                     """,
                     (ds_id, pid, f"stream-{uuid.uuid4().hex[:6]}"),
                 )

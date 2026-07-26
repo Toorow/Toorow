@@ -1,42 +1,49 @@
 /**
- * CountrySplit — faithful React port of the validated Country split mockup.
+ * CountrySplit — the "Country split" module surface.
  *
- * Source of visual truth:
+ * Visual lineage:
  *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
  *     mockups/country-split.html
  *
- * The application shell (ApplicationShell.tsx) already renders the frame,
- * sidebar, topbar, and <main className="main">. This component renders ONLY the
- * page body that lives inside <main>: the page header (with the Active signal +
- * Save changes), and the country-settings card with its four setting rows —
- * Module activation, Priority countries, Automatic result, and Coverage.
+ * The application shell (ApplicationShell.tsx) renders the frame, sidebar,
+ * topbar, and <main className="main">. This component renders ONLY the page body.
  *
- * Styling: application.css (global, via the shell) for shell/layout classes
- * (page-header, header-actions, signal-label, signal-mark, provider-logo,
- * primary/secondary button) + country-split.css for the page-specific surfaces.
- * Colors come exclusively from the application.css CSS variables.
+ * WHAT IS REAL, AND WHAT WAS REMOVED
+ * ----------------------------------
+ * Two things map to the backend, and only two:
+ *   - module state + priority countries -> GET /api/projects/{id}
+ *       (geographic_mode, local_market_country_codes)
+ *   - country display names/flags       -> GET /api/vocabularies/countries
+ *       VERIFIED against server/core/admin_api.py, which registers
+ *       "/api/vocabularies/countries" -> _list_countries. There is NO
+ *       /api/reference/* route in server/core; the previous
+ *       /api/reference/countries call 404'd silently on every load, so country
+ *       names never resolved and the page fell back to raw codes without ever
+ *       saying the lookup had failed.
  *
- * Flags: rendered with the flag-icons library ONLY (icon-only <span class="fi
- * fi-xx">), never a hand-drawn SVG. The country name is carried on aria-label.
+ * Everything the mockup showed beyond that was FICTION rendered as measurement
+ * and has been removed rather than kept behind a // TODO(api):
+ *   - "Active" was hard-coded true; it is now derived from geographic_mode.
+ *   - the FR priority-country fallback invented a tracked market for projects
+ *     that track none.
+ *   - "6 compatible Datastreams" (twice) and the per-Datastream exception row
+ *     had no endpoint at all: no read model answers standing compatibility, only
+ *     the transactional POST /api/projects/{id}/geography/preview does. The
+ *     screen now points at that flow instead of inventing its result.
+ *   - the "Save changes", "+ Add country" and switch controls were inert; the
+ *     writable surface is Project settings, which owns the preview -> confirm
+ *     contract. They are gone.
  *
- * Data: the mockup surfaces a project-wide module that (a) is active, (b) has a
- * set of priority countries published separately from "Other", (c) claims to
- * add a country dimension automatically to every compatible Datastream, and (d)
- * lists per-Datastream compatibility exceptions.
+ * A load failure is SAID; an empty tracked-market list is rendered as empty.
  *
- * Only two of those map to today's backend:
- *   - Priority countries  -> project.local_market_country_codes (GET /api/projects/:id)
- *   - Country display names/flags -> GET /api/reference/countries
- * Everything else (project-wide activation switch, automatic cross-Datastream
- * country derivation, the "6 compatible Datastreams" coverage count, and the
- * per-Datastream exception list) has NO backing state/endpoint and is rendered
- * from the mockup's literals, each flagged with // TODO(api). See the GAP LIST
- * returned with this port. The page renders finished with no backend.
+ * Flags: flag-icons only (icon-only <span class="fi fi-xx">), never a hand-drawn
+ * SVG. The country name is carried on aria-label.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "flag-icons/css/flag-icons.min.css";
 import "../application.css";
 import "./country-split.css";
+import { apiFetch } from "../../lib/apiFetch";
 
 interface ProjectPrefs {
   id: string;
@@ -52,11 +59,17 @@ interface CountryOption {
 
 interface CountrySplitProps {
   projectId?: string;
-  apiBase?: string;
-  apiToken?: string;
   /** Back to the Data > Modules catalog (Country split is reached from there). */
   onBack?: () => void;
+  /** Wired by the shell when project settings can be opened; the geography is
+   *  edited there (preview -> confirm). Rendered only when provided. */
+  onOpenProjectSettings?: () => void;
 }
+
+type LoadState<T> =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ok"; data: T };
 
 /**
  * CountryFlag — icon-only flag via flag-icons. The visible glyph is decorative;
@@ -65,89 +78,64 @@ interface CountrySplitProps {
  */
 function CountryFlag({ code, name }: { code: string; name: string }) {
   return (
-    <span
-      className={`fi fi-${code.toLowerCase()} country-flag`}
-      role="img"
-      aria-label={name}
-    />
+    <span className={`fi fi-${code.toLowerCase()} country-flag`} role="img" aria-label={name} />
   );
 }
 
 export default function CountrySplit({
-  projectId = "default",
-  apiBase = "",
-  apiToken = "",
+  projectId,
   onBack,
+  onOpenProjectSettings,
 }: CountrySplitProps) {
-  const [prefs, setPrefs] = useState<ProjectPrefs | null>(null);
-  const [countryOptions, setCountryOptions] = useState<CountryOption[]>([]);
+  const [prefs, setPrefs] = useState<LoadState<ProjectPrefs>>({ status: "loading" });
+  const [countries, setCountries] = useState<LoadState<CountryOption[]>>({ status: "loading" });
+
+  const load = useCallback(async () => {
+    if (!projectId) {
+      setPrefs({ status: "error", message: "no project is scoped" });
+      setCountries({ status: "error", message: "no project is scoped" });
+      return;
+    }
+    setPrefs({ status: "loading" });
+    setCountries({ status: "loading" });
+
+    try {
+      const resp = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+        cache: "no-store",
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      setPrefs({ status: "ok", data: (await resp.json()) as ProjectPrefs });
+    } catch (err) {
+      setPrefs({ status: "error", message: err instanceof Error ? err.message : String(err) });
+    }
+
+    try {
+      const resp = await apiFetch(`/api/vocabularies/countries`, { cache: "no-store" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = (await resp.json()) as { countries?: CountryOption[] };
+      setCountries({ status: "ok", data: data.countries ?? [] });
+    } catch (err) {
+      setCountries({
+        status: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }, [projectId]);
 
   useEffect(() => {
-    const headers: Record<string, string> = {};
-    if (apiToken) headers["Authorization"] = `Bearer ${apiToken}`;
-
-    async function load() {
-      try {
-        const resp = await fetch(
-          `${apiBase}/api/projects/${encodeURIComponent(projectId)}`,
-          { headers }
-        );
-        if (resp.ok) setPrefs((await resp.json()) as ProjectPrefs);
-      } catch {
-        /* leave prefs null -> fall back to mockup literals */
-      }
-      try {
-        const resp = await fetch(`${apiBase}/api/reference/countries`, { headers });
-        if (resp.ok) {
-          const data = await resp.json();
-          setCountryOptions((data.countries ?? []) as CountryOption[]);
-        }
-      } catch {
-        /* leave country options empty -> fall back to literal names */
-      }
-    }
     void load();
-  }, [projectId, apiBase, apiToken]);
+  }, [load]);
 
-  // Real map: priority countries = project.local_market_country_codes. When the
-  // API has not answered (or the project has none set), fall back to the
-  // mockup's single priority country, France.
-  const priorityCodes =
-    prefs?.local_market_country_codes && prefs.local_market_country_codes.length > 0
-      ? prefs.local_market_country_codes
-      : ["FR"]; // TODO(api): mockup literal until a project has local markets set
+  const project = prefs.status === "ok" ? prefs.data : null;
+  const moduleActive = project?.geographic_mode === "local_markets";
+  const priorityCodes = project?.local_market_country_codes ?? [];
 
+  /** Display name for a code — falls back to the code itself, and says so when
+   *  the vocabulary could not be loaded. */
   const nameFor = (code: string) =>
-    countryOptions.find((c) => c.code === code)?.display_name ?? code;
-
-  // The primary selected country drives the flow card + the "Selected" group
-  // label in the mockup (single-country layout). Additional selections still
-  // render as flag chips in the picker.
-  const primaryCode = priorityCodes[0];
-  const primaryName = nameFor(primaryCode);
-  const selectedCount = priorityCodes.length;
-
-  // TODO(api): project-wide activation has no backing field today. The mockup
-  // shows the module as active; there is no `country_split_active` on the
-  // project. Treated as always-active to match the validated surface.
-  const moduleActive = true;
-
-  // TODO(api): automatic cross-Datastream coverage count. There is no endpoint
-  // that returns "N compatible Datastreams" for a project without POSTing a
-  // geography preview. Mockup literal.
-  const compatibleCount = 6;
-
-  // TODO(api): per-Datastream compatibility exceptions. The geography preview
-  // returns blocked datastreams, but only transactionally on a proposed change;
-  // there is no standing exception list for an active module. Mockup literal.
-  const exceptions = [
-    {
-      provider: "Meta",
-      logo: "/connectors/meta.svg",
-      name: "Account insights",
-      reason: "Country breakdown is not supported by this report structure.",
-    },
-  ];
+    (countries.status === "ok"
+      ? countries.data.find((c) => c.code === code)?.display_name
+      : undefined) ?? code;
 
   return (
     <div className="country-split-page">
@@ -155,142 +143,139 @@ export default function CountrySplit({
         <button type="button" className="crumb-link" onClick={() => onBack?.()}>
           Modules
         </button>
-        <span className="crumb-sep" aria-hidden="true">›</span>
+        <span className="crumb-sep" aria-hidden="true">
+          ›
+        </span>
         <span className="crumb-current">Country split</span>
       </nav>
+
       <div className="page-header">
         <div>
           <h1>Country split</h1>
           <p>
-            Automatically add a country dimension to compatible Datastreams and
-            publish selected countries separately from Other.
+            Publish selected countries as their own reporting groups, with everything else
+            grouped as Other.
           </p>
         </div>
         <div className="header-actions">
-          <span className="signal-label success">
-            <span className="signal-mark" />
-            {moduleActive ? "Active" : "Inactive"}
-          </span>
-          {/* TODO(api): persist module + priority-country changes */}
-          <button className="primary-button">Save changes</button>
+          {prefs.status === "ok" && (
+            <span className={`signal-label ${moduleActive ? "success" : "info"}`}>
+              <span className="signal-mark" />
+              {moduleActive ? "Active" : "Inactive"}
+            </span>
+          )}
+          {onOpenProjectSettings && (
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => onOpenProjectSettings()}
+            >
+              Edit in project settings
+            </button>
+          )}
         </div>
       </div>
 
-      <section className="country-settings">
-        <div className="setting-row">
-          <div className="setting-copy">
-            <h2>Module</h2>
-            <p>
-              Apply the split automatically to every compatible Datastream in
-              this project.
-            </p>
-          </div>
-          <div className="setting-control">
-            {/* TODO(api): no `country_split_active` field on the project yet */}
-            <div className="switch-control" role="switch" aria-checked={moduleActive}>
-              <span className="switch-track" />
-              Country split is active
-            </div>
-          </div>
-        </div>
+      {prefs.status === "loading" && (
+        <p className="cs-status" role="status">
+          Loading the module state…
+        </p>
+      )}
 
-        <div className="setting-row">
-          <div className="setting-copy">
-            <h2>Priority countries</h2>
-            <p>
-              Selected countries are published as their own reporting groups.
-              Everything else is grouped as Other.
-            </p>
-          </div>
-          <div className="setting-control">
-            <div className="country-picker">
-              {priorityCodes.map((code) => (
-                <button
-                  key={code}
-                  className="country-flag-button"
-                  aria-label={`${nameFor(code)} selected`}
-                  title={nameFor(code)}
-                >
-                  <CountryFlag code={code} name={nameFor(code)} />
-                </button>
-              ))}
-              {/* TODO(api): open country picker + persist local_market_country_codes */}
-              <button className="secondary-button">+ Add country</button>
-              <span className="signal-label info">
+      {prefs.status === "error" && (
+        <div className="cs-load-error" role="alert">
+          <span className="signal-label error">
+            <span className="signal-mark" />
+            Could not load the module state
+          </span>
+          <p>
+            {prefs.message}. Neither the module state nor the tracked markets are known —
+            nothing below is being reported.
+          </p>
+          <button className="secondary-button" type="button" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {prefs.status === "ok" && (
+        <section className="country-settings">
+          <div className="setting-row">
+            <div className="setting-copy">
+              <h2>Module</h2>
+              <p>
+                The split applies when the project reports on local markets rather than a
+                single global view.
+              </p>
+            </div>
+            <div className="setting-control">
+              <span className={`signal-label ${moduleActive ? "success" : "info"}`}>
                 <span className="signal-mark" />
-                {selectedCount} selected
+                {moduleActive
+                  ? "Country split is active (reporting mode: local markets)"
+                  : "Country split is inactive (reporting mode: global)"}
               </span>
             </div>
           </div>
-        </div>
 
-        <div className="setting-row">
-          <div className="setting-copy">
-            <h2>Automatic result</h2>
-            <p>No country assignment is required inside individual Datastreams.</p>
-          </div>
-          <div className="setting-control">
-            <div className="country-flow">
-              <div className="flow-card">
-                <span>Project coverage</span>
-                {/* TODO(api): compatible-Datastream count */}
-                <strong>{compatibleCount} compatible Datastreams</strong>
-              </div>
-              <div className="flow-arrow">→</div>
-              <div className="flow-card">
-                <span>Module action</span>
-                <strong>Add country</strong>
-              </div>
-              <div className="flow-arrow">→</div>
-              <div className="flow-groups">
-                <div className="flow-group france">
-                  <span>Selected</span>
-                  <strong>{primaryName}</strong>
-                </div>
-                <div className="flow-group other">
-                  <span>Remainder</span>
-                  <strong>Other</strong>
-                </div>
-              </div>
+          <div className="setting-row">
+            <div className="setting-copy">
+              <h2>Priority countries</h2>
+              <p>
+                Selected countries are published as their own reporting groups. Everything
+                else is grouped as Other.
+              </p>
             </div>
-          </div>
-        </div>
-
-        <div className="setting-row">
-          <div className="setting-copy">
-            <h2>Coverage</h2>
-            <p>
-              Compatibility is evaluated from each report structure and provider
-              capability.
-            </p>
-          </div>
-          <div className="setting-control">
-            {/* TODO(api): count of Datastreams that will update automatically */}
-            <div className="signal-label success">
-              <span className="signal-mark" />
-              {compatibleCount} Datastreams will update automatically
-            </div>
-            {/* TODO(api): standing per-Datastream compatibility exceptions */}
-            {exceptions.map((ex) => (
-              <div className="exception-row" key={ex.name}>
-                <div className="consumer-cell">
-                  <span className="provider-logo">
-                    <img src={ex.logo} alt={ex.provider} />
+            <div className="setting-control">
+              {countries.status === "error" && (
+                <p className="cs-inline-error" role="alert">
+                  Country names could not be loaded ({countries.message}) — the codes below
+                  are shown unresolved.
+                </p>
+              )}
+              {priorityCodes.length === 0 ? (
+                <p className="cs-empty">
+                  No country is tracked for this project. Until a market is selected,
+                  everything is published as a single group.
+                </p>
+              ) : (
+                <div className="country-picker">
+                  {priorityCodes.map((code) => (
+                    <span key={code} className="country-flag-chip" title={nameFor(code)}>
+                      <CountryFlag code={code} name={nameFor(code)} />
+                      <span className="country-chip-name">{nameFor(code)}</span>
+                    </span>
+                  ))}
+                  <span className="signal-label info">
+                    <span className="signal-mark" />
+                    {priorityCodes.length} selected
                   </span>
-                  <div>
-                    <strong>{ex.name}</strong>
-                    <small>{ex.reason}</small>
-                  </div>
                 </div>
-                <span className="signal-label warning">
-                  <span className="signal-mark" />
-                  {exceptions.length} exception{exceptions.length === 1 ? "" : "s"}
-                </span>
-              </div>
-            ))}
+              )}
+            </div>
           </div>
-        </div>
-      </section>
+
+          <div className="setting-row">
+            <div className="setting-copy">
+              <h2>Coverage</h2>
+              <p>
+                Compatibility is evaluated per Datastream from its report structure and the
+                provider capability.
+              </p>
+            </div>
+            <div className="setting-control">
+              {/* No read model answers standing compatibility. The only endpoint
+                  that evaluates it is the transactional geography preview in
+                  Project settings, so that is what is stated — not a count. */}
+              <p className="cs-empty">
+                Datastream compatibility is not evaluated on this screen. It is computed
+                when a geography change is previewed in Project settings, which reports the
+                affected Datastreams and any blocking gaps before the change is applied.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

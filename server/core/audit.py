@@ -131,6 +131,14 @@ ACTION_PROCEDURE_ARCHIVED = "procedure.archived"
 # Story 11.4 -- context graph edge lifecycle
 ACTION_GRAPH_EDGE_CREATED = "context_graph.edge.created"
 ACTION_GRAPH_EDGE_DELETED = "context_graph.edge.deleted"
+# Story 44.1 -- one-shot knowledge_entries -> context_topics data migration
+# (infra/nango/migrations/108_knowledge_entries_to_context_topics.sql). The SQL
+# migration hard-codes this string literal (it cannot import this module); keep
+# both in sync if this ever changes.
+ACTION_CONTEXT_TOPIC_MIGRATED = "context_topic.migrated"
+# Story 44.11 -- "Request review" intent capture (no notification delivery;
+# surfacing these requests is explicitly out of scope for this story).
+ACTION_CONTEXT_REVIEW_REQUESTED = "context.review_requested"
 
 # Story 22.1: media plans (FR38 / CAP-26).
 ACTION_MEDIA_PLAN_CREATED = "media_plan.created"

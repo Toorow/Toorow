@@ -84,8 +84,9 @@ def _seed_project(members=None) -> str:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
-                VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system')
+                INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by,
+                    org_id)
+                VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system', 'org_test_fixture')
                 """,
                 (project_id, "MP API", project_id),
             )

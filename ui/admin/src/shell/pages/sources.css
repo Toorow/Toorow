@@ -142,3 +142,42 @@
   margin-bottom: 2px;
   color: var(--ink);
 }
+
+/* --- Load / empty states -------------------------------------------------- */
+/* A failure and an empty account list are DIFFERENT things and must read
+   differently: the page used to render four invented accounts for both. */
+.source-status {
+  margin: 0;
+  padding: 28px 20px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: center;
+}
+.source-load-error {
+  margin: 18px 20px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--surface));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--error) 7%, var(--surface));
+}
+.source-load-error p {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.source-management {
+  margin: 20px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--info));
+}
+.source-management h3 {
+  margin: 0;
+}
+.source-management .row-actions {
+  flex-wrap: wrap;
+  margin-top: 16px;
+}

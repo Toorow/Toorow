@@ -288,6 +288,7 @@ class TestUpsertDatastream:
         with (
             patch("core.project_access.identity_has_project_role", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=True),
+            patch("core.datastream_intents.replay_datastream_intent", return_value=None),
             patch(
                 "core.flows._fetch_mappings",
                 return_value=[
@@ -327,6 +328,7 @@ class TestUpsertDatastream:
         with (
             patch("core.project_access.identity_has_project_role", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=True),
+            patch("core.datastream_intents.replay_datastream_intent", return_value=None),
             patch(
                 "core.geographic_reporting.fetch_project_geographic_posture",
                 return_value=GeographicPosture(),
@@ -358,6 +360,64 @@ class TestUpsertDatastream:
         assert save.call_args.kwargs["geographic_posture"] == GeographicPosture()
         assert result["flow"]["schema_version"] == "2"
         assert result["plan_version"]["id"] == "dsp_01"
+
+    def test_versioned_create_retry_recovers_original_shell(self):
+        """A lost response is recovered before mutable capabilities are loaded."""
+        from tests.core.test_datastream_intents import _intent
+
+        conn = MagicMock()
+        doc = {
+            "schema_version": "2",
+            "kind": "datastream",
+            "project_id": "proj_a",
+            "name": "Campaign feed",
+            "intent": _intent(),
+            "idempotency_key": "flow-request-retry-01",
+        }
+        existing = {
+            "id": "ds_original",
+            "project_id": "proj_a",
+            "name": "Campaign feed",
+            "versioned": True,
+            "intent_payload": _intent(),
+            "current_plan_version_id": "dsp_01",
+        }
+        saved = {
+            "id": "dsp_01",
+            "datastream_id": "ds_original",
+            "version_number": 1,
+            "executable": True,
+            "idempotent_replay": True,
+        }
+        with (
+            patch("core.project_access.identity_has_project_role", return_value=True),
+            patch(
+                "core.datastream_intents.replay_datastream_intent", return_value=saved
+            ) as recover,
+            patch(
+                "core.source_capabilities.get_scoped_source_capabilities",
+                side_effect=AssertionError("replay must not load current capabilities"),
+            ) as capabilities,
+            patch("core.datastreams.create_datastream") as create,
+            patch("core.datastreams.get_datastream", return_value=existing),
+            patch("core.datastream_intents.save_datastream_intent") as save,
+        ):
+            result = flows.upsert_flow(
+                "proj_a", doc, "member-1", conn, loaded_modules=[MagicMock()]
+            )
+
+        recover.assert_called_once_with(
+            project_id="proj_a",
+            intent=doc["intent"],
+            idempotency_key="flow-request-retry-01",
+            conn=conn,
+            datastream_id=None,
+        )
+        capabilities.assert_not_called()
+        create.assert_not_called()
+        save.assert_not_called()
+        assert result["id"] == "ds_original"
+        assert result["changed"] is False
 
     def test_connection_ref_not_in_project_rejected(self):
         """GUARDRAIL: connection_ref_id must belong to the project (opaque FK)."""
@@ -392,6 +452,7 @@ class TestUpsertDatastream:
         with (
             patch("core.project_access.identity_has_project_role", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=True),
+            patch("core.datastream_intents.replay_datastream_intent", return_value=None),
             patch("core.datastreams.get_datastream", return_value=existing),
             patch("core.flows._fetch_mappings", return_value=mappings),
             patch("core.datastreams.update_datastream") as mock_update,
@@ -478,6 +539,7 @@ class TestApplyMappings:
         with (
             patch("core.project_access.identity_has_project_role", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=True),
+            patch("core.datastream_intents.replay_datastream_intent", return_value=None),
             patch("core.datastreams.get_datastream", return_value=existing),
             patch(
                 "core.flows._fetch_mappings",
@@ -581,6 +643,7 @@ class TestCreateAtomicity:
         with (
             patch("core.project_access.identity_has_project_role", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=True),
+            patch("core.datastream_intents.replay_datastream_intent", return_value=None),
             patch("core.datastreams.create_datastream", return_value=created_row),
             patch("core.flows._apply_mappings", side_effect=RuntimeError("DB write failed")),
             patch("core.flows._audit"),

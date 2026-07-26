@@ -148,6 +148,77 @@ def _what_lines(rollup: dict, narrative_prompt: str | None) -> list[str]:
     return lines
 
 
+# ---------------------------------------------------------------------------
+# Story 37.8 — market citation rules.
+#
+# A Local-markets report line must cite the operator's market LABEL, never a
+# bare ISO code, and must never present the synthetic ``Other markets`` or
+# ``Unknown`` groupings as if they were countries. These helpers are the single
+# place that decides how a market bucket is named in prose, so no card builder
+# has to re-derive it (and none may fall back to the raw code).
+# ---------------------------------------------------------------------------
+OTHER_MARKETS_BUCKET_ID = "__other_markets__"
+UNKNOWN_MARKET_BUCKET_ID = "__unknown_market__"
+
+# Prose used for the two non-country groupings. Deliberately NOT phrased as a
+# place: they are reporting groupings, not markets and not countries.
+_OTHER_MARKETS_PHRASE = "Hors marchés suivis"
+_UNKNOWN_MARKET_PHRASE = "Géographie non résolue"
+
+
+def is_country_market_bucket(bucket: dict) -> bool:
+    """True only for a real client-defined market (never Other/Unknown)."""
+
+    kind = bucket.get("market_kind") or bucket.get("kind")
+    bucket_id = bucket.get("market_id") or bucket.get("id") or bucket.get("breakdown_value")
+    if bucket_id in {OTHER_MARKETS_BUCKET_ID, UNKNOWN_MARKET_BUCKET_ID}:
+        return False
+    return kind == "tracked"
+
+
+def market_display_label(bucket: dict) -> str:
+    """Return the label to print for a market bucket.
+
+    Never falls back to ``market_code``/``country_codes``: a report cites what
+    the operator named the market. When no label is available the deterministic
+    ``?`` placeholder is used, exactly like the other builders — an unknown name
+    is never invented from a code.
+    """
+
+    bucket_id = bucket.get("market_id") or bucket.get("id") or bucket.get("breakdown_value")
+    if bucket_id == OTHER_MARKETS_BUCKET_ID:
+        return _OTHER_MARKETS_PHRASE
+    if bucket_id == UNKNOWN_MARKET_BUCKET_ID:
+        return _UNKNOWN_MARKET_PHRASE
+    label = bucket.get("market_label") or bucket.get("label")
+    return str(label) if label else "?"
+
+
+def build_market_split_lines(
+    *,
+    buckets: list[dict],
+    pull_ids: list[str] | None = None,
+    connector: str | None = None,
+    limit: int = 3,
+) -> list[str]:
+    """Cited lines for a Local-markets split, ordered as provided.
+
+    Tracked markets are cited by label; ``Other markets`` and ``Unknown`` get a
+    grouping phrase that cannot be read as a country name.
+    """
+
+    citation = _pull_citation(list(pull_ids or []), connector)
+    lines: list[str] = []
+    for bucket in (buckets or [])[:limit]:
+        value = _format_number(bucket.get("value"))
+        label = market_display_label(bucket)
+        if is_country_market_bucket(bucket):
+            lines.append(f"Marché « {label} » : {value} {citation}")
+        else:
+            lines.append(f"{label} : {value} {citation}")
+    return lines
+
+
 def _why_lines(
     context_events: list[dict],
     alerts: list[dict],
@@ -444,11 +515,29 @@ def build_usertypes_comment(
     bars = (block_data.get("bar") or {}).get("bars") or []
     if bars:
         top_country = bars[0]
-        country_label = top_country.get("label") or "?"
         country_val = _format_number(top_country.get("value"))
-        lines.append(
-            f"Premier pays : « {country_label} » ({country_val} utilisateurs actifs) {citation}"
+        top_id = (
+            top_country.get("market_id")
+            or top_country.get("id")
+            or top_country.get("label")
         )
+        if top_id in {OTHER_MARKETS_BUCKET_ID, UNKNOWN_MARKET_BUCKET_ID}:
+            # Story 37.8: these groupings are never presented as a country.
+            lines.append(
+                f"{market_display_label(top_country)} : "
+                f"{country_val} utilisateurs actifs {citation}"
+            )
+        elif top_country.get("market_kind") == "tracked":
+            lines.append(
+                f"Premier marché : « {market_display_label(top_country)} » "
+                f"({country_val} utilisateurs actifs) {citation}"
+            )
+        else:
+            country_label = top_country.get("label") or "?"
+            lines.append(
+                f"Premier pays : « {country_label} » "
+                f"({country_val} utilisateurs actifs) {citation}"
+            )
     else:
         # Fallback: sessions from rollup.
         sess_entry = rollup.get("sessions") or {}

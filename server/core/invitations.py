@@ -103,6 +103,16 @@ def build_fragment_delivery_url(bearer: str) -> str:
     return f"{origin}/invite#invite={bearer}"
 
 
+def invitation_resource_path(org_id: str | None, tail: str) -> tuple[str, str]:
+    """Resource path for an invitation operation, org-scoped or platform-scoped.
+
+    ``org_id is None`` is the ENTRY invitation (no target organization): the act
+    belongs to the platform, so it is recorded under ``platform:invitations``
+    rather than under an organization that does not exist.
+    """
+    return (f"organization:{org_id}" if org_id else "platform:invitations", tail)
+
+
 def validate_invitation_request(
     *,
     invited_identity: str,
@@ -141,7 +151,7 @@ def issue_invitation(
     conn,
     *,
     invited_identity: str,
-    org_id: str,
+    org_id: str | None,
     role: str,
     project_grants: tuple[InvitationGrant, ...],
     datastream_grants: tuple[InvitationGrant, ...],
@@ -152,7 +162,14 @@ def issue_invitation(
     host_context: dict,
     trace_id: str | None,
 ) -> InvitationIssueResult:
-    """Issue after the adapter has authorized every requested resource."""
+    """Issue after the adapter has authorized every requested resource.
+
+    ``org_id`` is OPTIONAL. ``None`` is the ENTRY invitation issued after a
+    waitlist approval: it names no organization, grants nothing, and accepting it
+    creates no membership (the person then creates their own organization). The
+    caller owns the authorization -- an entry invitation may only be issued by a
+    platform admin, an org-scoped one only by a manager of that org.
+    """
     normalized, grants = validate_invitation_request(
         invited_identity=invited_identity,
         role=role,
@@ -160,13 +177,23 @@ def issue_invitation(
         datastream_grants=datastream_grants,
         expires_in_hours=expires_in_hours,
     )
+    if org_id is not None and not str(org_id).strip():
+        raise InvitationValidationError("org_id must be an organization id or absent")
+    if org_id is None and role != "owner":
+        raise InvitationValidationError("an ENTRY invitation must result in owner authority")
+    if org_id is None and grants:
+        # Project / datastream grants are org-scoped resources. There is nothing to
+        # grant before the person has an organization, and migration 109 enforces
+        # the same rule with a CHECK -- refuse here so the caller gets a 422, not a
+        # constraint violation.
+        raise InvitationValidationError("an invitation without an organization grants nothing")
     identity_hash = prepare_identity_binding(normalized).identity_hash
     bindings = [grant.__dict__ for grant in grants]
     spec = OperationSpec(
         command_type="invitation.issue",
         actor=issuer,
         effective_org_id=org_id,
-        resource_path=(f"organization:{org_id}", f"invitation-subject:{identity_hash}"),
+        resource_path=invitation_resource_path(org_id, f"invitation-subject:{identity_hash}"),
         idempotency_key=idempotency_key,
         host_context=host_context,
         versions={"policy": policy_version, "catalog": "invitation-v1", "tool": "rest-v1"},
@@ -314,11 +341,23 @@ class InvitationExchangeResult:
     session_value: str
     max_age_seconds: int
 
+    preview: "InvitationExchangePreview"
+
+
+@dataclass(frozen=True)
+class InvitationExchangePreview:
+    """Exact secret-free authority disclosed after subject-bound exchange."""
+
+    organization_id: str | None
+    organization_label: str | None
+    role_derived: str
+    explicit_grants: tuple[dict, ...]
+    expires_at: datetime
 
 @dataclass(frozen=True)
 class InvitationAcceptanceResult:
     invitation_id: str
-    org_id: str
+    org_id: str | None
     role: str
     explicit_grants: tuple[dict, ...]
     explicit_none: bool
@@ -350,6 +389,7 @@ def exchange_invitation(
     *,
     bearer: str,
     verified_identity: str,
+    person_id: str | None = None,
     max_age_seconds: int = 600,
 ) -> InvitationExchangeResult:
     """Consume one bearer into a narrow authenticated acceptance session."""
@@ -365,11 +405,13 @@ def exchange_invitation(
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, invited_identity_hash, state, expires_at, superseded_by,
-                   bearer_hash, bearer_consumed_at, policy_version
-            FROM app.invitations
-            WHERE bearer_hash = %s
-            FOR UPDATE
+            SELECT i.id, i.invited_identity_hash, i.state, i.expires_at, i.superseded_by,
+                   i.bearer_hash, i.bearer_consumed_at, i.policy_version, i.org_id,
+                   i.invited_role, i.grant_bindings, o.name
+            FROM app.invitations i
+            LEFT JOIN app.organizations o ON o.id = i.org_id
+            WHERE i.bearer_hash = %s
+            FOR UPDATE OF i
             """,
             (candidate_hash,),
         )
@@ -398,17 +440,70 @@ def exchange_invitation(
         )
         if cur.rowcount != 1:
             raise _unavailable()
+        org_id = row[8]
+        role_derived = row[9]
+        raw_grants = row[10]
+        if not isinstance(role_derived, str) or role_derived not in {
+            "owner",
+            "admin",
+            "member",
+            "viewer",
+        }:
+            raise _unavailable()
+        if not isinstance(raw_grants, list):
+            raise _unavailable()
+        grants: list[dict] = []
+        seen_scopes: set[tuple[str, str]] = set()
+        for grant in raw_grants:
+            if not isinstance(grant, dict):
+                raise _unavailable()
+            scope_type = grant.get("scope_type")
+            scope_id = grant.get("scope_id")
+            capability = grant.get("capability")
+            if (
+                scope_type not in {"project", "flux"}
+                or not isinstance(scope_id, str)
+                or not scope_id
+                or not isinstance(capability, str)
+                or capability not in {"view", "edit", "manage"}
+                or (scope_type, scope_id) in seen_scopes
+            ):
+                raise _unavailable()
+            seen_scopes.add((scope_type, scope_id))
+            grants.append(
+                {
+                    "scope_type": scope_type,
+                    "scope_id": scope_id,
+                    "capability": capability,
+                }
+            )
+        if org_id is None:
+            if grants:
+                raise _unavailable()
+            org_label = None
+        elif not isinstance(org_id, str) or not org_id:
+            raise _unavailable()
+        else:
+            org_label = row[11] if isinstance(row[11], str) and row[11] else None
         cur.execute(
             """
             INSERT INTO app.invitation_exchange_sessions
-                (id, invitation_id, verified_subject_hash, session_hash, expires_at)
-            VALUES (%s, %s, %s, %s, %s)
+                (id, invitation_id, verified_subject_hash, session_hash, expires_at,
+                 person_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (exchange_id, row[0], subject_hash, session_hash, expires_at),
+            (exchange_id, row[0], subject_hash, session_hash, expires_at, person_id),
         )
     return InvitationExchangeResult(
         session_value=session_value,
         max_age_seconds=max(1, int((expires_at - now).total_seconds())),
+        preview=InvitationExchangePreview(
+            organization_id=org_id,
+            organization_label=org_label,
+            role_derived=role_derived,
+            explicit_grants=tuple(grants),
+            expires_at=_aware_utc(row[3]),
+        ),
     )
 
 
@@ -419,7 +514,8 @@ def _acceptance_result_from_operation(
     grants = tuple(payload.get("explicit_grants") or ())
     return InvitationAcceptanceResult(
         invitation_id=payload["invitation_id"],
-        org_id=payload["org_id"],
+        # None for an ENTRY invitation: the person joined no organization.
+        org_id=payload.get("org_id"),
         role=payload["role"],
         explicit_grants=grants,
         explicit_none=not grants,
@@ -431,17 +527,34 @@ def _acceptance_result_from_operation(
     )
 
 
+# Where the console sends the person after acceptance. Without an organization it
+# is the console root: signing in with no org lands on "Welcome to toorow -> Create
+# your organization", which is exactly where an entry invitation must arrive.
+CREATE_ORGANIZATION_NEXT_URL = "/"
+RESPONSIBILITIES_NEXT_URL = "/onboarding/responsibilities"
+
+
 def accept_invitation(
     conn,
     *,
     session_value: str,
     verified_identity: str,
+    person_id: str | None = None,
     confirmed: bool,
     idempotency_key: str,
     host_context: dict,
     trace_id: str | None,
 ) -> InvitationAcceptanceResult:
-    """Atomically activate the exact invitation binding for its verified subject."""
+    """Atomically activate the exact invitation binding for its verified subject.
+
+    Two shapes, one object (migration 109):
+
+    * the invitation names an ORGANIZATION -> unchanged: membership + explicit
+      grants are materialized in the same transaction as the acceptance;
+    * the invitation names NONE (entry invitation) -> NO membership and NO grant is
+      created. The invitation is marked accepted and the person is sent to the
+      create-your-organization screen. Nothing is invented on their behalf.
+    """
     if confirmed is not True or not isinstance(session_value, str) or len(session_value) < 32:
         raise _unavailable()
     try:
@@ -457,7 +570,8 @@ def accept_invitation(
             SELECT s.id, i.id, s.verified_subject_hash, s.expires_at,
                    s.consumed_at, s.accepted_operation_id, i.org_id,
                    i.invited_role, i.grant_bindings, i.state, i.expires_at,
-                   i.superseded_by, i.policy_version, s.resolution, i.issuer
+                   i.superseded_by, i.policy_version, s.resolution, i.issuer,
+                   s.person_id
             FROM app.invitation_exchange_sessions s
             JOIN app.invitations i ON i.id = s.invitation_id
             WHERE s.session_hash = %s
@@ -468,6 +582,13 @@ def accept_invitation(
         row = cur.fetchone()
         if row is None or not hmac.compare_digest(row[2], subject_hash):
             raise _unavailable()
+        bound_person_id = row[15] if len(row) > 15 else None
+        if bound_person_id is not None and person_id != bound_person_id:
+            raise _unavailable()
+        if person_id is not None and bound_person_id is None:
+            # A canonical request may not adopt a legacy email-only session.
+            raise _unavailable()
+        membership_identity = bound_person_id or verified_identity
         if row[4] is not None:
             resolution = row[13] if len(row) > 13 else None
             if not isinstance(resolution, dict) or not row[5]:
@@ -498,6 +619,10 @@ def accept_invitation(
     exchange_id, invitation_id = row[0], row[1]
     org_id, role, raw_bindings = row[6], row[7], row[8]
     if not isinstance(raw_bindings, list):
+        raise _unavailable()
+    if org_id is None and raw_bindings:
+        # Defense in depth against a row that bypassed issuance and the CHECK:
+        # an invitation with no organization can hold no org-scoped grant.
         raise _unavailable()
     bindings: tuple[dict, ...] = tuple(
         {
@@ -530,9 +655,9 @@ def accept_invitation(
 
     spec = OperationSpec(
         command_type="invitation.accept",
-        actor=verified_identity,
+        actor=membership_identity,
         effective_org_id=org_id,
-        resource_path=(f"organization:{org_id}", f"invitation:{invitation_id}"),
+        resource_path=invitation_resource_path(org_id, f"invitation:{invitation_id}"),
         idempotency_key=idempotency_key,
         host_context=host_context,
         versions={"policy": row[12], "catalog": "invitation-v1", "tool": "rest-v1"},
@@ -551,62 +676,69 @@ def accept_invitation(
 
     def mutation(operation_conn, operation_id: str) -> MutationResult:
         with operation_conn.cursor() as cur:
-            for item in bindings:
-                table = "projects" if item["scope_type"] == "project" else "datastreams"
+            # ENTRY invitation (no organization): there is NOTHING to join. We do not
+            # create a membership, a grant, or an organization -- accepting only
+            # proves the identity and opens the door to "Create your organization".
+            if org_id is not None:
+                for item in bindings:
+                    table = "projects" if item["scope_type"] == "project" else "datastreams"
+                    cur.execute(
+                        f"SELECT 1 FROM app.{table} WHERE id = %s AND org_id = %s",
+                        (item["scope_id"], org_id),
+                    )
+                    if cur.fetchone() is None:
+                        raise _unavailable()
                 cur.execute(
-                    f"SELECT 1 FROM app.{table} WHERE id = %s AND org_id = %s",
-                    (item["scope_id"], org_id),
+                    "SELECT COUNT(*) FROM app.resource_grants WHERE org_id = %s AND identity = %s",
+                    (org_id, membership_identity),
                 )
-                if cur.fetchone() is None:
-                    raise _unavailable()
-            cur.execute(
-                "SELECT COUNT(*) FROM app.resource_grants WHERE org_id = %s AND identity = %s",
-                (org_id, verified_identity),
-            )
-            existing_grants = cur.fetchone()
-            if existing_grants and existing_grants[0]:
-                raise InvitationAcceptanceConflict("existing grants conflict with invitation")
-            cur.execute(
-                "SELECT role, status FROM app.org_members "
-                "WHERE org_id = %s AND identity = %s FOR UPDATE",
-                (org_id, verified_identity),
-            )
-            member = cur.fetchone()
-            if member is None:
+                existing_grants = cur.fetchone()
+                if existing_grants and existing_grants[0]:
+                    raise InvitationAcceptanceConflict("existing grants conflict with invitation")
                 cur.execute(
-                    """
-                    INSERT INTO app.org_members
-                        (id, org_id, identity, role, status, invited_by, invited_at, joined_at)
-                    SELECT %s, org_id, %s, invited_role, 'active', issuer, created_at, %s
-                    FROM app.invitations WHERE id = %s
-                    """,
-                    (f"omem_{ULID()}", verified_identity, now, invitation_id),
+                    "SELECT role, status FROM app.org_members "
+                    "WHERE org_id = %s AND identity = %s FOR UPDATE",
+                    (org_id, membership_identity),
                 )
-            elif member != (role, "invited"):
-                raise InvitationAcceptanceConflict("existing membership conflicts with invitation")
-            else:
-                cur.execute(
-                    "UPDATE app.org_members SET status = 'active', joined_at = %s "
-                    "WHERE org_id = %s AND identity = %s AND status = 'invited'",
-                    (now, org_id, verified_identity),
-                )
-            for item in bindings:
-                cur.execute(
-                    """
-                    INSERT INTO app.resource_grants
-                        (id, org_id, identity, scope_type, scope_id, capability, granted_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        f"rgrant_{ULID()}",
-                        org_id,
-                        verified_identity,
-                        item["scope_type"],
-                        item["scope_id"],
-                        item["capability"],
-                        verified_identity,
-                    ),
-                )
+                member = cur.fetchone()
+                if member is None:
+                    cur.execute(
+                        """
+                        INSERT INTO app.org_members
+                            (id, org_id, identity, role, status, invited_by,
+                             invited_at, joined_at)
+                        SELECT %s, org_id, %s, invited_role, 'active', issuer, created_at, %s
+                        FROM app.invitations WHERE id = %s
+                        """,
+                        (f"omem_{ULID()}", membership_identity, now, invitation_id),
+                    )
+                elif member != (role, "invited"):
+                    raise InvitationAcceptanceConflict(
+                        "existing membership conflicts with invitation"
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE app.org_members SET status = 'active', joined_at = %s "
+                        "WHERE org_id = %s AND identity = %s AND status = 'invited'",
+                        (now, org_id, membership_identity),
+                    )
+                for item in bindings:
+                    cur.execute(
+                        """
+                        INSERT INTO app.resource_grants
+                            (id, org_id, identity, scope_type, scope_id, capability, granted_by)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            f"rgrant_{ULID()}",
+                            org_id,
+                            membership_identity,
+                            item["scope_type"],
+                            item["scope_id"],
+                            item["capability"],
+                            membership_identity,
+                        ),
+                    )
             cur.execute(
                 """
                 UPDATE app.invitations
@@ -622,23 +754,45 @@ def accept_invitation(
                 (item["scope_id"] for item in bindings if item["scope_type"] == "project"),
                 None,
             )
-            from core.setup_responsibilities import bootstrap_journey_from_acceptance
+            if org_id is not None and project_id is None:
+                cur.execute(
+                    "SELECT id FROM app.projects "
+                    "WHERE org_id = %s AND status = 'active' "
+                    "ORDER BY created_at, id LIMIT 1",
+                    (org_id,),
+                )
+                project_row = cur.fetchone()
+                if isinstance(project_row, (tuple, list)) and project_row:
+                    project_id = str(project_row[0])
+            # A setup journey is the first-datastream checklist OF AN ORGANIZATION
+            # (app.setup_journeys.org_id is NOT NULL, migration 065). Someone who has
+            # not created their organization yet has no journey to bootstrap: it will
+            # start with the organization they create.
+            journey_id = None
+            if org_id is not None:
+                from core.setup_responsibilities import (  # noqa: PLC0415
+                    bootstrap_journey_from_acceptance,
+                )
 
-            journey_id = bootstrap_journey_from_acceptance(
-                operation_conn,
-                invitation_id=invitation_id,
-                org_id=org_id,
-                project_id=project_id,
-                operator_identity=verified_identity,
-                toorow_admin_identity=row[14] if len(row) > 14 else verified_identity,
-                accepted_at=now,
-            )
+                journey_id = bootstrap_journey_from_acceptance(
+                    operation_conn,
+                    invitation_id=invitation_id,
+                    org_id=org_id,
+                    project_id=project_id,
+                    operator_identity=membership_identity,
+                    toorow_admin_identity=row[14] if len(row) > 14 else membership_identity,
+                    accepted_at=now,
+                )
             result = {
                 "invitation_id": invitation_id,
                 "org_id": org_id,
                 "role": role,
                 "explicit_grants": list(bindings),
-                "next_url": "/onboarding/responsibilities",
+                "next_url": (
+                    f"/p/{project_id}/overview/getting-started"
+                    if project_id is not None
+                    else CREATE_ORGANIZATION_NEXT_URL
+                ),
                 "journey_id": journey_id,
             }
             # First-value funnel (E36-FR09): record the acceptance stage and bind this
@@ -651,7 +805,7 @@ def accept_invitation(
                 operation_conn,
                 org_id=org_id,
                 project_id=project_id,
-                subject=verified_identity,
+                subject=membership_identity,
                 stage="invitation_acceptance",
                 outcome="succeeded",
                 bind_project=bool(project_id),
@@ -696,10 +850,15 @@ class InvitationTransitionResult:
 def list_safe_invitations(
     conn,
     *,
-    org_id: str,
+    org_id: str | None,
     now: datetime | None = None,
 ) -> list[dict]:
-    """Return the authorized adapter's secret-free invitation status projection."""
+    """Return the authorized adapter's secret-free invitation status projection.
+
+    ``org_id=None`` selects the ENTRY invitations (those that name no
+    organization) -- IS NOT DISTINCT FROM, not ``= NULL``, so they are a scope of
+    their own and never silently drop out of a listing.
+    """
     observed_at = now or datetime.now(tz=timezone.utc)
     with conn.cursor() as cur:
         cur.execute(
@@ -708,7 +867,7 @@ def list_safe_invitations(
                    expires_at, delivery_evidence_class, delivery_evidence_hash,
                    created_at, accepted_at, revoked_at, superseded_by
             FROM app.invitations
-            WHERE org_id = %s
+            WHERE org_id IS NOT DISTINCT FROM %s
             ORDER BY created_at DESC, id DESC
             """,
             (org_id,),
@@ -784,7 +943,7 @@ def transition_invitation(
         command_type=f"invitation.{transition}",
         actor=actor,
         effective_org_id=row[1],
-        resource_path=(f"organization:{row[1]}", f"invitation:{row[0]}"),
+        resource_path=invitation_resource_path(row[1], f"invitation:{row[0]}"),
         idempotency_key=idempotency_key,
         host_context=host_context,
         versions={
@@ -913,7 +1072,7 @@ def resend_invitation(
         command_type="invitation.resend",
         actor=actor,
         effective_org_id=row[2],
-        resource_path=(f"organization:{row[2]}", f"invitation:{row[0]}"),
+        resource_path=invitation_resource_path(row[2], f"invitation:{row[0]}"),
         idempotency_key=idempotency_key,
         host_context=host_context,
         versions={"policy": row[5], "catalog": "invitation-v1", "tool": "rest-v1"},

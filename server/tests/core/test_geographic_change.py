@@ -284,7 +284,16 @@ def test_posture_diff_is_canonical() -> None:
         GeographicPosture(mode=LOCAL_MARKETS, country_codes=("DE", "FR")),
         GeographicPosture(mode=LOCAL_MARKETS, country_codes=("FR", "US")),
     )
-    assert result == {"added_country_codes": ["US"], "removed_country_codes": ["DE"]}
+    # Story 37.8: the recorded diff is a MARKET diff, code deltas included.
+    assert result["previous_mode"] == LOCAL_MARKETS
+    assert result["new_mode"] == LOCAL_MARKETS
+    assert result["added_country_codes"] == ["US"]
+    assert result["removed_country_codes"] == ["DE"]
+    assert [market["id"] for market in result["added_markets"]] == ["US"]
+    assert [market["id"] for market in result["removed_markets"]] == ["DE"]
+    assert result["relabelled_markets"] == []
+    assert result["recomposed_markets"] == []
+    assert result["moved_country_codes"] == []
 
 
 class _Cursor:
@@ -360,7 +369,9 @@ def test_preview_persists_only_governance_artifact(monkeypatch) -> None:
         None,
         None,
     )
-    conn = _Connection([None, inserted])
+    # Results are popped in call order: idempotency lookup, then the Story 37.9
+    # market used-by registry read (no binding declared here), then the INSERT.
+    conn = _Connection([None, [], inserted])
 
     result = geographic_change.create_geographic_change_preview(
         project_id="project-1",
@@ -486,3 +497,77 @@ def test_global_coverage_is_consolidated_without_query() -> None:
     coverage = fetch_project_geographic_coverage("project-1", GeographicPosture(), conn)
     assert coverage == {"status": "consolidated", "datastreams": []}
     assert conn.calls == []
+
+
+# ---------------------------------------------------------------------------
+# Story 37.8 -- regrouping is a semantic reclassification, never a backfill
+# ---------------------------------------------------------------------------
+
+
+def _market_posture(*markets: tuple[str, str, tuple[str, ...]]) -> GeographicPosture:
+    from core.geographic_reporting import Market
+
+    return GeographicPosture(
+        mode=LOCAL_MARKETS,
+        markets=tuple(
+            Market(id=market_id, label=label, country_codes=codes)
+            for market_id, label, codes in markets
+        ),
+    )
+
+
+def test_regrouping_only_is_detected_when_the_tracked_set_is_unchanged() -> None:
+    from core.geographic_change import is_regrouping_only
+
+    split = _market_posture(("fr", "France", ("FR",)), ("mc", "Monaco", ("MC",)))
+    merged = _market_posture(("fr", "France", ("FR", "MC")))
+    widened = _market_posture(("fr", "France", ("FR", "MC")), ("de", "Germany", ("DE",)))
+
+    assert is_regrouping_only(split, merged) is True
+    assert is_regrouping_only(split, split) is False
+    assert is_regrouping_only(split, widened) is False
+    assert is_regrouping_only(GeographicPosture(), merged) is False
+
+
+def test_regrouping_impact_requires_no_backfill_and_no_provider_pull() -> None:
+    split = _market_posture(("fr", "France", ("FR",)), ("mc", "Monaco", ("MC",)))
+    merged = _market_posture(("fr", "France", ("FR", "MC")))
+
+    impact = build_datastream_impact(
+        _datastream(),
+        split,
+        merged,
+        _capabilities(),
+        # No retained country history at all -- a widening would demand a backfill;
+        # a pure regroup must not, because nothing new has to be extracted.
+        earliest_country_date=None,
+        reclassification_only=True,
+    )
+
+    assert impact["reclassification_only"] is True
+    assert impact["backfill_required"] is False
+    assert impact["provider_pull_required"] is False
+    assert impact["raw_rewrite_required"] is False
+    assert impact["retained_history_preserved"] is True
+
+
+def test_posture_diff_records_market_regrouping_not_only_codes() -> None:
+    split = _market_posture(("fr", "France", ("FR",)), ("mc", "Monaco", ("MC",)))
+    merged = _market_posture(("fr", "France + Monaco", ("FR", "MC")))
+
+    diff = posture_diff(split, merged)
+
+    assert diff["added_country_codes"] == []
+    assert diff["removed_country_codes"] == []
+    assert [item["id"] for item in diff["removed_markets"]] == ["mc"]
+    assert diff["relabelled_markets"] == [
+        {"id": "fr", "previous_label": "France", "new_label": "France + Monaco"}
+    ]
+    assert diff["recomposed_markets"] == [
+        {
+            "id": "fr",
+            "label": "France + Monaco",
+            "added_country_codes": ["MC"],
+            "removed_country_codes": [],
+        }
+    ]

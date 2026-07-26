@@ -24,8 +24,11 @@ ui/
 # Uncomment the line below only if dbt is removed from the uv workspace.
 # dbt/
 
-# Infrastructure code (not needed at runtime)
+# Infrastructure code — not needed at runtime, WITH ONE EXCEPTION:
+# adaptation_executor spawns infra/sandbox/worker.py while serving, so that one
+# directory is runtime code and must reach the image.
 infra/
+!infra/sandbox
 
 # BMAD planning artifacts
 _bmad-output/

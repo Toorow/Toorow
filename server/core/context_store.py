@@ -66,6 +66,21 @@ def validate_procedure_frontmatter(yaml_text: str) -> dict[str, Any]:
     return parsed
 
 
+def _clean_owner(value: Any) -> str | None:
+    """Validate a patchable ``owner`` value: string-or-null, trimmed.
+
+    Empty/whitespace-only strings collapse to None (an explicitly cleared
+    owner), matching the "explicit owner, else created_by, else 'auto'"
+    resolution rule -- an empty string is not a meaningful explicit owner.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Le propriétaire (owner) doit être une chaîne de caractères ou null.")
+    trimmed = value.strip()
+    return trimmed or None
+
+
 def _format_datetime(dt: Any) -> str | None:
     if dt is None:
         return None
@@ -95,6 +110,7 @@ def create_topic(
     project_id: str | None,
     title: str,
     body_md: str = "",
+    owner: str | None = None,
     created_by: str,
 ) -> dict[str, Any]:
     """Create a context topic and append version 1."""
@@ -103,17 +119,19 @@ def create_topic(
 
     topic_id = f"top_{ULID()}"
     clean_title = title.strip()
+    clean_owner = _clean_owner(owner)
 
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO app.context_topics
-                (id, project_id, title, body_md, status, created_by, created_at, updated_at)
+                (id, project_id, title, body_md, status, owner, created_by, created_at, updated_at)
             VALUES
-                (%s, %s, %s, %s, 'active', %s, now(), now())
-            RETURNING id, project_id, title, body_md, status, created_by, created_at, updated_at
+                (%s, %s, %s, %s, 'active', %s, %s, now(), now())
+            RETURNING
+                id, project_id, title, body_md, status, owner, created_by, created_at, updated_at
             """,
-            (topic_id, project_id, clean_title, body_md, created_by),
+            (topic_id, project_id, clean_title, body_md, clean_owner, created_by),
         )
         cols = [desc[0] for desc in cur.description]
         row = cur.fetchone()
@@ -122,10 +140,10 @@ def create_topic(
         cur.execute(
             """
             INSERT INTO app.context_topics_versions
-                (topic_id, project_id, title, body_md, status, created_by, created_at, updated_at,
-                 version_number, changed_by, changed_at)
+                (topic_id, project_id, title, body_md, status, owner, created_by, created_at,
+                 updated_at, version_number, changed_by, changed_at)
             VALUES
-                (%s, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz, 1, %s, now())
+                (%s, %s, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz, 1, %s, now())
             """,
             (
                 topic["id"],
@@ -133,6 +151,7 @@ def create_topic(
                 topic["title"],
                 topic["body_md"],
                 topic["status"],
+                topic["owner"],
                 topic["created_by"],
                 topic["created_at"],
                 topic["updated_at"],
@@ -169,7 +188,7 @@ def update_topic(
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, project_id, title, body_md, status, created_by, created_at, updated_at
+            SELECT id, project_id, title, body_md, status, owner, created_by, created_at, updated_at
             FROM app.context_topics
             WHERE id = %s
             FOR UPDATE
@@ -193,6 +212,7 @@ def update_topic(
         new_status = patch.get("status", current["status"])
         if new_status not in ("active", "archived"):
             raise ValueError("Statut invalide.")
+        new_owner = _clean_owner(patch["owner"]) if "owner" in patch else current["owner"]
 
         if new_status == "archived" and current["status"] == "archived":
             cur.execute(
@@ -221,11 +241,12 @@ def update_topic(
         cur.execute(
             """
             UPDATE app.context_topics
-            SET title = %s, body_md = %s, status = %s, updated_at = now()
+            SET title = %s, body_md = %s, status = %s, owner = %s, updated_at = now()
             WHERE id = %s
-            RETURNING id, project_id, title, body_md, status, created_by, created_at, updated_at
+            RETURNING
+                id, project_id, title, body_md, status, owner, created_by, created_at, updated_at
             """,
-            (new_title, new_body, new_status, topic_id),
+            (new_title, new_body, new_status, new_owner, topic_id),
         )
         updated_row = cur.fetchone()
         updated_topic = _row_to_topic(updated_row, cols)
@@ -233,10 +254,10 @@ def update_topic(
         cur.execute(
             """
             INSERT INTO app.context_topics_versions
-                (topic_id, project_id, title, body_md, status, created_by, created_at, updated_at,
-                 version_number, changed_by, changed_at)
+                (topic_id, project_id, title, body_md, status, owner, created_by, created_at,
+                 updated_at, version_number, changed_by, changed_at)
             VALUES
-                (%s, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz, %s, %s, now())
+                (%s, %s, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz, %s, %s, now())
             """,
             (
                 updated_topic["id"],
@@ -244,6 +265,7 @@ def update_topic(
                 updated_topic["title"],
                 updated_topic["body_md"],
                 updated_topic["status"],
+                updated_topic["owner"],
                 updated_topic["created_by"],
                 updated_topic["created_at"],
                 updated_topic["updated_at"],
@@ -291,14 +313,14 @@ def get_topic(
         cur.execute(
             """
             SELECT
-                t.id, t.project_id, t.title, t.body_md, t.status,
+                t.id, t.project_id, t.title, t.body_md, t.status, t.owner,
                 t.created_by, t.created_at, t.updated_at,
                 COALESCE(MAX(v.version_number), 1) AS version_number
             FROM app.context_topics t
             LEFT JOIN app.context_topics_versions v ON t.id = v.topic_id
             WHERE t.id = %s
             GROUP BY
-                t.id, t.project_id, t.title, t.body_md, t.status,
+                t.id, t.project_id, t.title, t.body_md, t.status, t.owner,
                 t.created_by, t.created_at, t.updated_at
             """,
             (topic_id,),
@@ -338,14 +360,14 @@ def list_topics(
         cur.execute(
             f"""
             SELECT
-                t.id, t.project_id, t.title, t.body_md, t.status,
+                t.id, t.project_id, t.title, t.body_md, t.status, t.owner,
                 t.created_by, t.created_at, t.updated_at,
                 COALESCE(MAX(v.version_number), 1) AS version_number
             FROM app.context_topics t
             LEFT JOIN app.context_topics_versions v ON t.id = v.topic_id
             {where_sql}
             GROUP BY
-                t.id, t.project_id, t.title, t.body_md, t.status,
+                t.id, t.project_id, t.title, t.body_md, t.status, t.owner,
                 t.created_by, t.created_at, t.updated_at
             ORDER BY t.created_at DESC
             """,
@@ -366,6 +388,7 @@ def create_procedure(
     project_id: str | None,
     frontmatter_yaml: str,
     body_md: str = "",
+    owner: str | None = None,
     created_by: str,
 ) -> dict[str, Any]:
     """Create a procedure, validating frontmatter and appending version 1."""
@@ -374,6 +397,7 @@ def create_procedure(
     description = fm["description"]
 
     proc_id = f"proc_{ULID()}"
+    clean_owner = _clean_owner(owner)
 
     try:
         with conn.cursor() as cur:
@@ -387,14 +411,23 @@ def create_procedure(
                 """
                 INSERT INTO app.procedures (
                     id, project_id, name, description, frontmatter_yaml,
-                    body_md, status, created_by, created_at, updated_at
+                    body_md, status, owner, created_by, created_at, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, 'active', %s, now(), now())
+                VALUES (%s, %s, %s, %s, %s, %s, 'active', %s, %s, now(), now())
                 RETURNING
                     id, project_id, name, description, frontmatter_yaml,
-                    body_md, status, created_by, created_at, updated_at
+                    body_md, status, owner, created_by, created_at, updated_at
                 """,
-                (proc_id, project_id, name, description, frontmatter_yaml, body_md, created_by),
+                (
+                    proc_id,
+                    project_id,
+                    name,
+                    description,
+                    frontmatter_yaml,
+                    body_md,
+                    clean_owner,
+                    created_by,
+                ),
             )
             cols = [desc[0] for desc in cur.description]
             row = cur.fetchone()
@@ -403,10 +436,12 @@ def create_procedure(
             cur.execute(
                 """
                 INSERT INTO app.procedures_versions
-                    (procedure_id, project_id, name, description, frontmatter_yaml, body_md, status,
-                     created_by, created_at, updated_at, version_number, changed_by, changed_at)
+                    (procedure_id, project_id, name, description, frontmatter_yaml, body_md,
+                     status, owner, created_by, created_at, updated_at, version_number,
+                     changed_by, changed_at)
                 VALUES
-                    (%s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz, 1, %s, now())
+                    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz,
+                     1, %s, now())
                 """,
                 (
                     proc["id"],
@@ -416,6 +451,7 @@ def create_procedure(
                     proc["frontmatter_yaml"],
                     proc["body_md"],
                     proc["status"],
+                    proc["owner"],
                     proc["created_by"],
                     proc["created_at"],
                     proc["updated_at"],
@@ -459,7 +495,7 @@ def update_procedure(
                 """
                 SELECT
                     id, project_id, name, description, frontmatter_yaml,
-                    body_md, status, created_by, created_at, updated_at
+                    body_md, status, owner, created_by, created_at, updated_at
                 FROM app.procedures
                 WHERE id = %s
                 FOR UPDATE
@@ -509,6 +545,7 @@ def update_procedure(
             new_status = patch.get("status", current["status"])
             if new_status not in ("active", "archived"):
                 raise ValueError("Statut invalide.")
+            new_owner = _clean_owner(patch["owner"]) if "owner" in patch else current["owner"]
 
             if new_status == "archived" and current["status"] == "archived":
                 cur.execute(
@@ -538,13 +575,13 @@ def update_procedure(
                 """
                 UPDATE app.procedures
                 SET name = %s, description = %s, frontmatter_yaml = %s,
-                    body_md = %s, status = %s, updated_at = now()
+                    body_md = %s, status = %s, owner = %s, updated_at = now()
                 WHERE id = %s
                 RETURNING
                     id, project_id, name, description, frontmatter_yaml,
-                    body_md, status, created_by, created_at, updated_at
+                    body_md, status, owner, created_by, created_at, updated_at
                 """,
-                (new_name, new_desc, new_fm_yaml, new_body, new_status, procedure_id),
+                (new_name, new_desc, new_fm_yaml, new_body, new_status, new_owner, procedure_id),
             )
             updated_row = cur.fetchone()
             updated_proc = _row_to_topic(updated_row, cols)
@@ -553,10 +590,10 @@ def update_procedure(
                 """
                 INSERT INTO app.procedures_versions
                     (procedure_id, project_id, name, description, frontmatter_yaml, body_md,
-                     status, created_by, created_at, updated_at, version_number, changed_by,
+                     status, owner, created_by, created_at, updated_at, version_number, changed_by,
                      changed_at)
                 VALUES
-                    (%s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz,
+                    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz,
                      %s, %s, now())
                 """,
                 (
@@ -567,6 +604,7 @@ def update_procedure(
                     updated_proc["frontmatter_yaml"],
                     updated_proc["body_md"],
                     updated_proc["status"],
+                    updated_proc["owner"],
                     updated_proc["created_by"],
                     updated_proc["created_at"],
                     updated_proc["updated_at"],
@@ -622,14 +660,14 @@ def get_procedure(
             """
             SELECT
                 p.id, p.project_id, p.name, p.description, p.frontmatter_yaml,
-                p.body_md, p.status, p.created_by, p.created_at, p.updated_at,
+                p.body_md, p.status, p.owner, p.created_by, p.created_at, p.updated_at,
                 COALESCE(MAX(v.version_number), 1) AS version_number
             FROM app.procedures p
             LEFT JOIN app.procedures_versions v ON p.id = v.procedure_id
             WHERE p.id = %s
             GROUP BY
                 p.id, p.project_id, p.name, p.description, p.frontmatter_yaml,
-                p.body_md, p.status, p.created_by, p.created_at, p.updated_at
+                p.body_md, p.status, p.owner, p.created_by, p.created_at, p.updated_at
             """,
             (procedure_id,),
         )
@@ -667,14 +705,14 @@ def list_procedures(
             f"""
             SELECT
                 p.id, p.project_id, p.name, p.description, p.frontmatter_yaml,
-                p.body_md, p.status, p.created_by, p.created_at, p.updated_at,
+                p.body_md, p.status, p.owner, p.created_by, p.created_at, p.updated_at,
                 COALESCE(MAX(v.version_number), 1) AS version_number
             FROM app.procedures p
             LEFT JOIN app.procedures_versions v ON p.id = v.procedure_id
             {where_sql}
             GROUP BY
                 p.id, p.project_id, p.name, p.description, p.frontmatter_yaml,
-                p.body_md, p.status, p.created_by, p.created_at, p.updated_at
+                p.body_md, p.status, p.owner, p.created_by, p.created_at, p.updated_at
             ORDER BY p.created_at DESC
             """,
             params,
@@ -687,8 +725,11 @@ def list_procedures(
 # Context Graph Edge Domain Logic (Story 11.4)
 # ---------------------------------------------------------------------------
 
-#: Valid node types per migration 031 CHECK constraint.
-GRAPH_NODE_TYPES = frozenset({"topic", "procedure", "schema_doc"})
+#: Valid node types per the app.context_graph from_type/to_type CHECK
+#: constraints: migration 031 shipped topic/procedure/schema_doc, migration 117
+#: (Story 44.10) widened both to include 'target_field' — a data-dictionary
+#: field, keyed by its NAME (app.target_fields has no id column).
+GRAPH_NODE_TYPES = frozenset({"topic", "procedure", "schema_doc", "target_field"})
 
 
 def _row_to_edge(row: tuple[Any, ...], cols: list[str]) -> dict[str, Any]:
@@ -729,6 +770,52 @@ def list_graph_edges(
         return [_row_to_edge(row, cols) for row in cur.fetchall()]
 
 
+def _row_to_schema_doc(row: tuple[Any, ...], cols: list[str]) -> dict[str, Any]:
+    record: dict[str, Any] = {}
+    for col, val in zip(cols, row):
+        if col in ("generated_at", "created_at") and val is not None:
+            record[col] = _format_datetime(val)
+        else:
+            record[col] = val
+    return record
+
+
+def list_schema_docs(conn: Any, *, project_id: str) -> list[dict[str, Any]]:
+    """List schema_context docs for a project (Story 44.3 / AD-17).
+
+    app.schema_context.project_id is NOT NULL (schema docs are always project-scoped,
+    unlike topics/procedures which can be platform-scoped). ``relation`` is the
+    doc's title candidate (the table/relation name).
+
+    IMPORTANT — version_number semantics differ from topics/procedures: schema_context_versions
+    stores the PRE-update snapshot (upsert_schema_context_doc appends the OLD body BEFORE
+    overwriting app.schema_context — see schema_context_gen.py), so the live row's version
+    is always one AHEAD of the newest history row, not equal to it. The topics/procedures
+    COALESCE(MAX(v.version_number), 1) pattern does NOT apply here: it would under-count by
+    one. Instead we use a scalar subquery: COALESCE(MAX(v.version_number), 0) + 1. This also
+    avoids a GROUP BY over the (potentially huge) body_md column.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                s.id, s.project_id, s.relation, s.doc_kind, s.body_md,
+                s.generated_at, s.created_at,
+                (
+                    SELECT COALESCE(MAX(v.version_number), 0) + 1
+                    FROM app.schema_context_versions v
+                    WHERE v.schema_context_id = s.id
+                ) AS version_number
+            FROM app.schema_context s
+            WHERE s.project_id = %s
+            ORDER BY s.created_at DESC
+            """,
+            (project_id,),
+        )
+        cols = [desc[0] for desc in cur.description]
+        return [_row_to_schema_doc(row, cols) for row in cur.fetchall()]
+
+
 def get_graph_edge(conn: Any, *, edge_id: str) -> dict[str, Any] | None:
     """Fetch a single graph edge by ID (unfiltered; caller enforces scope)."""
     with conn.cursor() as cur:
@@ -762,6 +849,13 @@ def _node_exists_in_scope(
     visible; project rows must match the requested project_id.
     For schema_doc: any existing schema_context row counts (AD-17 — schema
     docs are read-only but linkable).
+    For target_field (Story 44.10): ``node_id`` is the field NAME, not an id —
+    app.target_fields is keyed by name and has no id column. The table is
+    PLATFORM-GLOBAL (no org_id/project_id column at all, see
+    core.datamodel.get_target_field), so scope never restricts visibility, the
+    same way a platform topic is visible from every project. A soft-deleted
+    field (status='deleted', migration 107) is NOT linkable: history outlives
+    visibility, but a deleted field must not become a fresh edge endpoint.
     """
     with conn.cursor() as cur:
         if node_type == "topic":
@@ -792,6 +886,16 @@ def _node_exists_in_scope(
                 """
                 SELECT 1 FROM app.schema_context
                 WHERE id = %s
+                """,
+                (node_id,),
+            )
+        elif node_type == "target_field":
+            # Name-keyed, platform-global, soft-deleted fields excluded.
+            cur.execute(
+                """
+                SELECT 1 FROM app.target_fields
+                WHERE name = %s
+                  AND status != 'deleted'
                 """,
                 (node_id,),
             )

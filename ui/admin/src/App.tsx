@@ -30,7 +30,7 @@
  *   meaningful when state === "ready" and are read nowhere else in this file.
  */
 import { CssBaseline } from "@mui/material";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { RouterProvider } from "./shell/router";
 import { ScopeProvider, useScope } from "./shell/scope";
 import { OrgThemeProvider } from "./shell/orgTheme";
@@ -38,19 +38,73 @@ import ApplicationShell from "./shell/ApplicationShell";
 import AuthGate from "./shell/AuthGate";
 import JoinOrg from "./shell/pages/JoinOrg";
 import CreateOrg from "./shell/pages/CreateOrg";
+import ClaimInstance from "./shell/pages/ClaimInstance";
+import CreateProject from "./shell/pages/CreateProject";
+import { apiFetch } from "./lib/apiFetch";
 import "./shell/application.css";
 import "./shell/pages/create-org.css";
 
 /** An invitation link — decided from the URL alone, ahead of any scope fetch. */
 function isInvitePath(p: string): boolean {
-  return p.startsWith("/invite");
+  return p === "/invite" || p === "/invite/";
 }
 
+let inviteFragmentCapture: { locationKey: string; bearer: string } | null = null;
+
+function takeInviteBearer(): string {
+  const hash = window.location.hash || "";
+  const locationKey = window.location.pathname + window.location.search;
+  const bearer = hash.startsWith("#invite=") ? hash.slice("#invite=".length) : "";
+  if (hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  if (bearer) {
+    inviteFragmentCapture = { locationKey, bearer };
+    return bearer;
+  }
+  if (inviteFragmentCapture?.locationKey === locationKey) {
+    return inviteFragmentCapture.bearer;
+  }
+  return bearer;
+}
+
+function InviteEntry() {
+  // The initializer runs before AuthGate mounts, so GIS never sees the bearer in the URL.
+  const [bearer] = useState(takeInviteBearer);
+  useEffect(() => {
+    if (inviteFragmentCapture?.bearer === bearer) {
+      inviteFragmentCapture = null;
+    }
+  }, [bearer]);
+  return (
+    <AuthGate>
+      <EntryFrame>
+        <JoinOrg token={bearer} onAccepted={goToInvitationScope} />
+      </EntryFrame>
+    </AuthGate>
+  );
+}
 /** The explicit organization-creation routes (typed or linked deliberately). */
 function isCreateOrgPath(p: string): boolean {
-  return p.startsWith("/onboarding") || p.startsWith("/create-org");
+  return p === "/onboarding" || p === "/onboarding/" || p === "/create-org" || p === "/create-org/";
 }
 
+function safeServerPath(value?: string): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    return "/";
+  }
+  const parsed = new URL(value, window.location.origin);
+  return parsed.origin === window.location.origin ? parsed.pathname + parsed.search : "/";
+}
+
+function goToCreatedProject(projectId: string): void {
+  window.location.assign(`/p/${encodeURIComponent(projectId)}/overview/getting-started`);
+}
+
+function goToCreatedScope(_orgId: string, nextUrl?: string): void {
+  window.location.assign(safeServerPath(nextUrl));
+}
+function goToInvitationScope(nextUrl: string): void {
+  window.location.assign(safeServerPath(nextUrl));
+}
 function goHome(): void {
   // A full navigation, so the scope is refetched with the new membership.
   window.location.assign("/");
@@ -156,6 +210,114 @@ function ScopeError() {
   );
 }
 
+type EntryState = "loading" | "hosted_entry_ready" | "local_entry_ready" | "invitation_required" | "setup_required" | "identity_activation_required" | "scoped" | "error";
+
+function EntryBlocked({
+  kind,
+}: {
+  kind: "invitation_required" | "setup_required" | "identity_activation_required" | "scoped" | "organization_limit_reached";
+}) {
+  const copy =
+    kind === "invitation_required"
+      ? {
+          title: "An invitation is required",
+          detail: "Your identity has no accepted platform or organization invitation. Ask an administrator for a new invitation link.",
+        }
+      : kind === "setup_required"
+        ? {
+            title: "This instance is not claimed",
+            detail: "An operator must mint and open the one-time /setup link from a trusted server shell.",
+          }
+        : kind === "identity_activation_required"
+          ? {
+              title: "Identity activation is required",
+              detail: "An operator must reconcile existing access and enable canonical identity before first setup can continue.",
+            }
+          : kind === "organization_limit_reached"
+          ? {
+              title: "Organization creation is not available",
+              detail:
+                "You already have an active scope. Access to another organization comes from an invitation or an authorized administrator.",
+            }
+        : {
+            title: "Your workspace is incomplete",
+            detail: "Your account has scope authority but no usable project. Ask an owner to repair the organization scope.",
+          };
+  return (
+    <div className="createorg-stage">
+      <div className="createorg-scrim">
+        <section className="createorg-dialog" role="alert">
+          <header className="createorg-header">
+            <div>
+              <h1>{copy.title}</h1>
+              <p className="createorg-subtitle">{copy.detail}</p>
+            </div>
+          </header>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function useEntryState(): EntryState {
+  const [entry, setEntry] = useState<EntryState>("loading");
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch("/api/entry-state", { method: "GET", cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("entry state unavailable");
+        const body = (await response.json()) as { state?: EntryState };
+        const state = body.state;
+        if (!cancelled) {
+          setEntry(
+            state === "hosted_entry_ready" ||
+              state === "invitation_required" ||
+              state === "setup_required" ||
+              state === "local_entry_ready" ||
+              state === "identity_activation_required" ||
+              state === "scoped"
+              ? state
+              : "error",
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEntry("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return entry;
+}
+
+function EmptyEntryGate() {
+  const entry = useEntryState();
+  if (entry === "loading") return <ScopeLoading />;
+  if (entry === "error") return <ScopeError />;
+  if (entry === "hosted_entry_ready") return <CreateOrg welcome onCreated={goToCreatedScope} />;
+  if (entry === "local_entry_ready") {
+    return <CreateOrg welcome creationMode="organization-only" onCreated={goToCreatedScope} />;
+  }
+  return <EntryBlocked kind={entry} />;
+}
+
+function DirectCreateOrgEntry() {
+  const entry = useEntryState();
+  if (entry === "loading") return <ScopeLoading />;
+  if (entry === "error") return <ScopeError />;
+  if (entry === "hosted_entry_ready") {
+    return <CreateOrg onCreated={goToCreatedScope} onCancel={goHome} />;
+  }
+  if (entry === "local_entry_ready") {
+    return (
+      <CreateOrg creationMode="organization-only" onCreated={goToCreatedScope} onCancel={goHome} />
+    );
+  }
+  return (
+    <EntryBlocked kind={entry === "scoped" ? "organization_limit_reached" : entry} />
+  );
+}
 /** state === "ready": the six-workspace project shell, branded by the active org. */
 function ScopedShell() {
   const scope = useScope();
@@ -173,51 +335,58 @@ function ScopedShell() {
  * the shell.
  */
 function EntryGate() {
-  const { state } = useScope();
+  const scope = useScope();
 
-  if (state === "loading") {
+  if (scope.state === "loading") {
     return (
       <EntryFrame>
         <ScopeLoading />
       </EntryFrame>
     );
   }
-  if (state === "error") {
+  if (scope.state === "error") {
     return (
       <EntryFrame>
         <ScopeError />
       </EntryFrame>
     );
   }
-  if (state === "empty") {
-    // No organization: the welcome surface. No Cancel — there is nowhere to go back to.
+  if (scope.state === "empty") {
     return (
       <EntryFrame>
-        <CreateOrg welcome onCreated={goHome} />
+        <EmptyEntryGate />
       </EntryFrame>
     );
   }
+  if (scope.state === "project_required" && scope.org) {
+    return (
+      <EntryFrame>
+        <CreateProject org={scope.org} onCreated={goToCreatedProject} />
+      </EntryFrame>
+    );
+  }
+
   return <ScopedShell />;
 }
 
 export default function App() {
   const path = window.location.pathname;
 
-  if (isInvitePath(path)) {
+  if (path === "/setup" || path === "/setup/") {
     return (
-      <AuthGate>
-        <EntryFrame>
-          <JoinOrg onAccepted={goHome} />
-        </EntryFrame>
-      </AuthGate>
+      <EntryFrame>
+        <ClaimInstance />
+      </EntryFrame>
     );
   }
+
+  if (isInvitePath(path)) return <InviteEntry />;
 
   if (isCreateOrgPath(path)) {
     return (
       <AuthGate>
         <EntryFrame>
-          <CreateOrg onCreated={goHome} onCancel={goHome} />
+          <DirectCreateOrgEntry />
         </EntryFrame>
       </AuthGate>
     );
@@ -225,7 +394,7 @@ export default function App() {
 
   return (
     <AuthGate>
-      <RouterProvider defaultProject="default">
+      <RouterProvider>
         <ScopeProvider>
           <EntryGate />
         </ScopeProvider>

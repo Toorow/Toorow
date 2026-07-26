@@ -3,15 +3,23 @@ name: Deploy
 # Triggers: every push to main + manual dispatch.
 # Story 2.1 AC3.
 #
-# [HUMAN GATE] This workflow is authored but NOT runnable until:
-#   - GCP billing account + projects are provisioned (Phase B, AI-08).
-#   - GitHub Actions Variables are set: GCP_PROJECT_DEV, GCP_PROJECT_PROD,
-#     CLOUD_RUN_HOSTNAME_DEV, CLOUD_RUN_HOSTNAME_PROD.
-#   - GitHub Actions Secrets are set: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SA_EMAIL.
-#   - A 'production' environment is created in GitHub repo Settings > Environments
-#     with at least one required reviewer (Jean — human gate).
+# ONE environment (2026-07-26). There is a single GCP project and a single Cloud
+# Run service, `mcp-server`, serving app.toorow.com with TOOROW_AUTH_MODE=oauth.
+# The *_PROD variables are authoritative; the *_DEV ones are only a fallback for
+# a repository that still has the old names configured.
+#
+# Requires:
+#   - GitHub Actions Variables: GCP_PROJECT_PROD (or GCP_PROJECT_DEV),
+#     CLOUD_RUN_HOSTNAME_PROD (or CLOUD_RUN_HOSTNAME_DEV), TOOROW_JWT_JWKS_URI,
+#     TOOROW_JWT_ISSUER, TOOROW_JWT_AUDIENCE.
+#   - GitHub Actions Secrets: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SA_EMAIL.
 #   - Workload Identity Federation pool/provider provisioned by Terraform SA
 #     (infra/terraform/main.tf google_service_account.github_actions).
+#   - The `connector` Artifact Registry repository (created 2026-07-26).
+#
+# The project gate is a LOCAL test run before deploying, not this pipeline
+# (decision Jean). Deploys are also performed by hand; when they are, use the
+# image-only form and never --set-env-vars.
 #
 # Task 3.5 BLOCKED: actionlint and act are not available in this environment.
 # Structural validation performed via python -c "import yaml; yaml.safe_load(...)"
@@ -61,23 +69,56 @@ jobs:
         run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
 
       - name: Build and push image
+        # The `connector` Artifact Registry repository below DID NOT EXIST until
+        # 2026-07-26: this workflow had never reached a successful push, and would
+        # have failed with `name unknown: Repository "connector" not found`. Found
+        # while deploying by hand -- the same push failed for me first.
+        # It is now created (europe-west1, DOCKER) and proven by an actual push.
+        # Do not delete it because it looks unused, and do not "fix" this by
+        # pointing at cloud-run-source-deploy: that repository is the one gcloud
+        # auto-creates for `run deploy --source`, and mixing deliberate CI images
+        # into it makes provenance unreadable.
+        #
+        # This step pushes a full image on EVERY push to main and Artifact
+        # Registry bills that storage per GB per month, forever. Retention is
+        # NOT handled here: the repository carries cleanup policies (keep the 2
+        # newest, drop untagged after 1 day, drop anything after 7 days), set
+        # in infra/terraform/main.tf and applied by `make retention-apply`.
+        # If you point this build at a NEW repository, add it to
+        # infra/scripts/apply_retention.sh in the same change -- a repository
+        # without a cleanup policy accrues cost silently and forever.
         uses: docker/build-push-action@v6
         with:
           context: .
           file: infra/docker/mcp-server/Dockerfile
           push: true
+          # Same project expression as the deploy job below -- if these two ever
+          # disagree, the build pushes where the deploy does not look.
           tags: |
-            europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_DEV }}/connector/mcp-server:${{ github.sha }}
-            europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_DEV }}/connector/mcp-server:latest
+            europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_PROD || vars.GCP_PROJECT_DEV }}/connector/mcp-server:${{ github.sha }}
+            europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_PROD || vars.GCP_PROJECT_DEV }}/connector/mcp-server:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   # ---------------------------------------------------------------------------
-  # Job 2: Deploy to Cloud Run (dev environment).
-  # --allow-unauthenticated is a placeholder; auth lands in Story 2.3.
+  # Job 2: Deploy to Cloud Run.
+  #
+  # ONE JOB, because there is ONE environment. This used to be two jobs, dev then
+  # prod, both deploying the SAME service `mcp-server` in the SAME project -- and
+  # with OPPOSITE auth: the dev job forced TOOROW_AUTH_MODE=static onto the live
+  # service, then the prod job set it back to oauth. Whichever ran last decided
+  # whether production required a real token.
+  #
+  # That never fired only because the workflow could not push: it targeted an
+  # Artifact Registry repository that did not exist. Creating that repository on
+  # 2026-07-26 made this workflow functional, which turned a latent contradiction
+  # into a live hazard -- hence this rewrite in the same change.
+  #
+  # When a real second environment exists, bring the split back with a DIFFERENT
+  # service name per environment. Never two jobs on one service.
   # ---------------------------------------------------------------------------
-  deploy-dev:
-    name: Deploy to Cloud Run (dev)
+  deploy:
+    name: Deploy to Cloud Run
     runs-on: ubuntu-latest
     needs: build-and-push
     permissions:
@@ -85,62 +126,19 @@ jobs:
       id-token: write
 
     steps:
-      - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SA_EMAIL }}
-
-      - name: Deploy to Cloud Run (dev)
-        # --update-env-vars, NEVER --set-env-vars: the live services carry ~19
-        # variables that were set out-of-band and are absent from this file
-        # (PLATFORM_DB_URL and the OAuth/Nango secrets, ALLOWED_HOST's real
-        # multi-host list, TENANT_KEY_*, TOOROW_INVITATION_ORIGIN, ...).
-        # --set-env-vars REPLACES the whole set, so the first run of this
-        # workflow would have wiped them and taken the service down.
-        run: |
-          gcloud run deploy mcp-server \
-            --image "europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_DEV }}/connector/mcp-server:${{ github.sha }}" \
-            --project "${{ vars.GCP_PROJECT_DEV }}" \
-            --region europe-west1 \
-            --platform managed \
-            --allow-unauthenticated \
-            --min-instances=0 \
-            --max-instances=4 \
-            --set-secrets "NANGO_ENCRYPTION_KEY=nango-encryption-key:latest,TOOROW_STATIC_TOKEN=connector-static-token:latest" \
-            --update-env-vars "HOST_HEADER_VALIDATION=strict,ALLOWED_HOST=${{ vars.CLOUD_RUN_HOSTNAME_DEV }},FASTMCP_HTTP_ALLOWED_HOSTS=${{ vars.CLOUD_RUN_HOSTNAME_DEV }},PORT=8080,TOOROW_AUTH_MODE=static,TOOROW_BQ_PROVISION_ENABLED=1,GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_DEV }}" \
-            --quiet
-
-  # ---------------------------------------------------------------------------
-  # Job 3: Deploy to Cloud Run (prod environment).
-  # Gated on the GitHub 'production' environment (manual approval by Jean).
-  # [HUMAN GATE] Create the 'production' environment in GitHub repo Settings >
-  # Environments with a required reviewer before this job can run.
-  # ---------------------------------------------------------------------------
-  deploy-prod:
-    name: Deploy to Cloud Run (prod)
-    runs-on: ubuntu-latest
-    needs: deploy-dev
-    environment: production
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
       # Pre-deploy validation: assert that all required JWT/auth vars are set.
-      # A missing value here would silently disable OAuth enforcement in prod.
-      - name: Validate prod JWT configuration vars
+      # A missing value here would silently disable OAuth enforcement.
+      - name: Validate JWT configuration vars
         run: |
           MISSING=""
           [ -z "${{ vars.TOOROW_JWT_JWKS_URI }}"  ] && MISSING="$MISSING TOOROW_JWT_JWKS_URI"
           [ -z "${{ vars.TOOROW_JWT_ISSUER }}"    ] && MISSING="$MISSING TOOROW_JWT_ISSUER"
           [ -z "${{ vars.TOOROW_JWT_AUDIENCE }}"  ] && MISSING="$MISSING TOOROW_JWT_AUDIENCE"
           if [ -n "$MISSING" ]; then
-            echo "ERROR: The following required GitHub Actions Variables are not set:$MISSING"
-            echo "Set them under Settings > Environments > production > Variables before deploying."
+            echo "ERROR: required GitHub Actions Variables are not set:$MISSING"
             exit 1
           fi
-          echo "OK: all required prod JWT vars are set."
+          echo "OK: all required JWT vars are set."
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -148,18 +146,26 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SA_EMAIL }}
 
-      - name: Deploy to Cloud Run (prod)
-        # NOTE: --allow-unauthenticated is intentionally absent for prod.
-        # Prod access is restricted via IAM invoker bindings + Load Balancer (Phase B).
-        # Dev uses --allow-unauthenticated for easier testing (see deploy-dev job above).
+      - name: Deploy to Cloud Run
+        # --update-env-vars, NEVER --set-env-vars: the live service carries ~22
+        # variables set out-of-band and absent from this file (PLATFORM_DB_URL,
+        # the OAuth/Nango secrets, TENANT_KEY_*, TOOROW_SUPER_ADMINS,
+        # TOOROW_INVITATION_ORIGIN, ...). --set-env-vars REPLACES the whole set
+        # and would take the service down. This exact mistake wiped 13 variables
+        # off the CRM service on 2026-07-25.
+        #
+        # TOOROW_DEPLOYMENT_MODE is deliberately NOT set: absent means hosted,
+        # which is what this deployment is. Setting it to self_hosted would make
+        # the instance single-tenant and refuse every new organization.
         run: |
           gcloud run deploy mcp-server \
-            --image "europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_PROD }}/connector/mcp-server:${{ github.sha }}" \
-            --project "${{ vars.GCP_PROJECT_PROD }}" \
+            --image "europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_PROD || vars.GCP_PROJECT_DEV }}/connector/mcp-server:${{ github.sha }}" \
+            --project "${{ vars.GCP_PROJECT_PROD || vars.GCP_PROJECT_DEV }}" \
             --region europe-west1 \
             --platform managed \
+            --allow-unauthenticated \
             --min-instances=0 \
             --max-instances=4 \
             --set-secrets "NANGO_ENCRYPTION_KEY=nango-encryption-key:latest" \
-            --update-env-vars "HOST_HEADER_VALIDATION=strict,ALLOWED_HOST=${{ vars.CLOUD_RUN_HOSTNAME_PROD }},FASTMCP_HTTP_ALLOWED_HOSTS=${{ vars.CLOUD_RUN_HOSTNAME_PROD }},PORT=8080,TOOROW_AUTH_MODE=oauth,TOOROW_JWT_JWKS_URI=${{ vars.TOOROW_JWT_JWKS_URI }},TOOROW_JWT_ISSUER=${{ vars.TOOROW_JWT_ISSUER }},TOOROW_JWT_AUDIENCE=${{ vars.TOOROW_JWT_AUDIENCE }},TOOROW_BQ_PROVISION_ENABLED=1,GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_PROD }}" \
+            --update-env-vars "HOST_HEADER_VALIDATION=strict,ALLOWED_HOST=${{ vars.CLOUD_RUN_HOSTNAME_PROD || vars.CLOUD_RUN_HOSTNAME_DEV }},FASTMCP_HTTP_ALLOWED_HOSTS=${{ vars.CLOUD_RUN_HOSTNAME_PROD || vars.CLOUD_RUN_HOSTNAME_DEV }},PORT=8080,TOOROW_AUTH_MODE=oauth,TOOROW_JWKS_URI=${{ vars.TOOROW_JWT_JWKS_URI }},TOOROW_JWT_ISSUER=${{ vars.TOOROW_JWT_ISSUER }},TOOROW_JWT_AUDIENCE=${{ vars.TOOROW_JWT_AUDIENCE }},TOOROW_BQ_PROVISION_ENABLED=1,GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_PROD || vars.GCP_PROJECT_DEV }}" \
             --quiet

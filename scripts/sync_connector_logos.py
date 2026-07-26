@@ -33,6 +33,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
+import struct
 import sys
 from pathlib import Path
 from typing import Any
@@ -45,6 +47,33 @@ ADMIN_MAP = ROOT / "ui" / "admin" / "src" / "generated" / "connector-logos.json"
 
 CHECKSUM_PREFIX = "sha256:"
 
+# A checksum only proves "these bytes did not change" — it happily blesses an ICO,
+# a JPEG or an HTML error page saved under a .png name, and that is exactly how the
+# set rotted (2026-07-25: 4 renamed files, 6 favicons of 16-32px, 5 connectors
+# silently sharing one image). The gates below verify what the bytes ARE.
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+MIN_RASTER_PX = 64
+
+# Frozen debt, not a loophole: brands whose own site serves nothing bigger today.
+# A ratchet — each asset may only get better. Raise the recorded size when it does,
+# never add an entry to make a fresh scrape pass.
+LOW_RES_DEBT = {"adjust.png": 48, "amazon-ads.png": 32, "ias.png": 32}
+
+# Same-brand marks that legitimately reuse one file. Any OTHER pair of connectors
+# resolving to identical bytes is the "everything shows the Google G" bug.
+SHARED_MARKS = {
+    frozenset({"amazon-ads", "amazon-dsp"}),
+    frozenset({"linkedin-ads", "linkedin-company-pages"}),
+}
+
+# Front-end sources allowed to name a /connectors/ file literally. Renaming an asset
+# must not silently 404 a hand-written src=/url() — so those literals are checked too.
+LITERAL_ROOTS = (ROOT / "web" / "src", ROOT / "ui" / "admin" / "src")
+LITERAL_SUFFIXES = (".ts", ".tsx", ".astro", ".css")
+LITERAL_RE = re.compile(r"/connectors/([A-Za-z0-9._-]+\.(?:svg|png))")
+# Fixtures and doc comments that name a deliberately non-existent asset.
+LITERAL_IGNORE = {"example.svg", "logo.svg", "xxx.svg"}
+
 
 class LogoSyncError(ValueError):
     """Raised when the canonical logo set cannot produce an honest admin mirror."""
@@ -56,6 +85,72 @@ def _sha256(path: Path) -> str:
 
 def _slug(value: str) -> str:
     return value.strip().lower().replace(" ", "-")
+
+
+def _validate_asset(connector_id: str, filename: str, source: Path) -> None:
+    """Fail-closed on bytes that are not the brand mark the registry claims."""
+    payload = source.read_bytes()
+    suffix = source.suffix.lower()
+
+    if suffix == ".png":
+        if payload[:8] != PNG_MAGIC:
+            raise LogoSyncError(
+                f"{connector_id}: {filename} is named .png but its bytes are not a PNG "
+                f"(starts with {payload[:4].hex()}) — a scrape saved the wrong file"
+            )
+        width, height = struct.unpack(">II", payload[16:24])
+        floor = LOW_RES_DEBT.get(filename, MIN_RASTER_PX)
+        if min(width, height) < floor:
+            hint = (
+                f"recorded debt is {floor}px, assets may only improve"
+                if filename in LOW_RES_DEBT
+                else f"minimum is {MIN_RASTER_PX}px — a favicon is not a brand mark"
+            )
+            raise LogoSyncError(f"{connector_id}: {filename} is {width}x{height}: {hint}")
+    elif suffix == ".svg":
+        head = payload.lstrip()[:512].lower()
+        if not head.startswith((b"<svg", b"<?xml")):
+            raise LogoSyncError(
+                f"{connector_id}: {filename} is named .svg but is not SVG markup "
+                f"(starts with {payload[:24]!r}) — a scrape saved an error page"
+            )
+    else:
+        raise LogoSyncError(f"{connector_id}: unsupported asset format {suffix!r} for {filename}")
+
+
+def _assert_no_accidental_sharing(owners: dict[str, list[str]]) -> None:
+    """Two connectors resolving to identical bytes must be a declared brand family."""
+    for digest, connector_ids in sorted(owners.items()):
+        if len(connector_ids) < 2:
+            continue
+        if frozenset(connector_ids) in SHARED_MARKS:
+            continue
+        joined = ", ".join(sorted(connector_ids))
+        raise LogoSyncError(
+            f"identical logo bytes ({digest[:19]}...) shared by: {joined}. "
+            "Give each connector its own official mark, or declare the pair in SHARED_MARKS."
+        )
+
+
+def _assert_literals_resolve(files: dict[str, str]) -> None:
+    """Every hand-written /connectors/<file> in the fronts must exist in the set."""
+    dangling: list[str] = []
+    for root in LITERAL_ROOTS:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*")):
+            if path.suffix.lower() not in LITERAL_SUFFIXES or not path.is_file():
+                continue
+            for name in set(LITERAL_RE.findall(path.read_text(encoding="utf-8", errors="ignore"))):
+                if name in LITERAL_IGNORE or name in files:
+                    continue
+                dangling.append(f"{path.relative_to(ROOT).as_posix()} -> /connectors/{name}")
+    if dangling:
+        listing = "\n  - ".join(sorted(dangling))
+        raise LogoSyncError(
+            "hand-written logo paths point at assets outside the canonical set "
+            f"(they would 404 in the browser):\n  - {listing}"
+        )
 
 
 def _load_identities() -> dict[str, Any]:
@@ -82,6 +177,7 @@ def _canonical_plan() -> tuple[dict[str, str], dict[str, str]]:
     identities = _load_identities()
     files: dict[str, str] = {}
     resolver: dict[str, str] = {}
+    owners: dict[str, list[str]] = {}
 
     for connector_id in sorted(identities):
         entry = identities[connector_id]
@@ -111,6 +207,9 @@ def _canonical_plan() -> tuple[dict[str, str], dict[str, str]]:
                 f"registry {checksum!r} != file {actual!r}"
             )
 
+        _validate_asset(connector_id, filename, source)
+        owners.setdefault(actual, []).append(connector_id)
+
         files[filename] = str(source)
         # Resolve by identity id (real data: module_name) AND file stem (mockup
         # literal / provider slug). Aliased ids (meta-ads -> meta.svg) resolve both.
@@ -122,6 +221,16 @@ def _canonical_plan() -> tuple[dict[str, str], dict[str, str]]:
         if not generic.is_file():
             raise LogoSyncError("shared fallback missing: web/public/connectors/generic.svg")
         files["generic.svg"] = str(generic)
+
+    _assert_no_accidental_sharing(owners)
+    _assert_literals_resolve(files)
+
+    orphans = sorted(p.name for p in CANONICAL_DIR.glob("*") if p.is_file() and p.name not in files)
+    if orphans:
+        raise LogoSyncError(
+            "web/public/connectors holds files no connector claims "
+            f"(stale scrapes drift back in from there): {', '.join(orphans)}"
+        )
 
     return files, resolver
 

@@ -89,8 +89,8 @@ def _insert_test_project_and_datastream(conn, project_id: str, ds_id: str) -> No
         try:
             cur.execute(
                 """
-                INSERT INTO app.projects (id, name, status)
-                VALUES (%s, %s, 'active')
+                INSERT INTO app.projects (id, name, status, org_id)
+                VALUES (%s, %s, 'active', 'org_test_fixture')
                 ON CONFLICT (id) DO NOTHING
                 """,
                 (project_id, f"Test Project {project_id[:8]}"),
@@ -103,8 +103,8 @@ def _insert_test_project_and_datastream(conn, project_id: str, ds_id: str) -> No
             cur.execute(
                 """
                 INSERT INTO app.datastreams
-                    (id, project_id, name, source_kind, enabled)
-                VALUES (%s, %s, 'test-ds', 'managed_feed', TRUE)
+                    (id, project_id, name, source_kind, enabled, org_id)
+                VALUES (%s, %s, 'test-ds', 'managed_feed', TRUE, 'org_test_fixture')
                 ON CONFLICT (id) DO NOTHING
                 """,
                 (ds_id, project_id),

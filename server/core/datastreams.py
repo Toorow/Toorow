@@ -217,13 +217,20 @@ def create_datastream(
     import json  # noqa: PLC0415
 
     with conn.cursor() as cur:
+        # L'organisation du flux, derivee de son projet. C'est SUR ELLE que se
+        # joue l'isolation data (architecture-org-tenancy 3.8), et la colonne est
+        # NOT NULL depuis la migration 100 : sans cette derivation, toute creation
+        # de datastream repondait 500. Le projet en a forcement une -- meme
+        # migration -- donc la sous-requete ne peut pas rendre NULL.
         cur.execute(
             """
             INSERT INTO app.datastreams
-                (id, project_id, name, module_name, connection_ref_id,
+                (id, project_id, org_id, name, module_name, connection_ref_id,
                  report_profile_id, enabled, schedule_mode, refetch_days,
                  date_window_days, config, created_by, source_kind)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+            VALUES (%s, %s,
+                    (SELECT org_id FROM app.projects WHERE id = %s),
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
             RETURNING id, project_id, name, module_name, connection_ref_id,
                       report_profile_id, enabled, schedule_mode, refetch_days,
                       date_window_days, config, created_by, created_at, updated_at,
@@ -232,6 +239,7 @@ def create_datastream(
             (
                 ds_id,
                 project_id,
+                project_id,  # -> sous-requete org_id
                 name,
                 module_name,
                 connection_ref_id,
@@ -580,14 +588,18 @@ def backfill_datastreams() -> dict:
                         cur.execute(
                             """
                             INSERT INTO app.datastreams
-                                (id, project_id, name, module_name, connection_ref_id,
-                                 report_profile_id, enabled, schedule_mode, refetch_days,
-                                 date_window_days, config, created_by)
-                            VALUES (%s, %s, %s, %s, %s, %s, TRUE, 'nightly', 3, 30, NULL, 'system')
+                                (id, project_id, org_id, name, module_name,
+                                 connection_ref_id, report_profile_id, enabled,
+                                 schedule_mode, refetch_days, date_window_days,
+                                 config, created_by)
+                            VALUES (%s, %s,
+                                    (SELECT org_id FROM app.projects WHERE id = %s),
+                                    %s, %s, %s, %s, TRUE, 'nightly', 3, 30, NULL, 'system')
                             ON CONFLICT (project_id, name) DO NOTHING
                             RETURNING id
                             """,
-                            (ds_id, project_id, ds_name, provider, conn_id, profile_id),
+                            (ds_id, project_id, project_id, ds_name, provider,
+                             conn_id, profile_id),
                         )
                         returned = cur.fetchone()
 

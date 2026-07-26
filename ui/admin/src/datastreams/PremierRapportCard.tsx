@@ -13,6 +13,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { apiFetch } from "../lib/apiFetch";
 
 // Story 36.8 / UX-DR27: the recommended first-report path. One source, one
 // account, one recommended report, an explicit recent-period default and
@@ -93,7 +94,7 @@ export default function PremierRapportCard({
   datastreamId,
   connectionRefId,
   apiBase = "",
-  apiToken = import.meta.env.VITE_ADMIN_API_TOKEN ?? "",
+  apiToken = "",
   onSaved,
 }: Props) {
   const [reco, setReco] = useState<FirstReportRecommendation | null>(null);
@@ -134,7 +135,7 @@ export default function PremierRapportCard({
   }, []);
 
   const load = useCallback(async () => {
-    const response = await fetch(
+    const response = await apiFetch(
       `${apiBase}/api/projects/${encodeURIComponent(projectId)}/datastreams/${encodeURIComponent(datastreamId)}/first-report/recommend`,
       { method: "POST", headers: headers(), cache: "no-store" },
     );
@@ -184,7 +185,7 @@ export default function PremierRapportCard({
     setAnnouncement("");
     try {
       const grain = grainKey.split(",").filter(Boolean);
-      const response = await fetch(
+      const response = await apiFetch(
         `${apiBase}/api/projects/${encodeURIComponent(projectId)}/datastreams/${encodeURIComponent(datastreamId)}/first-report/draft`,
         {
           method: "POST",

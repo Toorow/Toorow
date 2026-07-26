@@ -42,7 +42,7 @@ function isWorkspace(v: string): v is WorkspaceKey {
   return (WORKSPACE_KEYS as string[]).includes(v);
 }
 
-export function parsePath(pathname: string, fallbackProject: string): Route {
+export function parsePath(pathname: string, fallbackProject = ""): Route {
   const parts = pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
   // Expect: p / :projectId / :workspace / ...
   const route: Route = {
@@ -82,6 +82,7 @@ export function buildPath(r: Partial<Route> & { projectId: string; workspace: Wo
 }
 
 interface RouterValue {
+  replace: (to: Partial<Route>) => void;
   route: Route;
   navigate: (to: Partial<Route>) => void;
 }
@@ -95,10 +96,10 @@ export function useRoute(): RouterValue {
 }
 
 export function RouterProvider({
-  defaultProject,
+  defaultProject = "",
   children,
 }: {
-  defaultProject: string;
+  defaultProject?: string;
   children: ReactNode;
 }) {
   const [pathname, setPathname] = useState<string>(() => window.location.pathname);
@@ -129,15 +130,22 @@ export function RouterProvider({
     [route.projectId, route.workspace],
   );
 
-  // Normalize a bare "/" into the default deep link once, so the URL is always shareable.
-  useEffect(() => {
-    if (window.location.pathname === "/" || window.location.pathname === "") {
-      const initial = buildPath({ projectId: defaultProject, workspace: DEFAULT_WORKSPACE });
-      window.history.replaceState({}, "", initial);
-      setPathname(initial);
-    }
-  }, [defaultProject]);
+  const replace = useCallback(
+    (to: Partial<Route>) => {
+      const next = buildPath({
+        projectId: to.projectId ?? route.projectId,
+        workspace: to.workspace ?? route.workspace,
+        section: to.section ?? null,
+        objectType: to.objectType ?? null,
+        objectId: to.objectId ?? null,
+        tab: to.tab ?? null,
+      });
+      window.history.replaceState({}, "", next);
+      setPathname(next);
+    },
+    [route.projectId, route.workspace],
+  );
 
-  const value = useMemo<RouterValue>(() => ({ route, navigate }), [route, navigate]);
+  const value = useMemo<RouterValue>(() => ({ route, navigate, replace }), [route, navigate, replace]);
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }

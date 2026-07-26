@@ -101,6 +101,51 @@ at it).
 
 Never expose a `static` or `disabled` instance to the public internet.
 
+#### Browser OIDC for a self-hosted console
+
+API token verification and browser sign-in are two distinct contracts. The
+`TOOROW_JWT_*` values above protect Bearer clients such as MCP callers. They do
+not make a browser an OIDC client. For a protected self-hosted console, configure
+the server-side browser flow explicitly:
+
+```dotenv
+TOOROW_AUTH_MODE=oauth
+TOOROW_CANONICAL_IDENTITY_ENABLED=1
+TOOROW_BROWSER_AUTH_MODE=oidc
+TOOROW_OIDC_ISSUER=https://id.example.com/realms/toorow
+TOOROW_OIDC_CLIENT_ID=toorow-browser
+TOOROW_OIDC_CLIENT_SECRET=<secret-for-a-confidential-web-client>
+TOOROW_OIDC_REDIRECT_URI=https://toorow.example.com/api/auth/oidc/callback
+TOOROW_OIDC_SESSION_SECRET=<at-least-32-random-bytes>
+TOOROW_OIDC_PROVIDER_NAME=Company SSO
+```
+
+Register the redirect URI exactly as written. toorow loads the issuer's OIDC
+discovery document, requires an exact issuer match, Authorization Code support,
+PKCE `S256`, and the configured asymmetric ID-token signing algorithm. ID-token
+`aud` is pinned to `TOOROW_OIDC_CLIENT_ID`; `TOOROW_JWT_AUDIENCE` remains the
+separate API Bearer audience. A confidential client secret is strongly
+recommended, although a provider that explicitly supports public clients can be
+used because PKCE is always enforced.
+
+The code, PKCE verifier, provider access token, refresh token and ID token never
+enter JavaScript. The server returns only an encrypted HttpOnly session ticket
+(`Secure`, `SameSite=Strict`). `state`, `nonce`, callback issuer and expiry are
+validated. Every cookie-authenticated `POST`, `PUT`, `PATCH` or `DELETE` also
+requires an exact `Origin` equal to the public origin in the redirect URI; a
+missing or foreign Origin is rejected. Keep that URI public-facing rather than
+using a proxy-internal hostname. Rotating `TOOROW_OIDC_SESSION_SECRET` logs out
+all browser sessions. `/api/auth/logout` clears the local toorow session; generic
+RP-initiated logout at the identity provider is intentionally not assumed
+because providers do not expose one portable contract.
+
+`TOOROW_CANONICAL_IDENTITY_ENABLED=1` is mandatory before the first protected
+hosted or self-hosted setup. `0` exists only for a brownfield legacy deployment
+while identities are reconciled; a new setup remains blocked with
+`identity_activation_required`. Hosted Google GIS remains available only via the
+explicit `TOOROW_BROWSER_AUTH_MODE=google_gis` hosted mode. None of these browser
+variables changes Google-source OAuth or Nango connector credentials.
+
 ## 4. Configure
 
 ```bash
@@ -110,6 +155,30 @@ cp .env.example .env
 
 Every variable is documented inline in [`.env.example`](../../.env.example).
 
+### Claiming your instance
+
+Set `TOOROW_DEPLOYMENT_MODE=self_hosted`, apply every migration, then mint a
+short-lived setup URL from a trusted shell on the server/container:
+
+```bash
+uv run --package toorow-server python -m core.self_hosted_bootstrap_cli \
+  --base-url https://toorow.example.com
+```
+
+Open the printed `/setup#bootstrap=...` URL once. The console removes the secret
+from browser history, exchanges it for a short-lived HttpOnly cookie, redirects
+you through the configured OIDC provider, then atomically creates:
+
+- the singleton instance owner;
+- the first organization and its owner membership;
+- the first project and its owner membership;
+- the operation, audit and outbox evidence.
+
+The setup capability is stored only as a digest, expires, and cannot be replayed.
+Running the CLI again rotates any unused capability. After a successful claim,
+additional people join through organization invitations. Direct
+`POST /api/organizations` never claims a self-hosted instance, and
+`TOOROW_SUPER_ADMINS` is not a substitute for the setup capability.
 ## 5. Run locally
 
 ```bash
@@ -131,6 +200,14 @@ account for the maintainers' values.
 ## 7. Security checklist before going live
 
 - [ ] `TOOROW_AUTH_MODE=oauth` (never `static`/`disabled` on a public host).
+- [ ] `TOOROW_CANONICAL_IDENTITY_ENABLED=1`; `0` is brownfield-only and blocks
+      every new protected setup with `identity_activation_required`.
+- [ ] `TOOROW_BROWSER_AUTH_MODE=oidc` and the exact issuer, client id, redirect
+      URI and session secret are configured; the provider advertises PKCE S256.
+- [ ] `TOOROW_DEPLOYMENT_MODE=self_hosted` and a one-time `/setup#bootstrap=...`
+      URL minted from a trusted shell.
+- [ ] You have claimed the instance yourself (create your organization once)
+      before sharing the URL with anyone.
 - [ ] Secrets live only in `.env` / your secret manager — never committed.
 - [ ] `PLATFORM_DB_URL` points at **your** database with a strong password.
 - [ ] BigQuery service account is least-privilege and scoped to your project.

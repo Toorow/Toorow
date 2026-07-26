@@ -293,8 +293,8 @@ def _seed_connection(dsn: str, project_id: str, conn_id: str, auth_path: str) ->
             # mais on insere un projet pour rester coherent avec l'audit FK).
             cur.execute(
                 """
-                INSERT INTO app.projects (id, name, slug, status, created_by)
-                VALUES (%s, %s, %s, 'active', 'test')
+                INSERT INTO app.projects (id, name, slug, status, created_by, org_id)
+                VALUES (%s, %s, %s, 'active', 'test', 'org_test_fixture')
                 ON CONFLICT (id) DO NOTHING
                 """,
                 (project_id, f"tok-{project_id}", f"slug-{uuid.uuid4().hex[:8]}"),
@@ -302,8 +302,9 @@ def _seed_connection(dsn: str, project_id: str, conn_id: str, auth_path: str) ->
             cur.execute(
                 """
                 INSERT INTO app.connection_ref
-                    (id, provider, nango_connection_id, project_id, auth_path)
-                VALUES (%s, %s, %s, %s, %s)
+                    (id, provider, nango_connection_id, project_id, auth_path, owner_org_id,
+                        owner_identity)
+                VALUES (%s, %s, %s, %s, %s, 'org_test_fixture', 'tester@example.com')
                 """,
                 (conn_id, "google-analytics", f"nango_{conn_id}", project_id, auth_path),
             )
@@ -535,15 +536,14 @@ def test_no_realistic_token_plaintext_in_story_files():
         repo_root / "server" / "tests" / "core" / "test_google_token_store.py",
         repo_root / "infra" / "nango" / "migrations" / "029_google_direct_token_store.sql",
         repo_root / "server" / "pyproject.toml",
-        repo_root / "_bmad-output" / "implementation-artifacts"
-        / "18-1-encrypted-token-store.md",
+        repo_root / "_bmad-output" / "implementation-artifacts" / "18-1-encrypted-token-store.md",
     ]
 
     # Motifs de tokens Google/OAuth realistes -- interdits en clair.
     forbidden = [
-        re.compile(r"ya29\.[A-Za-z0-9_\-]{20,}"),        # Google access token
-        re.compile(r"1//[A-Za-z0-9_\-]{20,}"),           # Google refresh token
-        re.compile(r"GOCSPX-[A-Za-z0-9_\-]{10,}"),       # Google client secret
+        re.compile(r"ya29\.[A-Za-z0-9_\-]{20,}"),  # Google access token
+        re.compile(r"1//[A-Za-z0-9_\-]{20,}"),  # Google refresh token
+        re.compile(r"GOCSPX-[A-Za-z0-9_\-]{10,}"),  # Google client secret
         re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),  # JWT
     ]
 
@@ -559,6 +559,5 @@ def test_no_realistic_token_plaintext_in_story_files():
         # Tout token de test present doit etre un placeholder factice.
         if "tok_test" in text:
             assert "not_a_secret" in text, (
-                f"placeholder de token ambigu dans {path.name} : "
-                "prefixer 'tok_test_not_a_secret'"
+                f"placeholder de token ambigu dans {path.name} : prefixer 'tok_test_not_a_secret'"
             )

@@ -2085,7 +2085,13 @@ def _fetch_connectors_inventory(project_id: str, conn) -> list[dict]:
                 h.last_fetched_at
             FROM app.connection_ref r
             LEFT JOIN app.connection_health h ON h.connection_ref_id = r.id
-            WHERE r.project_id = %s
+            -- Portee ORG, pas projet : un credential appartient a une personne mais
+            -- est utilisable dans son organisation -- c'est ce qui permet a un
+            -- collegue de rafraichir un report sans posseder l'acces a la source.
+            -- Filtrer sur r.project_id rendait invisible tout credential branche
+            -- depuis un autre projet de la MEME org (architecture-org-tenancy 3.5 :
+            -- owner_org_id remplace project_id).
+            WHERE r.owner_org_id = (SELECT org_id FROM app.projects WHERE id = %s)
             ORDER BY r.provider ASC, r.created_at ASC
             """,
             (project_id,),

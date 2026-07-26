@@ -78,8 +78,8 @@ def _seed(conn):
         )
         cur.execute(
             "INSERT INTO app.datastreams "
-            "(id, project_id, name, module_name, source_kind, enabled, created_by) "
-            "VALUES (%s, %s, 'DS', NULL, 'connector', FALSE, 'test')",
+            "(id, project_id, name, module_name, source_kind, enabled, created_by, org_id) "
+            "VALUES (%s, %s, 'DS', NULL, 'connector', FALSE, 'test', 'org_test_fixture')",
             (ds_id, project_id),
         )
     conn.commit()

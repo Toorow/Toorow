@@ -16,6 +16,19 @@ Routes:
   GET  /api/context/graph/edges           -> List graph edges (visible scope, AD-5)
   POST /api/context/graph/edges           -> Create graph edge
   DELETE /api/context/graph/edges/{id}    -> Delete graph edge (scoped)
+  GET  /api/context/graph                 -> One-bundle read: nodes + edges (Story 44.3)
+                                              node payload includes a "doc_kind" key
+                                              (schema_doc nodes only; null/absent for
+                                              topic/procedure nodes) so the mindmap
+                                              (44.4) can render a badge and disambiguate
+                                              same-relation schema docs of different kinds.
+                                              topic/procedure nodes also carry "owner"
+                                              (resolved: explicit -> created_by -> "auto")
+                                              and "owner_raw" (the explicit column value,
+                                              string or null) -- Story 44.11.
+  POST /api/context/nodes/{id}/request-review -> Audit-only "request review" intent
+                                              capture for a topic/procedure node
+                                              (Story 44.11). No notification delivery.
 """
 
 from __future__ import annotations
@@ -24,11 +37,17 @@ import logging
 import os
 from typing import Any
 
+import psycopg
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from core.audit import ACTION_CROSS_SCOPE_ATTEMPT, write_audit_row
+from core.audit import (
+    ACTION_CONTEXT_REVIEW_REQUESTED,
+    ACTION_CROSS_SCOPE_ATTEMPT,
+    insert_audit_row,
+    write_audit_row,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +147,7 @@ async def _create_topic(request: Request) -> Response:
     project_id = (body.get("project_id") or "").strip() or None
     title = body.get("title", "")
     body_md = body.get("body_md", "")
+    owner = body.get("owner")
 
     from core.context_store import create_topic  # noqa: PLC0415
     from core.db import get_connection  # noqa: PLC0415
@@ -143,12 +163,24 @@ async def _create_topic(request: Request) -> Response:
                 )
 
             topic = create_topic(
-                conn, project_id=project_id, title=title, body_md=body_md, created_by=identity
+                conn,
+                project_id=project_id,
+                title=title,
+                body_md=body_md,
+                owner=owner,
+                created_by=identity,
             )
             conn.commit()
             return JSONResponse(topic, status_code=201)
     except ValueError as exc:
         return JSONResponse({"code": "invalid_param", "message": str(exc)}, status_code=422)
+    except psycopg.errors.UniqueViolation:
+        # Migration 113: platform-scoped titles are unique (partial index) --
+        # a duplicate is a curator-facing conflict, not a 500 (44.2 re-review).
+        return JSONResponse(
+            {"code": "conflict", "message": "Un topic plateforme porte déjà ce titre"},
+            status_code=409,
+        )
     except Exception as exc:
         logger.warning("context_api: create_topic error: %s", exc)
         return JSONResponse(
@@ -270,6 +302,13 @@ async def _update_topic(request: Request) -> Response:
         return JSONResponse({"code": "invalid_param", "message": str(exc)}, status_code=422)
     except KeyError as exc:
         return JSONResponse({"code": "not_found", "message": str(exc)}, status_code=404)
+    except psycopg.errors.UniqueViolation:
+        # Migration 113: renaming a platform topic onto an existing platform
+        # title now violates the partial unique index -- 409, not 500.
+        return JSONResponse(
+            {"code": "conflict", "message": "Un topic plateforme porte déjà ce titre"},
+            status_code=409,
+        )
     except Exception as exc:
         logger.warning("context_api: update_topic error: %s", exc)
         return JSONResponse(
@@ -342,8 +381,20 @@ async def _create_procedure(request: Request) -> Response:
     frontmatter_yaml = body.get("frontmatter_yaml", "")
     body_md = body.get("body_md", "")
 
-    from core.context_store import DuplicateProcedureNameError, create_procedure  # noqa: PLC0415
+    from core.context_store import (  # noqa: PLC0415
+        DuplicateProcedureNameError,
+        _clean_owner,
+        create_procedure,
+    )
     from core.db import get_connection  # noqa: PLC0415
+
+    # Validate owner HERE so its type error reports invalid_param, matching the
+    # topics endpoint -- the generic ValueError branch below is reserved for
+    # frontmatter problems and reports frontmatter_invalide (44.11 re-review).
+    try:
+        owner = _clean_owner(body.get("owner"))
+    except ValueError as exc:
+        return JSONResponse({"code": "invalid_param", "message": str(exc)}, status_code=422)
 
     try:
         with get_connection() as conn:
@@ -360,6 +411,7 @@ async def _create_procedure(request: Request) -> Response:
                 project_id=project_id,
                 frontmatter_yaml=frontmatter_yaml,
                 body_md=body_md,
+                owner=owner,
                 created_by=identity,
             )
             conn.commit()
@@ -464,10 +516,20 @@ async def _update_procedure(request: Request) -> Response:
 
     from core.context_store import (  # noqa: PLC0415
         DuplicateProcedureNameError,
+        _clean_owner,
         get_procedure,
         update_procedure,
     )
     from core.db import get_connection  # noqa: PLC0415
+
+    # Owner type error -> invalid_param, matching the topics endpoint; the
+    # generic ValueError branch below stays frontmatter_invalide (44.11
+    # re-review).
+    if "owner" in patch:
+        try:
+            patch["owner"] = _clean_owner(patch["owner"])
+        except ValueError as exc:
+            return JSONResponse({"code": "invalid_param", "message": str(exc)}, status_code=422)
 
     try:
         with get_connection() as conn:
@@ -682,6 +744,320 @@ async def _delete_graph_edge(request: Request) -> Response:
         )
 
 
+# ---------------------------------------------------------------------------
+# Graph Bundle Handler (Story 44.3)
+# ---------------------------------------------------------------------------
+
+_EXCERPT_LEN = 280
+
+
+def _excerpt(body_md: str | None) -> str:
+    """Verbatim first 280-char prefix of a doc body, server-side (R44-UX03)."""
+    if not body_md:
+        return ""
+    return body_md[:_EXCERPT_LEN]
+
+
+def _node_scope(node_project_id: str | None) -> str:
+    return "platform" if node_project_id is None else "project"
+
+
+def _resolve_owner(owner: str | None, created_by: str | None) -> str:
+    """Story 44.11 display rule: explicit owner, else created_by, else 'auto'.
+
+    Centralised here (the graph bundle) so every consumer of the mindmap
+    agrees on the same displayed owner -- topics/procedures created before
+    this story have no explicit `owner` and fall back to `created_by`;
+    seeded/system rows with neither fall back to the literal "auto".
+    """
+    if owner:
+        return owner
+    if created_by:
+        return created_by
+    return "auto"
+
+
+async def _get_graph(request: Request) -> Response:
+    """GET /api/context/graph?project_id=<id> -- one bundle of nodes + edges.
+
+    Composes topics + procedures + schema_docs into a single node list (orphans
+    included, no edge required) alongside the project's visible graph edges.
+    project_id is required: the mindmap always renders for one project's scope.
+
+    schema_doc nodes carry a "doc_kind" key (e.g. "columns", "sample_values") so
+    that up to 3 schema_doc nodes sharing the same relation title (one per
+    doc_kind) remain distinguishable to the consumer; topic/procedure nodes
+    OMIT the key entirely (consumers must treat a missing doc_kind as none).
+
+    Story 44.10 adds a fourth node type: target_field (a data-dictionary field).
+    Its node id is the field NAME (app.target_fields has no id column), its
+    scope is always "platform" (the dictionary is platform-global -- no org or
+    project column), and it carries an extra "field_kind" key ("metric" /
+    "dimension"). Inclusion rule -- the whole dictionary is NOT drawn by
+    default: only fields referenced by at least one visible edge, plus every
+    APPROVED field when ``?include_fields=all`` is passed. Soft-deleted fields
+    are never included, in either mode.
+
+    Edges are filtered post-hoc to those whose from_id AND to_id both resolve to
+    a node actually present in the returned node list -- an edge pointing at an
+    archived or otherwise out-of-scope endpoint is dropped rather than left
+    dangling for the React Flow consumer.
+    """
+    authorized, identity = await _check_auth(request)
+    if not authorized:
+        return JSONResponse(
+            {"code": "unauthorized", "message": "Authentification requise"}, status_code=401
+        )
+
+    project_id = (request.query_params.get("project_id") or "").strip() or None
+    if not project_id:
+        return JSONResponse(
+            {"code": "invalid_param", "message": "project_id est requis"}, status_code=422
+        )
+
+    include_fields_all = (request.query_params.get("include_fields") or "").strip() == "all"
+
+    from core.context_store import (  # noqa: PLC0415
+        list_graph_edges,
+        list_procedures,
+        list_schema_docs,
+        list_topics,
+    )
+    from core.datamodel import list_target_field_nodes  # noqa: PLC0415
+    from core.db import get_connection  # noqa: PLC0415
+
+    try:
+        with get_connection() as conn:
+            if not _check_project_role(conn, project_id, identity, minimum_role="viewer"):
+                _audit_cross_scope(identity, "graph_read", project_id)
+                return JSONResponse(
+                    {"code": "not_found", "message": "Projet introuvable"}, status_code=404
+                )
+
+            topics = list_topics(conn, project_id=project_id, include_archived=False)
+            procedures = list_procedures(conn, project_id=project_id, include_archived=False)
+            schema_docs = list_schema_docs(conn, project_id=project_id)
+            edges = list_graph_edges(conn, project_id=project_id)
+
+            nodes: list[dict[str, Any]] = []
+            for topic in topics:
+                nodes.append(
+                    {
+                        "id": topic["id"],
+                        "node_type": "topic",
+                        "title": topic["title"],
+                        "excerpt": _excerpt(topic["body_md"]),
+                        # Story 44.11: resolved for display; owner_raw is the
+                        # explicit column value (string or null) editors need
+                        # to distinguish "no explicit owner" from "explicit
+                        # owner happens to equal created_by".
+                        "owner": _resolve_owner(topic.get("owner"), topic["created_by"]),
+                        "owner_raw": topic.get("owner"),
+                        "version_number": topic["version_number"],
+                        "scope": _node_scope(topic["project_id"]),
+                        "status": topic["status"],
+                    }
+                )
+            for proc in procedures:
+                nodes.append(
+                    {
+                        "id": proc["id"],
+                        "node_type": "procedure",
+                        "title": proc["name"],
+                        "excerpt": _excerpt(proc["body_md"]),
+                        "owner": _resolve_owner(proc.get("owner"), proc["created_by"]),
+                        "owner_raw": proc.get("owner"),
+                        "version_number": proc["version_number"],
+                        "scope": _node_scope(proc["project_id"]),
+                        "status": proc["status"],
+                    }
+                )
+            for doc in schema_docs:
+                # app.schema_context has no created_by/status columns (AD-17: read-only,
+                # generator-written docs) and project_id is NOT NULL, so scope is always
+                # 'project' and owner is not fabricated.
+                # "status" is deliberately the constant "active" in this v1: schema_context
+                # rows are not archivable today, so there is no include_archived param on
+                # this endpoint yet. The field is kept on the payload for forward
+                # compatibility with topic/procedure nodes (which do carry real status).
+                nodes.append(
+                    {
+                        "id": doc["id"],
+                        "node_type": "schema_doc",
+                        "title": doc["relation"],
+                        "doc_kind": doc["doc_kind"],
+                        "excerpt": _excerpt(doc["body_md"]),
+                        "owner": None,
+                        "version_number": doc["version_number"],
+                        "scope": "project",
+                        "status": "active",
+                    }
+                )
+
+            # Story 44.10 -- target_field nodes. Referenced = named by an edge
+            # endpoint whose type is 'target_field'. The endpoint id IS the
+            # field name, so the referenced set is read straight off the edges
+            # already fetched (no extra round trip, no whole-dictionary scan).
+            # Both ends are inspected independently so a field->field edge
+            # contributes BOTH of its endpoints, not just one.
+            referenced_fields: set[str] = set()
+            for edge in edges:
+                if edge["from_type"] == "target_field":
+                    referenced_fields.add(edge["from_id"])
+                if edge["to_type"] == "target_field":
+                    referenced_fields.add(edge["to_id"])
+            field_rows = list_target_field_nodes(
+                conn,
+                names=sorted(referenced_fields),
+                include_approved=include_fields_all,
+            )
+            for field in field_rows:
+                nodes.append(
+                    {
+                        # app.target_fields is keyed by name -- there is no id
+                        # column, so the name IS the node id (and what edges
+                        # store in from_id/to_id).
+                        "id": field["name"],
+                        "node_type": "target_field",
+                        # display_name is nullable in the dictionary; the field
+                        # name is the honest fallback, never a fabricated label.
+                        "title": field["display_name"] or field["name"],
+                        # Verbatim (prefix-capped like every other node type);
+                        # a field with no description gets "" rather than an
+                        # invented summary.
+                        "excerpt": _excerpt(field["description"]),
+                        "owner": field["created_by"],
+                        "version_number": field["version_number"],
+                        # The dictionary is platform-global: no org_id, no
+                        # project_id column at all (see core.datamodel).
+                        "scope": "platform",
+                        "status": field["status"],
+                        # 'metric' | 'dimension' -- rendered as the node card's
+                        # kind badge. target_field nodes only.
+                        "field_kind": field["field_kind"],
+                    }
+                )
+
+            node_ids = {node["id"] for node in nodes}
+            # 44.10 re-review: target_field ids are bare field names sharing the
+            # id namespace with top_/proc_/sctx_ ids. A collision cannot be
+            # designed away (edges store the raw name) -- make it observable
+            # instead of silently collapsing two nodes into one.
+            if len(node_ids) != len(nodes):
+                seen: set[str] = set()
+                dupes = {n["id"] for n in nodes if n["id"] in seen or seen.add(n["id"])}
+                logger.warning(
+                    "context_api: graph_node_id_collision project=%s ids=%s",
+                    project_id, sorted(dupes),
+                )
+            edges = [
+                edge
+                for edge in edges
+                if edge["from_id"] in node_ids and edge["to_id"] in node_ids
+            ]
+
+            return JSONResponse({"nodes": nodes, "edges": edges})
+    except Exception as exc:
+        logger.warning("context_api: get_graph error: %s", exc)
+        return JSONResponse(
+            {"code": "db_error", "message": "Erreur lors de la récupération du graphe"},
+            status_code=500,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Request Review Handler (Story 44.11)
+# ---------------------------------------------------------------------------
+
+
+async def _request_review(request: Request) -> Response:
+    """POST /api/context/nodes/{id}/request-review -- audit-only intent capture.
+
+    Writes an `context.review_requested` audit row with {node_id, node_type,
+    requester, note}. Deliberately does NOT deliver a notification of any
+    kind (out of scope, per the story record) -- the caller is told exactly
+    that in the response the UI renders, never implying a message was sent.
+
+    Body: {"node_type": "topic" | "procedure", "note"?: string}. node_type is
+    required and explicit (the same pattern as graph edge creation) rather
+    than inferred from the id prefix, so a malformed/unknown id shape never
+    silently resolves to the wrong lookup.
+    """
+    authorized, identity = await _check_auth(request)
+    if not authorized:
+        return JSONResponse(
+            {"code": "unauthorized", "message": "Authentification requise"}, status_code=401
+        )
+
+    node_id = request.path_params.get("id", "")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    node_type = (body.get("node_type") or "").strip()
+    note_raw = body.get("note")
+    note = note_raw.strip() if isinstance(note_raw, str) else None
+    note = note or None
+
+    if node_type not in ("topic", "procedure"):
+        return JSONResponse(
+            {
+                "code": "invalid_param",
+                "message": "node_type doit être 'topic' ou 'procedure'.",
+            },
+            status_code=422,
+        )
+
+    from core.context_store import get_procedure, get_topic  # noqa: PLC0415
+    from core.db import get_connection  # noqa: PLC0415
+
+    try:
+        with get_connection() as conn:
+            node = (
+                get_topic(conn, topic_id=node_id)
+                if node_type == "topic"
+                else get_procedure(conn, procedure_id=node_id)
+            )
+            if not node:
+                _audit_cross_scope(identity, node_id)
+                return JSONResponse(
+                    {"code": "not_found", "message": "Nœud introuvable"}, status_code=404
+                )
+
+            # Viewer role suffices (AC: any knowledge consumer can flag a node
+            # for review, not just its writers).
+            if not _check_project_role(
+                conn, node["project_id"], identity, minimum_role="viewer"
+            ):
+                _audit_cross_scope(identity, node_id, node["project_id"])
+                return JSONResponse(
+                    {"code": "not_found", "message": "Nœud introuvable"}, status_code=404
+                )
+
+            insert_audit_row(
+                conn,
+                identity=identity,
+                action=ACTION_CONTEXT_REVIEW_REQUESTED,
+                provider_account="platform",
+                connection_ref="",
+                metadata={
+                    "node_id": node_id,
+                    "node_type": node_type,
+                    "requester": identity,
+                    "note": note,
+                },
+            )
+            conn.commit()
+            return JSONResponse({"status": "requested"}, status_code=201)
+    except Exception as exc:
+        logger.warning("context_api: request_review error: %s", exc)
+        return JSONResponse(
+            {"code": "db_error", "message": "Erreur lors de la demande de revue"},
+            status_code=500,
+        )
+
+
 # NOTE (scope creep — Fix 8): _generate_schema_context was wired into CONTEXT_ROUTES in the
 # initial implementation, but it belongs to Story 11.2 (schema context auto-generation).
 # It imported core.schema_context_gen which is unreviewed 11.2 scope and its
@@ -707,4 +1083,10 @@ CONTEXT_ROUTES: list[Route] = [
     Route("/api/context/graph/edges", endpoint=_list_graph_edges, methods=["GET"]),
     Route("/api/context/graph/edges", endpoint=_create_graph_edge, methods=["POST"]),
     Route("/api/context/graph/edges/{id}", endpoint=_delete_graph_edge, methods=["DELETE"]),
+    # Story 44.3 — one-bundle graph read (nodes + edges)
+    Route("/api/context/graph", endpoint=_get_graph, methods=["GET"]),
+    # Story 44.11 — request review (audit-only intent capture, no delivery)
+    Route(
+        "/api/context/nodes/{id}/request-review", endpoint=_request_review, methods=["POST"]
+    ),
 ]

@@ -16,6 +16,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
 
+vi.mock("../shell/AuthGate", () => ({
+  default: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 // ---------------------------------------------------------------------------
 // Mock fetch globally so no panel crashes on mount
 // ---------------------------------------------------------------------------
@@ -24,7 +28,11 @@ function mockFetch(responseMap: Record<string, unknown> = {}) {
   const fetchMock = vi.fn().mockImplementation((url: string) => {
     for (const [key, data] of Object.entries(responseMap)) {
       if (url.includes(key)) {
-        return Promise.resolve({ ok: true, status: 200, json: async () => data });
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => data,
+        });
       }
     }
     return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
@@ -35,13 +43,15 @@ function mockFetch(responseMap: Record<string, unknown> = {}) {
 
 /** A syntactically valid, unexpired ID token so AuthGate renders the app, not sign-in. */
 function signIn(): void {
-  const payload = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }));
+  const payload = btoa(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }),
+  );
   localStorage.setItem("api_token", `header.${payload}.signature`);
 }
 
 beforeEach(() => {
   signIn();
-  // The router normalizes a bare "/" into /p/default/overview. Start clean.
+  // The router normalizes a bare "/" into the first real project overview. Start clean.
   window.history.replaceState({}, "", "/");
 
   mockFetch({
@@ -51,9 +61,13 @@ beforeEach(() => {
     // state "ready" (F-011 entry routing). An empty list is the new-user case and
     // routes to the welcome/create-organization surface instead — covered by
     // AppEntryRouting.test.tsx.
-    "/api/organizations": { organizations: [{ id: "org-acme", name: "Acme Group" }] },
+    "/api/organizations": {
+      organizations: [{ id: "org-acme", name: "Acme Group" }],
+    },
     "/api/projects": {
-      projects: [{ id: "default", name: "Default project", org_id: "org-acme" }],
+      projects: [
+        { id: "proj-acme", name: "Core project", org_id: "org-acme" },
+      ],
     },
     "/api/datamodel/fields": [],
     "/api/reports/available": [],
@@ -127,7 +141,9 @@ describe("App — default route", () => {
 
     await waitFor(() => {
       // OverviewV3 page header <h1>Overview</h1>
-      expect(screen.getByRole("heading", { name: "Overview", level: 1 })).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Overview", level: 1 }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -135,7 +151,10 @@ describe("App — default route", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("ws-overview")).toHaveAttribute("aria-current", "page");
+      expect(screen.getByTestId("ws-overview")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
     });
   });
 });
@@ -151,7 +170,7 @@ describe("App — TopBar scope control", () => {
     await waitFor(() => {
       expect(screen.getByText("Acme Group")).toBeInTheDocument();
     });
-    expect(screen.getByText("Default project")).toBeInTheDocument();
+    expect(screen.getByText("Core project")).toBeInTheDocument();
   });
 });
 
@@ -171,7 +190,10 @@ describe("App — workspace navigation", () => {
     await user.click(screen.getByTestId("ws-data"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("ws-data")).toHaveAttribute("aria-current", "page");
+      expect(screen.getByTestId("ws-data")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
     });
 
     // The Data workspace expands its stable section anchors (sec-data-*).
@@ -193,9 +215,13 @@ describe("App — workspace navigation", () => {
     await user.click(screen.getByTestId("ws-governance"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("sec-governance-semantic-model")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("sec-governance-semantic-model"),
+      ).toBeInTheDocument();
     });
     expect(screen.getByTestId("sec-governance-mapping")).toBeInTheDocument();
-    expect(screen.getByTestId("sec-governance-data-quality")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("sec-governance-data-quality"),
+    ).toBeInTheDocument();
   });
 });

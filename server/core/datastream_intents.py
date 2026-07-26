@@ -302,6 +302,10 @@ def compile_geographic_intent(
     snapshot = {
         "mode": posture.mode,
         "country_codes": list(posture.country_codes),
+        # Story 37.8: the plan records the client-defined markets, not only the
+        # union of their member codes. Grouping stays a read-layer concern --
+        # extraction only ever needs the tracked country set.
+        "markets": [market.as_dict() for market in posture.markets],
         "posture_fingerprint": _posture_fingerprint(posture),
         "compilation_status": status,
         "effective_country_field": effective_country_field,
@@ -310,6 +314,7 @@ def compile_geographic_intent(
             "grain_after": grain_after,
             "added_dimensions": added_dimensions,
             "tracked_country_count": len(posture.country_codes),
+            "tracked_market_count": len(posture.markets),
             "quota_cost": quota_cost,
             "cardinality_estimate": (
                 "provider_country_cardinality" if status == "country_complete" else "unchanged"
@@ -627,6 +632,85 @@ def _version_dict(row: tuple[Any, ...]) -> dict[str, Any]:
         result["created_at"] = result["created_at"].isoformat()
     return result
 
+
+def _intent_before_geographic_compilation(stored_intent: dict[str, Any]) -> dict[str, Any]:
+    """Reverse the deterministic geographic overlay for idempotency comparison."""
+
+    original = deepcopy(stored_intent)
+    snapshot = original.pop("geographic", None)
+    if not isinstance(snapshot, dict):
+        return original
+    impact = snapshot.get("impact")
+    if not isinstance(impact, dict):
+        return original
+    selection = (original.get("source") or {}).get("selection")
+    if not isinstance(selection, dict):
+        return original
+    added_dimensions = {
+        str(value) for value in impact.get("added_dimensions", []) if isinstance(value, str)
+    }
+    dimensions = selection.get("dimensions")
+    if isinstance(dimensions, list):
+        selection["dimensions"] = [
+            value for value in dimensions if str(value) not in added_dimensions
+        ]
+    grain_before = impact.get("grain_before")
+    if isinstance(grain_before, list):
+        selection["grain"] = grain_before
+    return original
+
+
+def replay_datastream_intent(
+    *,
+    project_id: str,
+    intent: dict[str, Any],
+    idempotency_key: str,
+    conn: Any,
+    datastream_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Recover an already-committed intent without consulting mutable capabilities.
+
+    The immutable row is authoritative for outcome-unknown retries. Payload and
+    scope still fail closed: the caller must present the same normalized intent,
+    and an explicit Datastream id must match the original shell.
+    """
+
+    if not idempotency_key.strip():
+        raise ValueError("Idempotency-Key is required")
+    requested, _ = normalize_intent(intent)
+    key_hash = _sha256(idempotency_key)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, datastream_id, project_id, version_number, contract_version,
+                   normalized_payload, content_hash, capability_contract_version,
+                   capability_fingerprint, executable, validation_issues,
+                   created_by, created_at
+            FROM app.datastream_plan_versions
+            WHERE project_id = %s AND idempotency_key_hash = %s
+            """,
+            (project_id, key_hash),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+
+    result = _version_dict(row)
+    if datastream_id is not None and result["datastream_id"] != datastream_id:
+        raise DatastreamIntentConflict("idempotency_conflict")
+    stored = result.get("normalized_payload")
+    if isinstance(stored, str):
+        try:
+            stored = json.loads(stored)
+        except (TypeError, ValueError) as exc:
+            raise DatastreamIntentConflict("idempotency_conflict") from exc
+    if not isinstance(stored, dict):
+        raise DatastreamIntentConflict("idempotency_conflict")
+    original, _ = normalize_intent(_intent_before_geographic_compilation(stored))
+    if _canonical_json(requested) != _canonical_json(original):
+        raise DatastreamIntentConflict("idempotency_conflict")
+    result["idempotent_replay"] = True
+    return result
 
 def save_datastream_intent(
     *,

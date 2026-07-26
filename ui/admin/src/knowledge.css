@@ -95,3 +95,159 @@
   font-size: 13px;
   line-height: 1.55;
 }
+
+/* Loading status line — plain text, no skeleton fabrication. */
+.knowledge-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Load error — mirrors the fp-load-error / provenance pattern (Story 44.1). */
+.knowledge-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 20px 22px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--error) 28%, var(--surface));
+  background: color-mix(in srgb, var(--error) 6%, var(--surface));
+}
+.knowledge-load-error p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.knowledge-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.knowledge-platform {
+  /* Reuses the topic pill treatment, tinted toward --muted for a neutral
+     "not this project's own" signal distinct from the info topic pill. */
+  border-color: color-mix(in srgb, var(--muted) 30%, var(--surface));
+  background: color-mix(in srgb, var(--muted) 10%, var(--surface));
+  color: var(--muted);
+}
+
+.knowledge-readonly {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--surface));
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.knowledge-card-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.knowledge-card-actions .secondary-button {
+  margin-top: 0;
+}
+
+/* ── Editor (create/edit) ──────────────────────────────────────────────── */
+.knowledge-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 20px;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  overflow-y: auto;
+}
+
+.knowledge-editor {
+  width: 100%;
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 28px;
+}
+.knowledge-editor h2 {
+  margin: 0;
+  font: 600 18px/1.3 "Lexend", sans-serif;
+  color: var(--ink);
+}
+
+.knowledge-editor-error {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--surface));
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+  color: var(--error);
+  font-size: 13px;
+}
+
+.knowledge-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.knowledge-editor-field input,
+.knowledge-editor-field textarea {
+  font: 14px/1.5 "Plus Jakarta Sans", sans-serif;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border, color-mix(in srgb, var(--muted) 30%, var(--surface)));
+  border-radius: 8px;
+  padding: 9px 12px;
+  resize: vertical;
+}
+
+.knowledge-editor-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 720px) {
+  .knowledge-editor-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.knowledge-editor-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--muted) 20%, var(--surface));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 4%, var(--surface));
+  min-height: 220px;
+  overflow: auto;
+}
+.knowledge-editor-preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.knowledge-editor-preview pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 13px/1.6 "Plus Jakarta Sans", sans-serif;
+  color: var(--ink);
+}
+
+.knowledge-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

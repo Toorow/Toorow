@@ -42,6 +42,13 @@ Design mirrors metric_semantics.py: ``from __future__ import annotations``, modu
 logger, lazy ``core.db`` imports inside the DB functions, prefixed-ULID mint helper,
 pure functions kept separate from I/O so the invariants are testable without Postgres.
 
+Story 27.9 EXTENSION (section C at the end of the module): the CLIENT-OWNED LABEL.
+canonical_dimension is a STABLE INTERNAL IDENTIFIER (it is written into mapping rows,
+plan payloads and kept renders -- renaming it would break the lineage), so the readable
+name lives in its own table (app.dimension_labels, migration 106) and resolves through
+the SAME cascade PROJECT > ORG > PLATFORM. Absent label -> the identifier is shown AND
+the fallback is declared (label_source='fallback_identifier'); nothing is invented.
+
 Windows/CI note: all log/message strings use ASCII-safe characters only.
 """
 
@@ -1187,3 +1194,326 @@ def conform_value(
 
     resolved = reduce_conformance_by_specificity(rows, confirmed_only=True)
     return resolved.get((connector, source_value))
+
+
+# ---------------------------------------------------------------------------
+# C. CLIENT-OWNED LABELS (Story 27.9) -- app.dimension_labels, migration 106.
+#
+# canonical_dimension is a STABLE INTERNAL IDENTIFIER: it is written into mapping
+# rows, plan payloads and kept renders, so it can never be renamed on demand --
+# renaming it would break the lineage. The label the user READS is a separate,
+# client-owned string resolved by the SAME cascade PROJECT > ORG > PLATFORM.
+#
+# HONESTY: when no row covers a dimension, resolution falls back to the identifier
+# and SAYS SO (label_source='fallback_identifier'). No label is ever invented.
+# ---------------------------------------------------------------------------
+
+ENTITY_TYPE_LABEL = "dimension_label"
+_LABEL_ID_PREFIX = "dlb_"
+
+# Where a resolved label came from (contract of resolve_dimension_label).
+LABEL_SOURCE_CLIENT = "client"                 # a stored row won the cascade
+LABEL_SOURCE_FALLBACK = "fallback_identifier"  # nothing stored -> the stable id is shown
+
+_LABEL_COLUMNS = (
+    "id, canonical_dimension, display_label, description, scope_level, org_id, "
+    "project_id, created_by, created_at, updated_at"
+)
+
+
+def _row_to_label(cols, row) -> dict:
+    record: dict = {}
+    for col, val in zip(cols, row):
+        record[col] = val.isoformat() if col in _TS_COLS and val is not None else val
+    return record
+
+
+def reduce_labels_by_specificity(rows) -> dict:
+    """Reduce label rows to {canonical_dimension -> row} (PURE, offline-testable).
+
+    For each dimension the row with the highest scope rank wins (PROJECT beats ORG beats
+    PLATFORM). Deterministic: a strictly-greater comparison keeps the first-seen on equal
+    ranks. Rows without a dimension or without a non-empty label are ignored (a blank
+    label would show the user nothing -- the DB CHECK already refuses them; this reducer
+    is defensive so an offline caller cannot inject one)."""
+    winner: dict[str, dict] = {}
+    for row in rows:
+        dimension = row.get("canonical_dimension")
+        label = row.get("display_label")
+        if not dimension or not label or not str(label).strip():
+            continue
+        current = winner.get(dimension)
+        if current is None or _scope_rank(row) > _scope_rank(current):
+            winner[dimension] = row
+    return winner
+
+
+def _load_label_rows(
+    *,
+    org_id: str | None,
+    project_id: str | None,
+    canonical_dimension: str | None = None,
+) -> list[dict]:
+    """Load PLATFORM + (this org's) ORG + (this project's) PROJECT label rows.
+
+    SQL clauses are HARD-CODED (scope literals, column list); only VALUES flow in as %s.
+    Fail-soft: an unreachable store yields [] (the caller then falls back to identifiers).
+    """
+    from core.db import get_connection  # noqa: PLC0415
+
+    clauses = ["scope_level = 'PLATFORM'"]
+    params: list = []
+    if org_id is not None:
+        clauses.append("(scope_level = 'ORG' AND org_id = %s)")
+        params.append(org_id)
+    if project_id is not None:
+        clauses.append("(scope_level = 'PROJECT' AND project_id = %s)")
+        params.append(project_id)
+    scope_where = " OR ".join(clauses)
+
+    where_extra = ""
+    if canonical_dimension is not None:
+        where_extra = " AND canonical_dimension = %s"
+        params.append(canonical_dimension)
+
+    sql = f"""
+        SELECT {_LABEL_COLUMNS}
+        FROM app.dimension_labels
+        WHERE ({scope_where}){where_extra}
+        ORDER BY canonical_dimension, scope_level
+    """
+    rows: list[dict] = []
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                cols = [desc[0] for desc in cur.description]
+                for row in cur.fetchall():
+                    rows.append(_row_to_label(cols, row))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dimension_conformance: label load failed org=%s: %s", org_id, exc)
+        return []
+    return rows
+
+
+def resolve_dimension_labels(
+    *, org_id: str | None, project_id: str | None = None
+) -> dict[str, dict]:
+    """Return {canonical_dimension -> {display_label, description, scope_level}}.
+
+    ONLY the dimensions that actually have a stored label. Callers that need a value for
+    an unlabelled dimension use resolve_dimension_label (which declares the fallback).
+
+    S-4: org_id/project_id are assumed ALREADY AUTHORIZED (same trust note as
+    conform_value) -- the calling surface owns the org guard."""
+    rows = _load_label_rows(org_id=org_id, project_id=project_id)
+    winners = reduce_labels_by_specificity(rows)
+    return {
+        dimension: {
+            "display_label": row.get("display_label"),
+            "description": row.get("description"),
+            "scope_level": row.get("scope_level"),
+        }
+        for dimension, row in winners.items()
+    }
+
+
+def resolve_dimension_label(
+    canonical_dimension: str, *, org_id: str | None, project_id: str | None = None
+) -> dict:
+    """Resolve ONE dimension's readable label. Never raises, never invents.
+
+    Returns {'canonical_dimension', 'display_label', 'description', 'scope_level',
+    'label_source'} where label_source is 'client' (a stored row won the cascade) or
+    'fallback_identifier' (nothing stored -- the stable identifier is shown as-is, and the
+    caller can say so)."""
+    rows = _load_label_rows(
+        org_id=org_id, project_id=project_id, canonical_dimension=canonical_dimension
+    )
+    winner = reduce_labels_by_specificity(rows).get(canonical_dimension)
+    if winner is None:
+        return {
+            "canonical_dimension": canonical_dimension,
+            "display_label": canonical_dimension,
+            "description": None,
+            "scope_level": None,
+            "label_source": LABEL_SOURCE_FALLBACK,
+        }
+    return {
+        "canonical_dimension": canonical_dimension,
+        "display_label": winner.get("display_label"),
+        "description": winner.get("description"),
+        "scope_level": winner.get("scope_level"),
+        "label_source": LABEL_SOURCE_CLIENT,
+    }
+
+
+def list_dimension_labels_by_scope(
+    *, scope_level: str, org_id: str | None = None, project_id: str | None = None
+) -> list[dict]:
+    """List the label rows stored AT one exact scope (curation surface)."""
+    from core.db import get_connection  # noqa: PLC0415
+
+    rows: list[dict] = []
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {_LABEL_COLUMNS}
+                FROM app.dimension_labels
+                WHERE scope_level = %s
+                  AND COALESCE(org_id, '') = COALESCE(%s, '')
+                  AND COALESCE(project_id, '') = COALESCE(%s, '')
+                ORDER BY canonical_dimension
+                """,
+                (scope_level, org_id, project_id),
+            )
+            cols = [desc[0] for desc in cur.description]
+            for row in cur.fetchall():
+                rows.append(_row_to_label(cols, row))
+    return rows
+
+
+def _select_label(
+    conn, *, scope_level: str, org_id: str | None, project_id: str | None,
+    canonical_dimension: str,
+) -> dict | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {_LABEL_COLUMNS}
+            FROM app.dimension_labels
+            WHERE scope_level = %s
+              AND COALESCE(org_id, '') = COALESCE(%s, '')
+              AND COALESCE(project_id, '') = COALESCE(%s, '')
+              AND canonical_dimension = %s
+            """,
+            (scope_level, org_id, project_id, canonical_dimension),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cols = [desc[0] for desc in cur.description]
+    return _row_to_label(cols, row)
+
+
+def set_dimension_label(
+    *,
+    canonical_dimension: str,
+    display_label: str,
+    scope_level: str,
+    org_id: str | None,
+    project_id: str | None,
+    identity: str,
+    description: str | None = None,
+) -> dict:
+    """UPSERT the client label of a dimension at one scope + one audit row.
+
+    The stable identifier is NEVER touched -- only the string the user reads. Idempotent:
+    a re-write with identical content writes NO audit line. Raises InvalidScope on an
+    inconsistent triplet, ValueError on a blank identifier/label (the DB CHECK mirrors it).
+    """
+    from core.db import get_connection  # noqa: PLC0415
+
+    validate_scope(scope_level, org_id, project_id)
+    if not canonical_dimension or not canonical_dimension.strip():
+        raise ValueError("canonical_dimension must not be blank")
+    if not display_label or not display_label.strip():
+        raise ValueError("display_label must not be blank")
+
+    with get_connection() as conn:
+        before = _select_label(
+            conn,
+            scope_level=scope_level,
+            org_id=org_id,
+            project_id=project_id,
+            canonical_dimension=canonical_dimension,
+        )
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO app.dimension_labels
+                    (id, canonical_dimension, display_label, description, scope_level,
+                     org_id, project_id, created_by, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+                ON CONFLICT (scope_level, COALESCE(org_id, ''), COALESCE(project_id, ''),
+                             canonical_dimension)
+                DO UPDATE SET
+                    display_label = EXCLUDED.display_label,
+                    description   = EXCLUDED.description,
+                    updated_at    = now()
+                RETURNING {_LABEL_COLUMNS}
+                """,
+                (
+                    _mint_id(_LABEL_ID_PREFIX),
+                    canonical_dimension,
+                    display_label,
+                    description,
+                    scope_level,
+                    org_id,
+                    project_id,
+                    identity,
+                ),
+            )
+            row = cur.fetchone()
+            cols = [desc[0] for desc in cur.description]
+        after = _row_to_label(cols, row)
+
+        if _mapping_changed(before, after):
+            _write_semantics_audit(
+                conn,
+                identity=identity,
+                action=ACTION_CREATED if before is None else ACTION_UPSERTED,
+                entity_type=ENTITY_TYPE_LABEL,
+                entity_id=after["id"],
+                scope_level=scope_level,
+                org_id=org_id,
+                project_id=project_id,
+                before=before,
+                after=after,
+            )
+        conn.commit()
+    return after
+
+
+def delete_dimension_label(
+    *,
+    canonical_dimension: str,
+    scope_level: str,
+    org_id: str | None,
+    project_id: str | None,
+    identity: str,
+) -> bool:
+    """Delete the label row at one exact scope + audit. True if a row went.
+
+    Deleting an override simply re-exposes the less specific scope (or the identifier
+    fallback) -- it never deletes the dimension itself."""
+    from core.db import get_connection  # noqa: PLC0415
+
+    validate_scope(scope_level, org_id, project_id)
+    with get_connection() as conn:
+        before = _select_label(
+            conn,
+            scope_level=scope_level,
+            org_id=org_id,
+            project_id=project_id,
+            canonical_dimension=canonical_dimension,
+        )
+        if before is None:
+            return False
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM app.dimension_labels WHERE id = %s", (before["id"],))
+        _write_semantics_audit(
+            conn,
+            identity=identity,
+            action=ACTION_DELETED,
+            entity_type=ENTITY_TYPE_LABEL,
+            entity_id=before["id"],
+            scope_level=scope_level,
+            org_id=org_id,
+            project_id=project_id,
+            before=before,
+            after=None,
+        )
+        conn.commit()
+    return True

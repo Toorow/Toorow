@@ -1,0 +1,45 @@
+[
+  {
+    "_fixture_note": "Genere par transform(golden_pull.json) -- ne pas editer a la main.",
+    "pull_id": "pull_piano_001",
+    "connector": "piano",
+    "date": "2026-07-01",
+    "site_id": "site_412",
+    "device_type": "desktop",
+    "geo_country": "FR",
+    "src_source": "google",
+    "src_medium": "organic",
+    "visits": "1840",
+    "unique_visitors": "1502",
+    "page_loads": "4120",
+    "events": "236"
+  },
+  {
+    "pull_id": "pull_piano_001",
+    "connector": "piano",
+    "date": "2026-07-01",
+    "site_id": "site_412",
+    "device_type": "mobile",
+    "geo_country": "unknown",
+    "src_source": "direct",
+    "src_medium": "none",
+    "visits": "2675",
+    "unique_visitors": "2311",
+    "page_loads": "5008",
+    "events": "412"
+  },
+  {
+    "pull_id": "pull_piano_001",
+    "connector": "piano",
+    "date": "2026-07-02",
+    "site_id": "site_412",
+    "device_type": "desktop",
+    "geo_country": "BE",
+    "src_source": "newsletter",
+    "src_medium": "email",
+    "visits": "301",
+    "unique_visitors": "288",
+    "page_loads": "703",
+    "events": "54"
+  }
+]

@@ -14,6 +14,7 @@
  * UX-DR10 : copie française accentuée.
  */
 import { useCallback, useEffect, useState } from "react";
+import { apiFetch } from "../lib/apiFetch";
 import {
   Alert,
   Box,
@@ -83,7 +84,7 @@ export default function DataAccessGrantsPanel({
     setLoading(true);
     setLoadError(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/organizations/${encodeURIComponent(orgId)}/dataset-access`,
         { headers }
       );
@@ -123,7 +124,7 @@ export default function DataAccessGrantsPanel({
     setOpError(null);
     setOpInfo(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/organizations/${encodeURIComponent(orgId)}/dataset-access`,
         {
           method: "POST",
@@ -171,7 +172,7 @@ export default function DataAccessGrantsPanel({
     setOpError(null);
     setOpInfo(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/organizations/${encodeURIComponent(orgId)}/dataset-access/${encodeURIComponent(grantId)}`,
         { method: "DELETE", headers }
       );

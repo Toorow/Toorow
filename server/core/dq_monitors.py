@@ -739,6 +739,87 @@ def _check_date_format(
 
 
 # ---------------------------------------------------------------------------
+# (f) Geography monitor (Story 37.9) -- unresolved country vocabulary.
+#
+# PROJECT-scoped, not datastream-scoped: the country partition is read once per
+# project (posture is a project aggregate), so this monitor runs outside the
+# per-datastream loop. It closes the gap the spec names explicitly -- an unmapped
+# country value must reach the DQ supervision surfaces (Epic 13 monitors and
+# get_data_quality_report), not only the report envelope's alert list.
+# ---------------------------------------------------------------------------
+
+
+def _geography_window_days() -> int:
+    try:
+        return max(1, int(os.environ.get("DQ_GEOGRAPHY_WINDOW_DAYS", "7")))
+    except (ValueError, TypeError):
+        return 7
+
+
+def _check_geography(project_id: str, conn, yesterday: date) -> bool:
+    """Evaluate unresolved geography for one project. Returns True when it fired.
+
+    Only Local-markets projects are evaluated: a Global project makes no
+    geographic promise, so an unmapped country value is not a gap against
+    anything it published. Never raises (per-project isolation).
+    """
+    from core.geographic_reporting import (  # noqa: PLC0415
+        LOCAL_MARKETS,
+        fetch_project_geographic_posture,
+    )
+
+    posture = fetch_project_geographic_posture(project_id, conn)
+    if posture.mode != LOCAL_MARKETS:
+        return False
+
+    from core import warehouse  # noqa: PLC0415
+    from core.geographic_conformance import (  # noqa: PLC0415
+        aggregate_unmapped_evidence,
+        emit_country_dq_firing,
+        make_country_resolver,
+        register_unmapped_country_values,
+    )
+    from core.geographic_semantics import COUNTRY_PARTITION  # noqa: PLC0415
+
+    window_start = (yesterday - timedelta(days=_geography_window_days() - 1)).isoformat()
+    window_end = yesterday.isoformat()
+    observed = warehouse.query_breakdown_values(
+        project_id, COUNTRY_PARTITION, window_start, window_end
+    )
+    if not observed:
+        return False
+
+    resolver = make_country_resolver(project_id=project_id)
+    evidence: list[dict] = []
+    for row in observed:
+        raw_value = row.get("breakdown_value")
+        connector = row.get("connector") or ""
+        if resolver(raw_value, connector) is not None:
+            continue
+        evidence.append(
+            {
+                "raw_value": raw_value,
+                "connector": connector,
+                "occurrences": int(row.get("row_count") or 1),
+            }
+        )
+    if not evidence:
+        return False
+
+    items = aggregate_unmapped_evidence(evidence)
+    counts = register_unmapped_country_values(project_id, items)
+    fired = emit_country_dq_firing(project_id, items, window_date=window_end)
+    logger.info(
+        "dq_monitors: geography_firing project=%s distinct=%d proposed=%d unresolved=%d",
+        project_id,
+        len(items),
+        counts.get("proposed", 0),
+        counts.get("unresolved", 0),
+    )
+    return fired
+
+
+# ---------------------------------------------------------------------------
 # Per-datastream orchestrator
 # ---------------------------------------------------------------------------
 
@@ -842,6 +923,7 @@ def run_dq_monitors(
         "duplication_issues": 0,
         "schema_issues": 0,
         "date_format_issues": 0,
+        "geography_issues": 0,
         "total_issues": 0,
         "errors": 0,
     }
@@ -890,6 +972,20 @@ def run_dq_monitors(
                         "dq_monitors: ds_failed ds=%s: %s", ds.get("id"), exc
                     )
 
+            # (f) geography -- PROJECT-scoped, one evaluation per distinct project.
+            for evaluated_project in sorted(
+                {str(ds.get("project_id")) for ds in datastreams if ds.get("project_id")}
+            ):
+                try:
+                    if _check_geography(evaluated_project, conn, yesterday):
+                        summary["geography_issues"] += 1
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "dq_monitors: geography_failed project=%s: %s",
+                        evaluated_project,
+                        exc,
+                    )
+
     except Exception as exc:  # noqa: BLE001
         logger.warning("dq_monitors: run_failed: %s", exc)
         summary["errors"] += 1
@@ -901,6 +997,7 @@ def run_dq_monitors(
         + summary["duplication_issues"]
         + summary["schema_issues"]
         + summary["date_format_issues"]
+        + summary["geography_issues"]
     )
 
     logger.info(

@@ -167,6 +167,13 @@ def get_overview(project_id: str, conn) -> dict:
     }
 
 
+def get_project_overview(project_id: str, conn) -> dict:
+    """Return only the authoritative evidence-backed Project Overview."""
+    from core.project_overview import build_project_overview  # noqa: PLC0415
+
+    return build_project_overview(project_id, conn, {})
+
+
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
@@ -198,7 +205,7 @@ def _query_kpis(project_id: str, today_str: str, yesterday_str: str, conn) -> di
                     FROM app.pull_jobs pj
                     JOIN app.connection_ref cr ON cr.id = pj.connection_ref_id
                     WHERE pj.datastream_id IS NULL
-                      AND cr.project_id = %s
+                      AND cr.owner_org_id = (SELECT org_id FROM app.projects WHERE id = %s)
                       AND (pj.date_to = %s::date OR pj.date_to = %s::date)
                 )
                 SELECT
@@ -517,13 +524,19 @@ async def _get_overview(request: Request) -> Response:
 
     try:
         from core.db import get_connection  # noqa: PLC0415
+        from core.project_overview import authorize_overview_project  # noqa: PLC0415
 
         with get_connection() as conn:
-            data = get_overview(project_id, conn)
+            if not authorize_overview_project(_identity, project_id, conn):
+                return JSONResponse(
+                    {"code": "not_found", "message": "Project not found"},
+                    status_code=404,
+                )
+            data = get_project_overview(project_id, conn)
     except Exception as exc:
         logger.error("overview: handler_error project=%s: %s", project_id, exc)
         return JSONResponse(
-            {"code": "db_error", "message": f"Erreur base de donnees: {exc}"},
+            {"code": "db_error", "message": "Project overview is unavailable"},
             status_code=500,
         )
 

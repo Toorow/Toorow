@@ -9,7 +9,7 @@ overlay -- is exercised by the DB-gated integration suite, verified centrally).
 Contract proven here:
   * DETERMINISTIC first-N: two reads over an unchanged relation return byte-identical
     "first N" rows (stable evidence, not a random draw);
-  * PER-DAY grouping + row_count/field_count + empty-day handling (no fabrication);
+  * PER-DAY grouping + sampled_row_count/field_count + empty-day handling (no fabrication);
   * SERVER-SIDE MASKING: a PII-named column is masked to the sentinel and its raw
     value never appears in the response; masked_fields lists it;
   * HARD LIMIT: per-day rows never exceed the requested/hard-capped limit;
@@ -65,7 +65,7 @@ def _seed_origin(path: str) -> None:
                         "p1", d, "google-analytics", metric,
                         "device_category", "mobile", float(i),
                         f"user{i}@example.com",  # PII value -- must be masked out
-                        f"pull_{day_offset}_{i:02d}", None,
+                        "[MASKED]" if i == 3 else f"pull_{day_offset}_{i:02d}", None,
                     )
                 )
         # AD-5 leak guards: a row for another project and another connector on day 1.
@@ -111,9 +111,10 @@ def test_per_day_grouping_and_limit(sample_env):
     out = _read()
     assert [d["date"] for d in out["days"]] == ["2026-07-01", "2026-07-02"]
     for day in out["days"]:
-        assert day["row_count"] == 5  # 8 eligible rows truncated to the limit
+        assert day["sampled_row_count"] == 5  # 8 eligible rows truncated to the limit
         assert day["field_count"] == 10  # all mart columns counted
         assert len(day["rows"]) == 5
+        assert "row_count" not in day
         assert day["rejection_count"] == 0  # mart carries no rejections
 
 
@@ -128,10 +129,15 @@ def test_deterministic_first_n(sample_env):
 
 def test_server_side_masking(sample_env):
     out = _read()
-    assert out["masked_fields"] == ["user_email"]
+    assert out["materialization_available"] is True
+    assert out["sample_watermark"] == "2026-07-02"
+    assert out["masked_fields"] == ["breakdown_value", "user_email"]
+    # Two non-PII pull_id values also equal the sentinel; they must not inflate the count.
+    assert out["masked_value_count"] == 20
     for day in out["days"]:
         for row in day["rows"]:
             assert row["user_email"] == "[MASKED]"
+            assert row["breakdown_value"] == "[MASKED]"
             # The raw PII value must appear NOWHERE in the row values.
             assert "@example.com" not in str(row.values())
 
@@ -140,9 +146,10 @@ def test_ad5_project_and_connector_isolation(sample_env):
     # p2 / meta-ads rows were seeded on day 1; they must never leak into p1/GA sample.
     out = _read()
     day1 = out["days"][0]
-    assert day1["row_count"] == 5  # only the 8 p1/GA rows are eligible (not the leaks)
+    assert day1["sampled_row_count"] == 5  # only the 8 p1/GA rows are eligible (not the leaks)
     for row in day1["rows"]:
-        assert row["breakdown_value"] == "mobile"  # the leak rows used 'v'
+        assert row["project_id"] == "p1"
+        assert row["connector"] == "google-analytics"
 
 
 def test_stage_note_when_no_distinct_materialisation(sample_env):
@@ -157,8 +164,16 @@ def test_stage_note_when_no_distinct_materialisation(sample_env):
 def test_empty_day_no_fabrication(sample_env):
     out = _read(date_from="2026-07-05", date_to="2026-07-05")
     assert len(out["days"]) == 1
-    assert out["days"][0]["row_count"] == 0
+    assert out["days"][0]["sampled_row_count"] == 0
     assert out["days"][0]["rows"] == []
+
+
+def test_connectorless_datastream_never_borrows_project_mart(sample_env):
+    out = _read(connector="")
+    assert out["materialization_available"] is False
+    assert out["sample_watermark"] is None
+    assert all(day["sampled_row_count"] == 0 for day in out["days"])
+    assert all(day["rejection_count"] is None for day in out["days"])
 
 
 def test_absent_relation_is_honest_empty(tmp_path, monkeypatch):
@@ -171,8 +186,11 @@ def test_absent_relation_is_honest_empty(tmp_path, monkeypatch):
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", empty)
     monkeypatch.setenv("TOOROW_CACHE_ENABLED", "false")
     out = _read()
+    assert out["materialization_available"] is False
+    assert out["sample_watermark"] is None
     assert out["masked_fields"] == []
-    assert all(d["row_count"] == 0 for d in out["days"])
+    assert out["masked_value_count"] == 0
+    assert all(d["sampled_row_count"] == 0 for d in out["days"])
 
 
 def test_invalid_stage_and_range_raise_sample_error(sample_env):
@@ -192,5 +210,5 @@ def test_limit_hard_cap(sample_env):
     # returns 8 -- proving the clamp does not inflate beyond eligible rows.
     out = _read(limit=999)
     for day in out["days"]:
-        assert day["row_count"] == 8
+        assert day["sampled_row_count"] == 8
         assert len(day["rows"]) <= 20

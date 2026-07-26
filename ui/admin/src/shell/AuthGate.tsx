@@ -24,13 +24,20 @@ function tokenValid(): boolean {
   try {
     const payload = JSON.parse(atob(t.split(".")[1] ?? ""));
     // Keep a 60s safety margin so a call mid-flight does not expire.
-    return typeof payload.exp === "number" && payload.exp * 1000 > Date.now() + 60_000;
+    return (
+      typeof payload.exp === "number" &&
+      payload.exp * 1000 > Date.now() + 60_000
+    );
   } catch {
     return false;
   }
 }
 
-export default function AuthGate({ children }: { children: React.ReactNode }) {
+function LegacyGoogleAuthGate({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [authed, setAuthed] = useState<boolean>(tokenValid());
   const btnRef = useRef<HTMLDivElement>(null);
 
@@ -110,3 +117,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+void LegacyGoogleAuthGate;
+export { default } from "./BrowserAuthGate";

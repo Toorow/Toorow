@@ -6,7 +6,7 @@
 import {
   activationBlockingReasons,
   buildIntent,
-  currentSchemaSignature,
+  currentIntentSignature,
   deriveClassifiedFields,
   isPreviewObsolete,
 } from "../datastreams/wizard/wizardLogic";
@@ -25,11 +25,13 @@ function connectorDraft(): WizardDraft {
   };
 }
 
-function validPlan(schemaHash: string): ValidationPlan {
+function validPlan(intentHash: string): ValidationPlan {
   return {
     plan_version_id: "pending:ds-1",
     mapping_version_id: null,
-    schema_hash: schemaHash,
+    intent_content_hash: intentHash,
+    capability_contract_version: "1",
+    capability_fingerprint: "cap-1",
     full_grain: ["date"],
     interval: null,
     timezone: "Europe/Paris",
@@ -195,11 +197,11 @@ it("builds managed_feed with format + optional source_ref, no external/report ke
 
 it("flags the preview obsolete when the schema signature drifts after validation", () => {
   const draft = connectorDraft();
-  const signature = currentSchemaSignature(draft);
+  const signature = currentIntentSignature(draft);
   const validated: WizardDraft = {
     ...draft,
     plan: validPlan(signature),
-    validatedSchemaHash: signature,
+    validatedIntentSignature: signature,
   };
   expect(isPreviewObsolete(validated)).toBe(false);
 
@@ -207,28 +209,28 @@ it("flags the preview obsolete when the schema signature drifts after validation
   const drifted: WizardDraft = { ...validated, selectedMetrics: ["spend", "clicks"] };
   expect(isPreviewObsolete(drifted)).toBe(true);
   expect(activationBlockingReasons(drifted, drifted.plan)).toEqual(
-    expect.arrayContaining([expect.stringMatching(/obsolète/)]),
+    expect.arrayContaining([expect.stringMatching(/changed after validation/)]),
   );
 });
 
 it("blocks activation until a plan exists and has no blocking issues", () => {
   const draft = connectorDraft();
   expect(activationBlockingReasons(draft, null)).toEqual([
-    expect.stringMatching(/pas encore été validé/),
+    expect.stringMatching(/Validate the plan/),
   ]);
 
-  const sig = currentSchemaSignature(draft);
+  const sig = currentIntentSignature(draft);
   const withIssues: ValidationPlan = {
     ...validPlan(sig),
     blocking_issues: [{ code: "no_metrics", message: "x" }],
   };
-  const d2: WizardDraft = { ...draft, plan: withIssues, validatedSchemaHash: sig };
+  const d2: WizardDraft = { ...draft, plan: withIssues, validatedIntentSignature: sig };
   expect(activationBlockingReasons(d2, withIssues)).toEqual([
-    expect.stringMatching(/problème\(s\) bloquant/),
+    expect.stringMatching(/blocking validation issue/),
   ]);
 
   const clean = validPlan(sig);
-  const d3: WizardDraft = { ...draft, plan: clean, validatedSchemaHash: sig };
+  const d3: WizardDraft = { ...draft, plan: clean, validatedIntentSignature: sig };
   expect(activationBlockingReasons(d3, clean)).toEqual([]);
 });
 

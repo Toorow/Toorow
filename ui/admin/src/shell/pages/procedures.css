@@ -49,10 +49,35 @@
   width: 100%;
 }
 
+.procedure-head-badges {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
 .procedure-card h2 {
   margin: 0;
   font: 600 17px/1.35 "Lexend", sans-serif;
   color: var(--ink);
+}
+
+/* Platform-scope badge — mirrors .knowledge-platform (KnowledgeBasePage /
+   knowledge.css) exactly, tinted toward --muted rather than the --info method
+   pill, so both Context surfaces read identically for a platform-scope row. */
+.procedure-platform {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--muted) 30%, var(--surface));
+  background: color-mix(in srgb, var(--muted) 10%, var(--surface));
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .procedure-method {

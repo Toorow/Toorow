@@ -30,6 +30,15 @@
 -- Apply with:
 --   psql $PLATFORM_DB_URL -f infra/nango/migrations/043_gsc_full_coverage.sql
 
-ALTER TABLE raw_gsc_daily ADD COLUMN IF NOT EXISTS search_type VARCHAR;
-ALTER TABLE raw_gsc_daily ADD COLUMN IF NOT EXISTS search_appearance VARCHAR;
-ALTER TABLE raw_gsc_daily ADD COLUMN IF NOT EXISTS hour VARCHAR;
+-- Conditionnel, meme raison qu'en 027: raw_gsc_daily appartient a l'entrepot et
+-- est creee par le connecteur, pas par le schema app. Rejouee sur une base
+-- fraiche, la migration doit etre un no-op au lieu d'echouer.
+DO $$
+BEGIN
+  IF to_regclass('public.raw_gsc_daily') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE raw_gsc_daily ADD COLUMN IF NOT EXISTS search_type VARCHAR';
+    EXECUTE 'ALTER TABLE raw_gsc_daily ADD COLUMN IF NOT EXISTS search_appearance VARCHAR';
+    EXECUTE 'ALTER TABLE raw_gsc_daily ADD COLUMN IF NOT EXISTS hour VARCHAR';
+  END IF;
+END
+$$;

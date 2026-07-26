@@ -37,6 +37,7 @@ def test_create_topic_authorized_seam():
         "Analytics Guidelines",
         "# Guidelines",
         "active",
+        None,
         "user_test",
         "2026-07-20T10:00:00Z",
         "2026-07-20T10:00:00Z",
@@ -47,6 +48,7 @@ def test_create_topic_authorized_seam():
         ("title",),
         ("body_md",),
         ("status",),
+        ("owner",),
         ("created_by",),
         ("created_at",),
         ("updated_at",),
@@ -102,6 +104,7 @@ def test_topic_updates_version_counter_value_3():
                 "Original",
                 "body",
                 "active",
+                None,
                 "user_test",
                 "2026-07-20T10:00:00Z",
                 "2026-07-20T10:00:00Z",
@@ -112,6 +115,7 @@ def test_topic_updates_version_counter_value_3():
                 "Original",
                 "body",
                 "active",
+                None,
                 "user_test",
                 "2026-07-20T10:00:00Z",
                 "2026-07-20T10:00:00Z",
@@ -123,6 +127,7 @@ def test_topic_updates_version_counter_value_3():
                 "Update 1",
                 "body",
                 "active",
+                None,
                 "user_test",
                 "2026-07-20T10:00:00Z",
                 "2026-07-20T10:05:00Z",
@@ -134,6 +139,7 @@ def test_topic_updates_version_counter_value_3():
             ("title",),
             ("body_md",),
             ("status",),
+            ("owner",),
             ("created_by",),
             ("created_at",),
             ("updated_at",),
@@ -151,6 +157,7 @@ def test_topic_updates_version_counter_value_3():
                 "Update 1",
                 "body",
                 "active",
+                None,
                 "user_test",
                 "2026-07-20T10:00:00Z",
                 "2026-07-20T10:05:00Z",
@@ -161,6 +168,7 @@ def test_topic_updates_version_counter_value_3():
                 "Update 1",
                 "body",
                 "active",
+                None,
                 "user_test",
                 "2026-07-20T10:00:00Z",
                 "2026-07-20T10:05:00Z",
@@ -172,6 +180,7 @@ def test_topic_updates_version_counter_value_3():
                 "Update 2",
                 "body",
                 "active",
+                None,
                 "user_test",
                 "2026-07-20T10:00:00Z",
                 "2026-07-20T10:10:00Z",
@@ -194,6 +203,7 @@ def test_cross_project_get_404_and_audit():
         "Private B Topic",
         "body",
         "active",
+        None,
         "user_b",
         "2026-07-20T10:00:00Z",
         "2026-07-20T10:00:00Z",
@@ -205,6 +215,7 @@ def test_cross_project_get_404_and_audit():
         ("title",),
         ("body_md",),
         ("status",),
+        ("owner",),
         ("created_by",),
         ("created_at",),
         ("updated_at",),
@@ -239,6 +250,7 @@ def test_list_topics_multi_project_scope_filtering():
             "Topic A",
             "body",
             "active",
+            None,
             "user_a",
             "2026-07-20T10:00:00Z",
             "2026-07-20T10:00:00Z",
@@ -250,6 +262,7 @@ def test_list_topics_multi_project_scope_filtering():
             "Platform Topic",
             "body",
             "active",
+            None,
             "admin",
             "2026-07-20T09:00:00Z",
             "2026-07-20T09:00:00Z",
@@ -262,6 +275,7 @@ def test_list_topics_multi_project_scope_filtering():
         ("title",),
         ("body_md",),
         ("status",),
+        ("owner",),
         ("created_by",),
         ("created_at",),
         ("updated_at",),
@@ -353,6 +367,7 @@ def test_archive_topic_200_archived_status_version_2():
             "Archive Me",
             "body",
             "active",
+            None,
             "user_a",
             "2026-07-20T10:00:00Z",
             "2026-07-20T10:00:00Z",
@@ -365,6 +380,7 @@ def test_archive_topic_200_archived_status_version_2():
             "Archive Me",
             "body",
             "active",
+            None,
             "user_a",
             "2026-07-20T10:00:00Z",
             "2026-07-20T10:00:00Z",
@@ -376,6 +392,7 @@ def test_archive_topic_200_archived_status_version_2():
             "Archive Me",
             "body",
             "archived",
+            None,
             "user_a",
             "2026-07-20T10:00:00Z",
             "2026-07-20T10:15:00Z",
@@ -387,6 +404,7 @@ def test_archive_topic_200_archived_status_version_2():
         ("title",),
         ("body_md",),
         ("status",),
+        ("owner",),
         ("created_by",),
         ("created_at",),
         ("updated_at",),
@@ -419,6 +437,7 @@ def test_create_procedure_valid_returns_201_proc_id():
         "name: my_proc\ndescription: A test procedure",
         "body text",
         "active",
+        None,
         "user_a",
         "2026-07-20T10:00:00Z",
         "2026-07-20T10:00:00Z",
@@ -431,6 +450,7 @@ def test_create_procedure_valid_returns_201_proc_id():
         ("frontmatter_yaml",),
         ("body_md",),
         ("status",),
+        ("owner",),
         ("created_by",),
         ("created_at",),
         ("updated_at",),
@@ -530,6 +550,7 @@ def test_project_member_can_write_project_scope_rows(monkeypatch):
         "Project Topic",
         "",
         "active",
+        None,
         "member_user",
         "2026-07-20T10:00:00Z",
         "2026-07-20T10:00:00Z",
@@ -540,6 +561,7 @@ def test_project_member_can_write_project_scope_rows(monkeypatch):
         ("title",),
         ("body_md",),
         ("status",),
+        ("owner",),
         ("created_by",),
         ("created_at",),
         ("updated_at",),
@@ -577,6 +599,7 @@ def test_list_topics_without_project_id_returns_platform_rows():
             "Global Platform Topic",
             "body",
             "active",
+            None,
             "admin",
             "2026-07-20T09:00:00Z",
             "2026-07-20T09:00:00Z",
@@ -589,6 +612,7 @@ def test_list_topics_without_project_id_returns_platform_rows():
         ("title",),
         ("body_md",),
         ("status",),
+        ("owner",),
         ("created_by",),
         ("created_at",),
         ("updated_at",),
@@ -643,6 +667,7 @@ def test_archived_procedure_name_can_be_reused():
         "name: reused_name\ndescription: Fresh start",
         "",
         "active",
+        None,
         "user_a",
         "2026-07-20T12:00:00Z",
         "2026-07-20T12:00:00Z",
@@ -655,6 +680,7 @@ def test_archived_procedure_name_can_be_reused():
         ("frontmatter_yaml",),
         ("body_md",),
         ("status",),
+        ("owner",),
         ("created_by",),
         ("created_at",),
         ("updated_at",),
@@ -678,3 +704,273 @@ def test_archived_procedure_name_can_be_reused():
     data = resp.json()
     assert data["name"] == "reused_name"
     assert data["status"] == "active"
+
+
+# ---------------------------------------------------------------------------
+# Story 44.11: owner PATCH + Request review
+# ---------------------------------------------------------------------------
+
+
+def test_patch_topic_owner_round_trips():
+    """PATCH /api/context/topics/{id} with an `owner` key updates the row and
+    the response reflects it (Story 44.11)."""
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+    cur.fetchone.side_effect = [
+        (
+            "top_own",
+            "proj_A",
+            "Owned Topic",
+            "body",
+            "active",
+            None,
+            "user_a",
+            "2026-07-20T10:00:00Z",
+            "2026-07-20T10:00:00Z",
+        ),  # get_topic check
+        (
+            "top_own",
+            "proj_A",
+            "Owned Topic",
+            "body",
+            "active",
+            None,
+            "user_a",
+            "2026-07-20T10:00:00Z",
+            "2026-07-20T10:00:00Z",
+        ),  # update_topic FOR UPDATE
+        (1,),  # max version
+        (
+            "top_own",
+            "proj_A",
+            "Owned Topic",
+            "body",
+            "active",
+            "grace@toorow.com",
+            "user_a",
+            "2026-07-20T10:00:00Z",
+            "2026-07-20T10:05:00Z",
+        ),  # UPDATE RETURNING
+    ]
+    cur.description = [
+        ("id",),
+        ("project_id",),
+        ("title",),
+        ("body_md",),
+        ("status",),
+        ("owner",),
+        ("created_by",),
+        ("created_at",),
+        ("updated_at",),
+    ]
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "user_a")),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.db.get_connection", return_value=conn),
+    ):
+        resp = client.patch(
+            "/api/context/topics/top_own", json={"owner": "grace@toorow.com"}
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["owner"] == "grace@toorow.com"
+
+
+def test_patch_topic_owner_invalid_type_422():
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+    cur.fetchone.return_value = (
+        "top_own2",
+        "proj_A",
+        "Owned Topic",
+        "body",
+        "active",
+        None,
+        "user_a",
+        "2026-07-20T10:00:00Z",
+        "2026-07-20T10:00:00Z",
+    )
+    cur.description = [
+        ("id",),
+        ("project_id",),
+        ("title",),
+        ("body_md",),
+        ("status",),
+        ("owner",),
+        ("created_by",),
+        ("created_at",),
+        ("updated_at",),
+    ]
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "user_a")),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.db.get_connection", return_value=conn),
+    ):
+        resp = client.patch("/api/context/topics/top_own2", json={"owner": 42})
+
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "invalid_param"
+
+
+def test_request_review_writes_audit_row_with_metadata():
+    """POST /api/context/nodes/{id}/request-review writes a
+    context.review_requested audit row with node_id, node_type, requester
+    and note -- and never claims a notification was sent."""
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+    cur.fetchone.return_value = (
+        "top_review",
+        "proj_A",
+        "Reviewed Topic",
+        "body",
+        "active",
+        None,
+        "user_a",
+        "2026-07-20T10:00:00Z",
+        "2026-07-20T10:00:00Z",
+        1,
+    )
+    cur.description = [
+        ("id",),
+        ("project_id",),
+        ("title",),
+        ("body_md",),
+        ("status",),
+        ("owner",),
+        ("created_by",),
+        ("created_at",),
+        ("updated_at",),
+        ("version_number",),
+    ]
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "requester_user")),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.db.get_connection", return_value=conn),
+        patch("core.context_api.insert_audit_row") as mock_insert_audit,
+    ):
+        resp = client.post(
+            "/api/context/nodes/top_review/request-review",
+            json={"node_type": "topic", "note": "Please double-check the FX rate."},
+        )
+
+    assert resp.status_code == 201
+    assert resp.json() == {"status": "requested"}
+    mock_insert_audit.assert_called_once()
+    kwargs = mock_insert_audit.call_args.kwargs
+    assert kwargs["identity"] == "requester_user"
+    assert kwargs["action"] == "context.review_requested"
+    assert kwargs["metadata"] == {
+        "node_id": "top_review",
+        "node_type": "topic",
+        "requester": "requester_user",
+        "note": "Please double-check the FX rate.",
+    }
+
+
+def test_request_review_invalid_node_type_422():
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    with patch("core.admin_api._check_auth", return_value=(True, "user_a")):
+        resp = client.post(
+            "/api/context/nodes/top_x/request-review", json={"node_type": "schema_doc"}
+        )
+
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "invalid_param"
+
+
+def test_request_review_unknown_node_404_non_disclosing():
+    """A node the caller cannot see (missing, or out of scope) comes back as a
+    plain 404 -- never distinguishing 'does not exist' from 'not yours'."""
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+    cur.fetchone.return_value = None
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "user_a")),
+        patch("core.db.get_connection", return_value=conn),
+        patch("core.context_api.write_audit_row") as mock_cross_scope_audit,
+    ):
+        resp = client.post(
+            "/api/context/nodes/top_missing/request-review", json={"node_type": "topic"}
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "not_found"
+    mock_cross_scope_audit.assert_called_once()
+
+
+def test_request_review_cross_project_404_non_disclosing():
+    """Node exists but the caller lacks even viewer role in its project -> 404,
+    same shape as the missing-node case (non-disclosing)."""
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+    cur.fetchone.return_value = (
+        "proc_private",
+        "proj_B",
+        "proc_name",
+        "desc",
+        "name: proc_name\ndescription: desc",
+        "",
+        "active",
+        None,
+        "user_b",
+        "2026-07-20T10:00:00Z",
+        "2026-07-20T10:00:00Z",
+        1,
+    )
+    cur.description = [
+        ("id",),
+        ("project_id",),
+        ("name",),
+        ("description",),
+        ("frontmatter_yaml",),
+        ("body_md",),
+        ("status",),
+        ("owner",),
+        ("created_by",),
+        ("created_at",),
+        ("updated_at",),
+        ("version_number",),
+    ]
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "outsider")),
+        patch("core.project_access.identity_has_project_role", return_value=False),
+        patch("core.db.get_connection", return_value=conn),
+        patch("core.context_api.write_audit_row") as mock_cross_scope_audit,
+    ):
+        resp = client.post(
+            "/api/context/nodes/proc_private/request-review", json={"node_type": "procedure"}
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "not_found"
+    mock_cross_scope_audit.assert_called_once()
+
+
+def test_request_review_unauthenticated_401():
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    with patch("core.admin_api._check_auth", return_value=(False, "")):
+        resp = client.post(
+            "/api/context/nodes/top_x/request-review", json={"node_type": "topic"}
+        )
+
+    assert resp.status_code == 401
+    assert resp.json()["code"] == "unauthorized"

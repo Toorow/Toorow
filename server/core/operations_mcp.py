@@ -390,6 +390,16 @@ def _load_preparation(conn, preparation_id: str) -> dict | None:
     }
 
 
+def _load_operation_trace(conn, operation_id: str) -> str | None:
+    """Return the server trace pinned to one durable operation, or None."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT trace_id FROM app.operations WHERE id = %s",
+            (operation_id,),
+        )
+        row = cur.fetchone()
+    return str(row[0]) if row and row[0] else None
+
 def _mark_preparation_confirmed(conn, preparation_id: str, operation_id: str) -> None:
     """Attach the durable operation + flip state prepared->confirmed (lifecycle only).
 

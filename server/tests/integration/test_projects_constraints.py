@@ -35,8 +35,8 @@ def test_slug_unique_constraint(live_postgres):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO app.projects (id, name, slug, created_by) "
-                "VALUES (%s, %s, %s, 'test')",
+                "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
+                "VALUES (%s, %s, %s, 'test', 'org_test_fixture')",
                 (pid1, "IT One", slug),
             )
         conn.commit()
@@ -44,8 +44,8 @@ def test_slug_unique_constraint(live_postgres):
         with pytest.raises(psycopg.errors.UniqueViolation):
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO app.projects (id, name, slug, created_by) "
-                    "VALUES (%s, %s, %s, 'test')",
+                    "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
+                    "VALUES (%s, %s, %s, 'test', 'org_test_fixture')",
                     (pid2, "IT Two", slug),
                 )
             conn.commit()
@@ -69,8 +69,9 @@ def test_fk_connection_ref_requires_valid_project(live_postgres):
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO app.connection_ref "
-                    "(id, provider, nango_connection_id, project_id) "
-                    "VALUES (%s, 'google-analytics', %s, %s)",
+                    "(id, provider, nango_connection_id, project_id, owner_org_id, owner_identity) "
+                    "VALUES (%s, 'google-analytics', %s, %s, 'org_test_fixture', "
+                    "'tester@example.com')",
                     (conn_id, conn_id, missing_project),
                 )
             conn.commit()

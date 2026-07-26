@@ -1,243 +1,545 @@
 /**
- * Procedures — v3 Context surface for documented metric calculation methods.
+ * Procedures — Context surface for the governed AGENT PROCEDURE corpus.
+ *
+ * Story 44.1: rewired onto the governed, versioned context store
+ * (`app.procedures` / `/api/context/procedures`, server/core/context_api.py).
+ * A procedure here is documented guidance an AI agent follows during analysis
+ * — the frontmatter (`name` + `description`) plus a Markdown body. This is
+ * NOT the per-metric calculation/reconciliation list (`app.metric_procedures`
+ * / GET /api/procedures): that read-only list moved to Governance, see
+ * shell/pages/ReconciliationMethods.tsx.
  *
  * Mounted in the Context workspace as a sibling of Knowledge and Events. The
- * application shell already renders the frame, sidebar, topbar, and <main>; this
- * component renders ONLY the page content inside <main>: the page header, an
- * "Add procedure" action, and the grid of procedure cards.
+ * application shell already renders the frame, sidebar, topbar, and <main>;
+ * this component renders ONLY the page content inside <main>.
  *
- * Purpose: a procedure is the documented CALCULATION method that analysis must
- * follow for a canonical metric — how it is computed and, when several sources
- * report it, how those readings are reconciled. The reconciliation method is
- * defined per metric by the client (there are ~5 methods in the marts, to be
- * made project-configurable). This is business knowledge AI agents read during
- * analysis, so it lives in Context.
+ * Styling: application.css (global) for shell/layout classes (page-header,
+ * header-actions, panel, primary-button, secondary-button) + procedures.css
+ * for the card grid and meta lines, mirroring knowledge.css/KnowledgeBasePage.
  *
- * Styling: application.css (global, via the shell) for shell/layout classes
- * (page-header, header-actions, panel, primary-button, secondary-button) +
- * procedures.css for the page-specific card grid, procedure cards, method pill,
- * and card meta lines. Colors come exclusively from the application.css CSS
- * variables (dark-theme safe); dates use Geist tabular via .procedure-meta.
- *
- * Data: the literal cards below are the validated design and render finished
- * while the fetch is in flight and offline. On mount this reads
- * GET /api/procedures?project_id=<id> and, on success, replaces the literals
- * with the mapped procedures — which is honestly empty until any are defined.
- * The actions remain placeholders, flagged with // TODO(api).
+ * ── Data ─────────────────────────────────────────────────────────────────
+ * `GET /api/context/procedures?project_id=<id>` returns platform + project
+ * procedures, each `{id, project_id, name, description, frontmatter_yaml,
+ * body_md, status, created_by, created_at, updated_at, version_number}`.
+ * The editor collects Name + Description (built into the required YAML
+ * frontmatter client-side) and a Markdown body + preview pane (no WYSIWYG
+ * dependency). On save failure the exact server message is shown and the
+ * draft is preserved:
+ *   - 422 `frontmatter_invalide` — the YAML/required-keys validation failed.
+ *   - 409 `nom_deja_utilise` — a procedure with that name already exists in
+ *     this scope.
+ * A 403/404 on a platform-scope row's write (deny-by-default platform gate)
+ * marks that row read-only in place rather than a fatal page error.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "../application.css";
 import "./procedures.css";
+// Shares the editor/loading/error/read-only classes with KnowledgeBasePage
+// (knowledge-editor-*, knowledge-status, knowledge-load-error, knowledge-card-
+// actions, knowledge-readonly) rather than duplicating them — same v1 editor
+// shape (title/name input(s) + Markdown textarea + preview pane).
+import "../../knowledge.css";
 import { apiFetch } from "../../lib/apiFetch";
 
-// The reconciliation method a procedure applies. These mirror the ~5 methods
-// already present in the marts, surfaced here as the pill label.
-type ReconciliationMethod =
-  | "Sum then divide"
-  | "Priority source"
-  | "Weighted blend"
-  | "De-duplicated union"
-  | "Manual override";
-
-interface Procedure {
-  metric: string;
-  method: ReconciliationMethod;
-  description: string;
-  owner: string;
-  updated: string;
-}
-
-// Mockup literals — the validated Procedures design. Rendered verbatim so the
-// page is finished with no backend. Each card spans a distinct reconciliation
-// method. TODO(api): replace with procedures returned by the Context API.
-const PROCEDURES: Procedure[] = [
-  {
-    metric: "ROAS",
-    method: "Sum then divide",
-    description:
-      "Aggregate revenue and cost across every reporting source first, then divide the totals. Never average per-source ratios — the blended figure is computed once at the canonical grain.",
-    owner: "Winston (Architect)",
-    updated: "2 days ago",
-  },
-  {
-    metric: "Conversions",
-    method: "Priority source",
-    description:
-      "Take GA4 as the authoritative source of truth. Platform-reported conversions are kept for context but excluded from the canonical count to avoid post-click double counting.",
-    owner: "Mary (Analyst)",
-    updated: "3 days ago",
-  },
-  {
-    metric: "Impressions",
-    method: "De-duplicated union",
-    description:
-      "Union impressions across sources, then collapse rows that share the same campaign, creative, and date so a placement reported by two connectors is counted a single time.",
-    owner: "Paige (Tech Writer)",
-    updated: "5 days ago",
-  },
-  {
-    metric: "Blended CPA",
-    method: "Weighted blend",
-    description:
-      "Combine per-source cost per acquisition weighted by each source's spend share. Sources below the minimum-spend threshold are folded into the dominant source rather than skewing the blend.",
-    owner: "Winston (Architect)",
-    updated: "1 week ago",
-  },
-  {
-    metric: "Media revenue",
-    method: "Manual override",
-    description:
-      "Use the finance-reconciled monthly figure supplied by the client in place of any connector reading. The override carries an effective date and supersedes automated collection for closed periods.",
-    owner: "Mary (Analyst)",
-    updated: "1 week ago",
-  },
-  {
-    metric: "Sessions",
-    method: "Priority source",
-    description:
-      "GA4 is the single source for sessions. Other analytics feeds are surfaced as comparison only and do not contribute to the canonical value read during analysis.",
-    owner: "Paige (Tech Writer)",
-    updated: "2 weeks ago",
-  },
-];
-
-// Map each method to a stable modifier class so the pill can tint distinctly
-// while still drawing every color from the application.css CSS variables.
-const METHOD_CLASS: Record<ReconciliationMethod, string> = {
-  "Sum then divide": "method-sum",
-  "Priority source": "method-priority",
-  "Weighted blend": "method-blend",
-  "De-duplicated union": "method-dedup",
-  "Manual override": "method-override",
-};
-
-// ---------------------------------------------------------------------------
-// API mapping — GET /api/procedures?project_id=<id> returns rows keyed by the
-// raw method enum; humanize it into the ReconciliationMethod pill label.
-// ---------------------------------------------------------------------------
-
-/** Shape of one procedure row returned by GET /api/procedures. */
-interface ApiProcedure {
+/** Shape of one row returned by GET /api/context/procedures. */
+interface ContextProcedure {
   id: string;
-  metric: string;
-  method: string;
+  project_id: string | null;
+  name: string;
   description: string;
-  owner: string;
+  frontmatter_yaml: string;
+  body_md: string;
+  status: "active" | "archived";
+  /** Story 44.11: explicit human owner (free-form, email by convention); null = unset. */
+  owner?: string | null;
+  created_by: string;
+  created_at: string;
   updated_at: string;
+  version_number: number;
 }
 
-// Raw method enum → the humanized pill label. Unknown values fall back to the
-// calculation-heavy default so a card never renders a raw enum token.
-const METHOD_LABEL: Record<string, ReconciliationMethod> = {
-  sum_then_divide: "Sum then divide",
-  priority_source: "Priority source",
-  dedup_union: "De-duplicated union",
-  weighted_blend: "Weighted blend",
-  manual_override: "Manual override",
-};
+type LoadState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ok"; procedures: ContextProcedure[] };
 
-/** Format an ISO updated_at into a short human date, e.g. "12 May 2026". */
+type EditorState =
+  | { mode: "closed" }
+  | {
+      mode: "create";
+      name: string;
+      description: string;
+      body_md: string;
+      // No prior frontmatter to preserve on create — starts empty and gains
+      // only the name/description keys once saved.
+      frontmatterYaml: string;
+      /** Raw explicit owner text (Story 44.11), e.g. an email. Empty = unset. */
+      owner: string;
+      error: string | null;
+      saving: boolean;
+    }
+  | {
+      mode: "edit";
+      procedure: ContextProcedure;
+      name: string;
+      description: string;
+      body_md: string;
+      // The as-loaded frontmatter, kept verbatim so any keys beyond
+      // name/description survive an edit (Story 44.1 review).
+      frontmatterYaml: string;
+      owner: string;
+      error: string | null;
+      saving: boolean;
+    };
+
 function formatUpdated(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function toProcedure(p: ApiProcedure): Procedure {
-  return {
-    metric: p.metric,
-    method: METHOD_LABEL[p.method] ?? "Sum then divide",
-    description: p.description,
-    owner: p.owner,
-    updated: formatUpdated(p.updated_at),
-  };
+async function readErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { message?: string; code?: string };
+    return body.message ?? `HTTP ${res.status}`;
+  } catch {
+    return `HTTP ${res.status}`;
+  }
+}
+
+/**
+ * Update ONLY the `name` and `description` top-level keys of an existing
+ * frontmatter YAML blob, preserving every other line verbatim (Story 44.1
+ * review: the server accepts any valid YAML mapping and preserves extra keys
+ * across an edit — the client must not silently drop them by rebuilding the
+ * frontmatter from just these two fields).
+ *
+ * This is a minimal flat-key round-trip, not a general YAML parser: it only
+ * recognises un-indented `key: value` lines at the top level (which is all
+ * `name`/`description` ever are) and leaves every other line — including
+ * nested mappings/lists under other keys — untouched and in place. JSON is a
+ * valid YAML flow-scalar subset, so the emitted name/description values
+ * always round-trip through yaml.safe_load server-side regardless of quotes
+ * or newlines in the input.
+ */
+function updateFrontmatterYaml(rawYaml: string, name: string, description: string): string {
+  const lines = rawYaml.length > 0 ? rawYaml.split(/\r?\n/) : [];
+  const out: string[] = [];
+  let sawName = false;
+  let sawDescription = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const match = /^([A-Za-z0-9_-]+):/.exec(line);
+    const key = match?.[1];
+    if (key === "name" || key === "description") {
+      if (key === "name") {
+        out.push(`name: ${JSON.stringify(name)}`);
+        sawName = true;
+      } else {
+        out.push(`description: ${JSON.stringify(description)}`);
+        sawDescription = true;
+      }
+      // Consume the replaced key's continuation lines (block/folded scalars,
+      // e.g. `description: >` followed by indented lines — the server stores
+      // them verbatim): re-emitting them after the flow-scalar replacement
+      // would orphan indented lines and produce invalid YAML (44.1
+      // re-review). Cosmetic blank lines directly after the replaced key are
+      // consumed too — an accepted, content-free loss.
+      while (i + 1 < lines.length && (lines[i + 1].trim() === "" || /^\s/.test(lines[i + 1]))) {
+        i++;
+      }
+      continue;
+    }
+    out.push(line);
+  }
+
+  // Drop trailing blank lines left over from the split so appended keys land
+  // cleanly, without touching any other verbatim content above them.
+  while (out.length > 0 && out[out.length - 1].trim() === "") {
+    out.pop();
+  }
+
+  if (!sawName) out.push(`name: ${JSON.stringify(name)}`);
+  if (!sawDescription) out.push(`description: ${JSON.stringify(description)}`);
+
+  return `${out.join("\n")}\n`;
 }
 
 export default function Procedures({ projectId = "default" }: { projectId?: string }) {
-  // The literal PROCEDURES render finished while the fetch is in flight and
-  // offline; a successful fetch replaces them with the real project procedures
-  // (which is honestly empty until any are defined for this project).
-  const [rows, setRows] = useState<Procedure[]>(PROCEDURES);
-  const [loaded, setLoaded] = useState(false);
+  const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
+  const [readOnlyIds, setReadOnlyIds] = useState<Set<string>>(new Set());
+  // Archive failures are not silent (Story 44.1 review): the failing card
+  // keeps its own {id, message}, cleared on the next successful archive of
+  // that same card (or when a fresh archive attempt starts).
+  const [archiveError, setArchiveError] = useState<{ id: string; message: string } | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(async () => {
+    setState({ status: "loading" });
+    try {
+      const res = await apiFetch(
+        `/api/context/procedures?project_id=${encodeURIComponent(projectId)}`,
+      );
+      if (!res.ok) {
+        setState({ status: "error", message: await readErrorMessage(res) });
+        return;
+      }
+      const body = (await res.json()) as { procedures?: ContextProcedure[] };
+      setState({ status: "ok", procedures: body.procedures ?? [] });
+    } catch (err) {
+      setState({ status: "error", message: err instanceof Error ? err.message : "Network error" });
+    }
+  }, [projectId]);
 
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await apiFetch(
-          `/api/procedures?project_id=${encodeURIComponent(projectId)}`,
-        );
-        if (!res.ok) return; // keep the literal fallback
-        const body = (await res.json()) as { procedures?: ApiProcedure[] };
-        if (alive) {
-          setRows((body.procedures ?? []).map(toProcedure));
-          setLoaded(true);
-        }
-      } catch {
-        /* offline — keep the designed literals so the surface stays finished. */
+    void load();
+  }, [load]);
+
+  // Initial focus on the name input when the dialog opens (Story 44.1 review).
+  useEffect(() => {
+    if (editor.mode !== "closed") {
+      nameInputRef.current?.focus();
+    }
+  }, [editor.mode]);
+
+  // Escape-to-close (Story 44.1 review) — active only while the dialog is
+  // open, and never while a save is in flight (44.1 re-review: closing
+  // mid-save silently discarded the draft).
+  const editorSaving = editor.mode !== "closed" && editor.saving;
+  useEffect(() => {
+    if (editor.mode === "closed") return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && !editorSaving) {
+        closeEditor();
       }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [projectId]);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor.mode, editorSaving]);
+
+  function openCreate() {
+    setEditor({
+      mode: "create",
+      name: "",
+      description: "",
+      body_md: "",
+      frontmatterYaml: "",
+      owner: "",
+      error: null,
+      saving: false,
+    });
+  }
+
+  function openEdit(procedure: ContextProcedure) {
+    setEditor({
+      mode: "edit",
+      procedure,
+      name: procedure.name,
+      description: procedure.description,
+      body_md: procedure.body_md,
+      frontmatterYaml: procedure.frontmatter_yaml,
+      owner: procedure.owner ?? "",
+      error: null,
+      saving: false,
+    });
+  }
+
+  function closeEditor() {
+    setEditor({ mode: "closed" });
+  }
+
+  async function submitEditor() {
+    if (editor.mode === "closed") return;
+    setEditor({ ...editor, saving: true, error: null });
+
+    const isPlatformRow = editor.mode === "edit" && editor.procedure.project_id === null;
+    const editedProcedureId = editor.mode === "edit" ? editor.procedure.id : null;
+    const frontmatter_yaml = updateFrontmatterYaml(
+      editor.frontmatterYaml,
+      editor.name,
+      editor.description,
+    );
+    // Empty owner text means "no explicit owner" (Story 44.11) -- sent as
+    // null so the server clears/leaves-unset rather than storing "".
+    const owner = editor.owner.trim() || null;
+
+    try {
+      const res =
+        editor.mode === "create"
+          ? await apiFetch("/api/context/procedures", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                project_id: projectId,
+                frontmatter_yaml,
+                body_md: editor.body_md,
+                owner,
+              }),
+            })
+          : await apiFetch(`/api/context/procedures/${encodeURIComponent(editor.procedure.id)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ frontmatter_yaml, body_md: editor.body_md, owner }),
+            });
+
+      if (!res.ok) {
+        const message = await readErrorMessage(res);
+        if (isPlatformRow && editedProcedureId && (res.status === 403 || res.status === 404)) {
+          setReadOnlyIds((prev) => new Set(prev).add(editedProcedureId));
+        }
+        // Functional update: never resurrect a dialog the user closed while
+        // the save was in flight (44.1 re-review).
+        setEditor((prev) => (prev.mode === "closed" ? prev : { ...prev, saving: false, error: message }));
+        return;
+      }
+
+      const saved = (await res.json()) as ContextProcedure;
+      setState((prev) => {
+        if (prev.status !== "ok") return prev;
+        const exists = prev.procedures.some((p) => p.id === saved.id);
+        return {
+          status: "ok",
+          procedures: exists
+            ? prev.procedures.map((p) => (p.id === saved.id ? saved : p))
+            : [saved, ...prev.procedures],
+        };
+      });
+      closeEditor();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Network error";
+      setEditor((prev) => (prev.mode === "closed" ? prev : { ...prev, saving: false, error: message }));
+    }
+  }
+
+  async function archiveProcedure(procedure: ContextProcedure) {
+    const isPlatformRow = procedure.project_id === null;
+    setArchiveError((prev) => (prev?.id === procedure.id ? null : prev));
+    try {
+      const res = await apiFetch(
+        `/api/context/procedures/${encodeURIComponent(procedure.id)}/archive`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        const message = await readErrorMessage(res);
+        if (isPlatformRow && (res.status === 403 || res.status === 404)) {
+          setReadOnlyIds((prev) => new Set(prev).add(procedure.id));
+        }
+        setArchiveError({ id: procedure.id, message });
+        return;
+      }
+      const archived = (await res.json()) as ContextProcedure;
+      setState((prev) =>
+        prev.status === "ok"
+          ? { status: "ok", procedures: prev.procedures.filter((p) => p.id !== archived.id) }
+          : prev,
+      );
+      setArchiveError((prev) => (prev?.id === procedure.id ? null : prev));
+    } catch (err) {
+      setArchiveError({
+        id: procedure.id,
+        message: err instanceof Error ? err.message : "Network error",
+      });
+    }
+  }
+
+  const procedures =
+    state.status === "ok" ? state.procedures.filter((p) => p.status === "active") : [];
 
   return (
     <>
       <div className="page-header">
         <div>
           <h1>Procedures</h1>
-          <p>
-            The calculation and reconciliation methods analysis must apply for this project's
-            metrics.
-          </p>
+          <p>Documented guidance AI agents follow during analysis for this project.</p>
         </div>
         <div className="header-actions">
-          {/* TODO(api): open the Add procedure flow. */}
-          <button className="primary-button" type="button">
+          <button className="primary-button" type="button" onClick={openCreate}>
             + Add procedure
           </button>
         </div>
       </div>
 
-      {loaded && rows.length === 0 ? (
-        <section className="panel procedure-empty">
+      {state.status === "loading" && (
+        <p className="knowledge-status" role="status">
+          Loading procedures…
+        </p>
+      )}
+
+      {state.status === "error" && (
+        <div className="knowledge-load-error" role="alert" data-testid="procedures-error">
+          <span className="signal-label error">
+            <span className="signal-mark" />
+            Couldn&rsquo;t load procedures
+          </span>
+          <p>{state.message}</p>
+          <button className="secondary-button" type="button" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {state.status === "ok" && procedures.length === 0 && (
+        <section className="panel procedure-empty" data-testid="procedures-empty">
           <p>
-            No procedures defined yet. Document how each canonical metric is
-            calculated — and, when several sources report it, how those readings
-            are reconciled — so analysis follows one agreed method.
+            No procedures defined yet. Document the guidance analysis must follow — GA4 versus
+            platform attribution, how to interpret an anomaly, escalation rules — so the agent
+            has one agreed source to read.
           </p>
         </section>
-      ) : (
-      <section className="procedure-grid">
-        {rows.map((procedure) => (
-          <article key={procedure.metric} className="panel procedure-card">
-            <div className="procedure-head">
-              <h2>{procedure.metric}</h2>
-              <span className={`procedure-method ${METHOD_CLASS[procedure.method]}`}>
-                {procedure.method}
-              </span>
+      )}
+
+      {state.status === "ok" && procedures.length > 0 && (
+        <section className="procedure-grid">
+          {procedures.map((procedure) => {
+            const isPlatform = procedure.project_id === null;
+            const isReadOnly = isPlatform && readOnlyIds.has(procedure.id);
+            return (
+              <article key={procedure.id} className="panel procedure-card">
+                <div className="procedure-head">
+                  <h2>{procedure.name}</h2>
+                  <div className="procedure-head-badges">
+                    {isPlatform && <span className="procedure-platform">Platform</span>}
+                    {isReadOnly && <span className="knowledge-readonly">Read-only</span>}
+                  </div>
+                </div>
+                <p className="procedure-desc">{procedure.description}</p>
+                <div className="procedure-meta">
+                  <span>
+                    Author: <b>{procedure.created_by}</b>
+                  </span>
+                  <span>
+                    {/* Same resolution chain as the mindmap (44.11 re-review):
+                        explicit owner -> created_by -> "auto". */}
+                    Owner: <b>{procedure.owner || procedure.created_by || "auto"}</b>
+                  </span>
+                  <span>
+                    Last updated: <time>{formatUpdated(procedure.updated_at)}</time>
+                  </span>
+                  <span>
+                    Version: <b>v{procedure.version_number}</b>
+                  </span>
+                </div>
+                <div className="knowledge-card-actions">
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => openEdit(procedure)}
+                    disabled={isReadOnly}
+                  >
+                    Edit procedure
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void archiveProcedure(procedure)}
+                    disabled={isReadOnly}
+                  >
+                    Archive
+                  </button>
+                </div>
+                {archiveError && archiveError.id === procedure.id && (
+                  <div
+                    className="knowledge-editor-error"
+                    role="alert"
+                    data-testid={`procedure-archive-error-${procedure.id}`}
+                  >
+                    {archiveError.message}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </section>
+      )}
+
+      {editor.mode !== "closed" && (
+        <div
+          className="knowledge-editor-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="procedure-editor-heading"
+        >
+          <div className="panel knowledge-editor">
+            <h2 id="procedure-editor-heading">
+              {editor.mode === "create" ? "New procedure" : "Edit procedure"}
+            </h2>
+
+            {editor.error && (
+              <div
+                className="knowledge-editor-error"
+                role="alert"
+                data-testid="procedure-editor-error"
+              >
+                {editor.error}
+              </div>
+            )}
+
+            <label className="knowledge-editor-field">
+              <span>Name</span>
+              <input
+                ref={nameInputRef}
+                type="text"
+                value={editor.name}
+                onChange={(e) => setEditor({ ...editor, name: e.target.value })}
+                placeholder="e.g. Post-click attribution reconciliation"
+              />
+            </label>
+
+            <label className="knowledge-editor-field">
+              <span>Description</span>
+              <input
+                type="text"
+                value={editor.description}
+                onChange={(e) => setEditor({ ...editor, description: e.target.value })}
+                placeholder="One line: what this procedure governs"
+              />
+            </label>
+
+            <label className="knowledge-editor-field">
+              <span>Owner (email)</span>
+              <input
+                type="text"
+                data-testid="procedure-editor-owner"
+                value={editor.owner}
+                onChange={(e) => setEditor({ ...editor, owner: e.target.value })}
+                placeholder="Unset — falls back to created_by, then &ldquo;auto&rdquo;"
+              />
+            </label>
+
+            <div className="knowledge-editor-split">
+              <label className="knowledge-editor-field">
+                <span>Body (Markdown)</span>
+                <textarea
+                  rows={12}
+                  value={editor.body_md}
+                  onChange={(e) => setEditor({ ...editor, body_md: e.target.value })}
+                  placeholder="Write the procedure in Markdown…"
+                />
+              </label>
+              <div className="knowledge-editor-preview" data-testid="procedure-preview">
+                <span className="knowledge-editor-preview-label">Preview</span>
+                <pre>{editor.body_md || "The preview appears here."}</pre>
+              </div>
             </div>
-            <p className="procedure-desc">{procedure.description}</p>
-            <div className="procedure-meta">
-              <span>
-                Owner: <b>{procedure.owner}</b>
-              </span>
-              <span>
-                Last updated: <time>{procedure.updated}</time>
-              </span>
+
+            <div className="knowledge-editor-actions">
+              <button className="secondary-button" type="button" onClick={closeEditor}>
+                Cancel
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void submitEditor()}
+                disabled={editor.saving}
+              >
+                {editor.saving ? "Saving…" : "Save"}
+              </button>
             </div>
-            {/* TODO(api): open this procedure in the calculation editor. */}
-            <button className="secondary-button" type="button">
-              Edit procedure
-            </button>
-          </article>
-        ))}
-      </section>
+          </div>
+        </div>
       )}
     </>
   );

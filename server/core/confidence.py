@@ -145,7 +145,7 @@ def compute_confidence(
                         SELECT pv.completeness_ratio
                         FROM app.pull_verifications pv
                         JOIN app.connection_ref r ON r.id = pv.connection_ref_id
-                        WHERE r.project_id = %s
+                        WHERE r.owner_org_id = (SELECT org_id FROM app.projects WHERE id = %s)
                           AND r.connector_name = %s
                         ORDER BY pv.verified_at DESC
                         LIMIT 1
@@ -174,7 +174,7 @@ def compute_confidence(
                         SELECT r.connector_name, pv.completeness_ratio
                         FROM app.pull_verifications pv
                         JOIN app.connection_ref r ON r.id = pv.connection_ref_id
-                        WHERE r.project_id = %s
+                        WHERE r.owner_org_id = (SELECT org_id FROM app.projects WHERE id = %s)
                           AND r.connector_name = ANY(%s)
                         ORDER BY r.connector_name, pv.verified_at DESC
                         """,
@@ -186,7 +186,7 @@ def compute_confidence(
                         SELECT r.connector_name, pv.completeness_ratio
                         FROM app.pull_verifications pv
                         JOIN app.connection_ref r ON r.id = pv.connection_ref_id
-                        WHERE r.project_id = %s
+                        WHERE r.owner_org_id = (SELECT org_id FROM app.projects WHERE id = %s)
                         ORDER BY r.connector_name, pv.verified_at DESC
                         """,
                         (project_id,),

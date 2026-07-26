@@ -740,11 +740,22 @@ def test_patch_enable_generic_draft_is_publish_gated(monkeypatch):
 
     class _Ctx:
         def __enter__(self):
-            return MagicMock()
+            cursor = MagicMock()
+            cursor.__enter__.return_value = cursor
+            cursor.__exit__.return_value = False
+            cursor.fetchone.return_value = (
+                None,
+                None,
+                None,
+                {"publish_gate": "canonical_semantics_required"},
+                None,
+            )
+            conn = MagicMock()
+            conn.cursor.return_value = cursor
+            return conn
 
         def __exit__(self, *a):
             return False
-
     monkeypatch.setattr(db_mod, "get_connection", lambda: _Ctx())
 
     app = Router(

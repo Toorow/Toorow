@@ -98,7 +98,8 @@ def test_get_overview_200(client):
 
     with (
         patch("core.db.get_connection", return_value=mock_conn),
-        patch("core.overview.get_overview", return_value=_OVERVIEW_DATA),
+        patch("core.project_overview.authorize_overview_project", return_value=True),
+        patch("core.overview.get_project_overview", return_value=_OVERVIEW_DATA),
     ):
         resp = client.get("/api/overview?project_id=proj_a")
 
@@ -124,6 +125,20 @@ def test_get_overview_unauthorized(client_unauth):
     assert resp.status_code == 401
     assert resp.json()["code"] == "unauthorized"
 
+
+def test_get_overview_denied_project_is_nondisclosing(client):
+    mock_conn = MagicMock()
+    mock_conn.__enter__ = lambda s: mock_conn
+    mock_conn.__exit__ = MagicMock(return_value=False)
+
+    with (
+        patch("core.db.get_connection", return_value=mock_conn),
+        patch("core.project_overview.authorize_overview_project", return_value=False),
+    ):
+        resp = client.get("/api/overview?project_id=other-project")
+
+    assert resp.status_code == 404
+    assert resp.json() == {"code": "not_found", "message": "Project not found"}
 
 def test_get_overview_db_error(client):
     """DB exception in get_overview -> 500 with code=db_error."""

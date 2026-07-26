@@ -258,12 +258,25 @@ def test_provenance_source_field():
 
 
 def test_monitors_all_5_present():
-    """structuredContent.data.monitors must list all 5 DQ monitor types."""
+    """structuredContent.data.monitors must list EVERY registered DQ monitor type.
+
+    Story 37.9 adds dq_geography, so the assertion is on the registry rather than
+    on a frozen count.
+    """
     result = _call_tool(stream_count=3, firing_rows=[("dq_volume", 2)], evaluated_days=10)
     monitors = result.structured_content["data"]["monitors"]
     types = [m["type"] for m in monitors]
-    assert len(monitors) == 5, f"expected 5 monitors, got {len(monitors)}: {types}"
-    for t in ("dq_volume", "dq_timeliness", "dq_duplication", "dq_schema", "dq_date_format"):
+    from core import dq_api
+
+    assert types == list(dq_api._DQ_TYPES), f"expected the full registry, got {types}"
+    for t in (
+        "dq_volume",
+        "dq_timeliness",
+        "dq_duplication",
+        "dq_schema",
+        "dq_date_format",
+        "dq_geography",
+    ):
         assert t in types, f"{t} missing from monitors"
 
 
@@ -465,7 +478,9 @@ def test_ad5_granted_project_receives_data():
     sc = result.structured_content
     assert sc is not None
     data = sc["data"]
-    assert len(data["monitors"]) == 5
+    from core import dq_api
+
+    assert [m["type"] for m in data["monitors"]] == list(dq_api._DQ_TYPES)
     # dq_schema must reflect 1 unresolved firing
     schema_mon = next(m for m in data["monitors"] if m["type"] == "dq_schema")
     assert schema_mon["unresolved_count"] == 1

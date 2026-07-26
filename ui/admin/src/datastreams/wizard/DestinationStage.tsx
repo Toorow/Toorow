@@ -31,36 +31,36 @@ export default function DestinationStage({
     <Stack spacing={2} data-testid="stage-destination">
       <Alert severity="info" data-testid="destination-policy">
         <Typography variant="subtitle2">
-          Politique de destination :{" "}
-          {toorowOwned ? "jeu managé toorow (managed_raw)" : "lecture seule externe (external_read_only)"}
+          Destination policy:{" "}
+          {toorowOwned ? "toorow-managed dataset (managed_raw)" : "external read-only (external_read_only)"}
         </Typography>
         <Typography variant="body2" sx={{ mt: 0.5 }}>
-          <strong>Propriété :</strong> {meta.ownership}
+          <strong>Ownership:</strong> {meta.ownership}
         </Typography>
         <Typography variant="body2">
-          <strong>Écriture :</strong> {meta.writeBehavior}
+          <strong>Write behavior:</strong> {meta.writeBehavior}
         </Typography>
       </Alert>
 
       {toorowOwned ? (
         <TextField
-          label="Nom du jeu managé"
+          label="Managed dataset name"
           value={destinationDataset}
           onChange={(e) => onDatasetChange(e.target.value)}
           data-testid="destination-dataset"
           fullWidth
-          helperText="Un libellé pour la destination managée toorow (les candidats versionnés y atterrissent)."
+          helperText="A label for the toorow-managed destination where versioned candidates land."
           sx={{ maxWidth: 520 }}
         />
       ) : (
         <Box data-testid="destination-external">
           <Typography variant="body2">
-            <strong>Table de destination :</strong>{" "}
-            {bigqueryTable || "à déclarer à l’étape Configurer"}
+            <strong>Destination table:</strong>{" "}
+            {bigqueryTable || "declare it in Configure"}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            La destination est votre propre table BigQuery, lue en lecture seule.
-            toorow n’écrit rien.
+            The destination is your own read-only BigQuery table.
+            toorow writes nothing.
           </Typography>
         </Box>
       )}

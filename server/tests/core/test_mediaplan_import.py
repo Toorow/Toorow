@@ -691,9 +691,7 @@ def _pg_reachable() -> bool:
         return False
 
 
-pg_available = pytest.mark.skipif(
-    not _pg_reachable(), reason="platform Postgres not reachable"
-)
+pg_available = pytest.mark.skipif(not _pg_reachable(), reason="platform Postgres not reachable")
 
 
 def _connect():
@@ -707,8 +705,9 @@ def _seed_project(conn) -> str:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
-            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system')
+            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by,
+                org_id)
+            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system', 'org_test_fixture')
             """,
             (project_id, "MPI Test", project_id),
         )
@@ -818,9 +817,7 @@ def test_import_creates_candidate_with_report():
         plan = create_plan(conn, project_id=project_id, name="Plan Imp", created_by="tester")
         _set_contract(conn, plan["id"], "Digital", _DIGITAL_CONTRACT)
 
-        report = import_workbook(
-            conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester"
-        )
+        report = import_workbook(conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester")
         conn.commit()
 
         assert report["version"]["status"] == "candidate"
@@ -852,16 +849,12 @@ def test_reimport_same_file_is_unchanged_everywhere():
         plan = create_plan(conn, project_id=project_id, name="Plan Re", created_by="tester")
         _set_contract(conn, plan["id"], "Digital", _DIGITAL_CONTRACT)
 
-        first = import_workbook(
-            conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester"
-        )
+        first = import_workbook(conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester")
         publish_version(conn, version_id=first["version"]["id"], published_by="tester")
         conn.commit()
 
         # Re-import the SAME file: everything unchanged vs the now-active version.
-        second = import_workbook(
-            conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester"
-        )
+        second = import_workbook(conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester")
         conn.commit()
         assert second["per_line"]["created"] == []
         assert second["per_line"]["updated"] == []
@@ -885,9 +878,7 @@ def test_import_publish_then_changed_reimport_diffs():
         plan = create_plan(conn, project_id=project_id, name="Plan Diff", created_by="tester")
         _set_contract(conn, plan["id"], "Digital", _DIGITAL_CONTRACT)
 
-        first = import_workbook(
-            conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester"
-        )
+        first = import_workbook(conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester")
         publish_version(conn, version_id=first["version"]["id"], published_by="tester")
         conn.commit()
 
@@ -932,9 +923,7 @@ def test_corrupt_file_leaves_published_version_intact():
     try:
         plan = create_plan(conn, project_id=project_id, name="Plan Safe", created_by="tester")
         _set_contract(conn, plan["id"], "Digital", _DIGITAL_CONTRACT)
-        first = import_workbook(
-            conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester"
-        )
+        first = import_workbook(conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester")
         publish_version(conn, version_id=first["version"]["id"], published_by="tester")
         conn.commit()
 
@@ -984,9 +973,7 @@ def test_all_noise_file_creates_no_candidate_version():
     try:
         plan = create_plan(conn, project_id=project_id, name="Plan Noise", created_by="tester")
         _set_contract(conn, plan["id"], "Digital", _DIGITAL_CONTRACT)
-        first = import_workbook(
-            conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester"
-        )
+        first = import_workbook(conn, plan_id=plan["id"], file_bytes=_digital_wb(), actor="tester")
         publish_version(conn, version_id=first["version"]["id"], published_by="tester")
         conn.commit()
 

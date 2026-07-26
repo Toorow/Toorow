@@ -58,6 +58,7 @@ def _load_error_map() -> dict[str, str]:
         _ERROR_MAP = manifest.get("error_map", {})
     return _ERROR_MAP
 
+
 # ---------------------------------------------------------------------------
 # Database connection helpers — env-var driven (no hardcoded paths).
 # Same dual-backend pattern as meta-ads / gsc / google-analytics connectors.
@@ -98,8 +99,7 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     client = bigquery.Client(project=project or None)
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
-            bigquery.ScalarQueryParameter(name, "STRING", value)
-            for name, value in params.items()
+            bigquery.ScalarQueryParameter(name, "STRING", value) for name, value in params.items()
         ]
     )
     result = client.query(sql, job_config=job_config).result()
@@ -550,14 +550,17 @@ def pull(
         if url in seen_urls:
             logger.warning(
                 "shopify_pull: non-progressing pagination cursor detected, stopping "
-                "(pull_id=%s pages=%d)", pull_id, pages,
+                "(pull_id=%s pages=%d)",
+                pull_id,
+                pages,
             )
             break
         seen_urls.add(url)
         if pages >= _MAX_PAGES:
             logger.warning(
                 "shopify_pull: page cap %d reached, stopping (pull_id=%s)",
-                _MAX_PAGES, pull_id,
+                _MAX_PAGES,
+                pull_id,
             )
             break
         pages += 1
@@ -630,6 +633,7 @@ def pull(
 # lookup (no I/O) -- unit-testable via golden_events/expected_events.
 _CANONICAL_EVENT_MAPPING = {"product_launch": "product_launch"}
 
+
 # Products endpoint (Admin REST). AI-53: version-dated path, to confirm live.
 def _products_endpoint(shop_domain: str) -> str:
     """Build the Admin REST products endpoint for *shop_domain* (Epic 31.6)."""
@@ -671,9 +675,7 @@ def transform_events(
         published_at = product.get("published_at") or ""
         # M1: unpublished product (null published_at) or invalid date -> no event.
         if len(published_at) < 10:
-            logger.debug(
-                "transform_events: skipping product with published_at=%r", published_at
-            )
+            logger.debug("transform_events: skipping product with published_at=%r", published_at)
             continue
         event_date = published_at[:10]
         # H1: bounded window filter (no-op when both bounds are None).
@@ -751,14 +753,17 @@ def pull_product_launch(
         if url in seen_urls:
             logger.warning(
                 "pull_product_launch: non-progressing pagination cursor, stopping "
-                "(pull_id=%s pages=%d)", pull_id, pages,
+                "(pull_id=%s pages=%d)",
+                pull_id,
+                pages,
             )
             break
         seen_urls.add(url)
         if pages >= _MAX_PAGES:
             logger.warning(
                 "pull_product_launch: page cap %d reached, stopping (pull_id=%s)",
-                _MAX_PAGES, pull_id,
+                _MAX_PAGES,
+                pull_id,
             )
             break
         pages += 1
@@ -790,7 +795,9 @@ def pull_product_launch(
 
     logger.info(
         "pull_product_launch: fetched %d product(s) in %d page(s) for pull_id=%s",
-        len(all_products), pages, pull_id,
+        len(all_products),
+        pages,
+        pull_id,
     )
 
     canonical_events = transform_events(all_products, date_from=date_from, date_to=date_to)
@@ -823,7 +830,10 @@ def pull_product_launch(
 
     logger.info(
         "pull_product_launch: persisted %d context_events: pull_id=%s date_from=%s date_to=%s",
-        event_count, pull_id, date_from, date_to,
+        event_count,
+        pull_id,
+        date_from,
+        date_to,
     )
     return {
         "pull_id": pull_id,
@@ -1012,7 +1022,7 @@ def _project_order(api_order: dict, source_fields: dict) -> dict:
 
         # ------ LINE ITEM arrays (source_field starts with 'line_items[].') ------
         if src.startswith("line_items[]."):
-            sub_field = src[len("line_items[]."):]
+            sub_field = src[len("line_items[].") :]
             # Heuristic: try float-parse on first non-None value to detect numeric.
             # Numeric → SUM; string → comma-join of distinct values.
             sample = next(
@@ -1026,12 +1036,16 @@ def _project_order(api_order: dict, source_fields: dict) -> dict:
                     numeric = True
                 except (ValueError, TypeError):
                     pass
-            row[field_id] = _sum_list_field(line_items, sub_field) if numeric else _join_list_field(line_items, sub_field)
+            row[field_id] = (
+                _sum_list_field(line_items, sub_field)
+                if numeric
+                else _join_list_field(line_items, sub_field)
+            )
             continue
 
         # ------ REFUND nested arrays ------
         if src.startswith("refunds[].transactions[]."):
-            txn_field = src[len("refunds[].transactions[]."):]
+            txn_field = src[len("refunds[].transactions[].") :]
             total = 0.0
             for refund in refunds:
                 for txn in refund.get("transactions") or []:
@@ -1043,7 +1057,7 @@ def _project_order(api_order: dict, source_fields: dict) -> dict:
             continue
 
         if src.startswith("refunds[]."):
-            sub_field = src[len("refunds[]."):]
+            sub_field = src[len("refunds[].") :]
             sample = next(
                 (r.get(sub_field) for r in refunds if r.get(sub_field) is not None),
                 None,
@@ -1055,7 +1069,11 @@ def _project_order(api_order: dict, source_fields: dict) -> dict:
                     numeric = True
                 except (ValueError, TypeError):
                     pass
-            row[field_id] = _sum_list_field(refunds, sub_field) if numeric else _join_list_field(refunds, sub_field)
+            row[field_id] = (
+                _sum_list_field(refunds, sub_field)
+                if numeric
+                else _join_list_field(refunds, sub_field)
+            )
             continue
 
         # ------ Default: dotted-path extraction on api_order ------
@@ -1118,7 +1136,9 @@ def _insert_catalog_rows(
                 continue
             row_type = "metric" if isinstance(value, (int, float)) else "dimension"
             str_value = str(value) if value is not None else None
-            values.append((date_str, order_id, field_id, row_type, str_value, pull_id, loaded_at, project_id))
+            values.append(
+                (date_str, order_id, field_id, row_type, str_value, pull_id, loaded_at, project_id)
+            )
 
     if values:
         con.executemany(_CATALOG_RAW_INSERT_SQL, values)
@@ -1179,13 +1199,18 @@ def pull_catalog_daily(
         )
 
     if selection is None:
-        from core.catalog_contract import catalog_default_selection, validate_selection  # noqa: PLC0415
+        from core.catalog_contract import (  # noqa: PLC0415
+            catalog_default_selection,
+            validate_selection,
+        )
 
         _cat = json.loads((Path(__file__).parent / "api_catalog.json").read_text(encoding="utf-8"))
         selection, _ = validate_selection(_cat, catalog_default_selection(_cat))
 
     if "source_fields" not in selection:
-        _cat_raw = json.loads((Path(__file__).parent / "api_catalog.json").read_text(encoding="utf-8"))
+        _cat_raw = json.loads(
+            (Path(__file__).parent / "api_catalog.json").read_text(encoding="utf-8")
+        )
         from core.catalog_contract import validate_selection  # noqa: PLC0415
 
         selection, _ = validate_selection(_cat_raw, selection)
@@ -1215,14 +1240,17 @@ def pull_catalog_daily(
         if url in seen_urls:
             logger.warning(
                 "shopify_catalog_pull: non-progressing pagination cursor detected, stopping "
-                "(pull_id=%s pages=%d)", pull_id, pages,
+                "(pull_id=%s pages=%d)",
+                pull_id,
+                pages,
             )
             break
         seen_urls.add(url)
         if pages >= _MAX_PAGES:
             logger.warning(
                 "shopify_catalog_pull: page cap %d reached, stopping (pull_id=%s)",
-                _MAX_PAGES, pull_id,
+                _MAX_PAGES,
+                pull_id,
             )
             break
         pages += 1
@@ -1262,7 +1290,9 @@ def pull_catalog_daily(
 
     logger.info(
         "shopify_catalog_pull_completed: pull_id=%s row_count=%d orders=%d fields=%d",
-        pull_id, row_count, len(all_orders),
+        pull_id,
+        row_count,
+        len(all_orders),
         len(selection.get("metrics", [])) + len(selection.get("dimensions", [])),
     )
     return {

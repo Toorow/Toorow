@@ -15,6 +15,7 @@
  * UX-DR10 : copie française accentuée.
  */
 import { useCallback, useEffect, useState } from "react";
+import { apiFetch } from "../lib/apiFetch";
 import {
   Alert,
   Box,
@@ -101,10 +102,10 @@ export default function CredentialGrantsPanel({
     setOpInfo(null);
     try {
       const [respAccounts, respGrants] = await Promise.all([
-        fetch(`${apiBase}/api/credentials/${encodeURIComponent(cid)}/accounts`, {
+        apiFetch(`${apiBase}/api/credentials/${encodeURIComponent(cid)}/accounts`, {
           headers,
         }),
-        fetch(`${apiBase}/api/credentials/${encodeURIComponent(cid)}/grants`, {
+        apiFetch(`${apiBase}/api/credentials/${encodeURIComponent(cid)}/grants`, {
           headers,
         }),
       ]);
@@ -168,7 +169,7 @@ export default function CredentialGrantsPanel({
     setOpError(null);
     setOpInfo(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/credentials/${encodeURIComponent(credentialId)}/accounts/${encodeURIComponent(externalAccountId)}/grants`,
         {
           method: "POST",
@@ -204,7 +205,7 @@ export default function CredentialGrantsPanel({
     setOpError(null);
     setOpInfo(null);
     try {
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/credentials/${encodeURIComponent(credentialId)}/accounts/${encodeURIComponent(externalAccountId)}/grants/${encodeURIComponent(orgId)}`,
         { method: "DELETE", headers }
       );

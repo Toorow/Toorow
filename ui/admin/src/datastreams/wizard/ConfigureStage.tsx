@@ -24,6 +24,7 @@ interface Props {
 
   // connector
   connections: ConnectionSummary[];
+  connectionsLoading: boolean;
   connectionRefId: string | null;
   onConnectionChange: (id: string) => void;
   capabilities: SourceCapabilities | null;
@@ -57,6 +58,7 @@ export default function ConfigureStage(props: Props) {
     return (
       <ConnectorConfigSubflow
         connections={props.connections}
+        connectionsLoading={props.connectionsLoading}
         connectionRefId={props.connectionRefId}
         onConnectionChange={props.onConnectionChange}
         capabilities={props.capabilities}
@@ -83,7 +85,7 @@ export default function ConfigureStage(props: Props) {
     if (!props.managedFeedFormat) {
       return (
         <Typography color="text.secondary" data-testid="configure-need-format">
-          Choisissez d’abord un format de flux managé à l’étape Source.
+          Choose a managed-feed format in Source first.
         </Typography>
       );
     }
@@ -99,6 +101,7 @@ export default function ConfigureStage(props: Props) {
         onSpreadsheetChange={props.onSpreadsheetChange}
         onSheetRangeChange={props.onSheetRangeChange}
         connections={props.connections}
+        connectionsLoading={props.connectionsLoading}
         sheetsConnectionId={props.sheetsConnectionId}
         onSheetsConnectionChange={props.onSheetsConnectionChange}
       />

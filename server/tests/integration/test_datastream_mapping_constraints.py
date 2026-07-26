@@ -45,16 +45,14 @@ def _seed_project(conn: Any, project_id: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, created_by)
-            VALUES (%s, %s, %s, 'story-12.3-test')
+            INSERT INTO app.projects (id, name, slug, created_by, org_id)
+            VALUES (%s, %s, %s, 'story-12.3-test', 'org_test_fixture')
             """,
             (project_id, project_id, project_id),
         )
 
 
-def _seed_datastream_and_plan(
-    conn: Any, project_id: str, ds_id: str, plan_id: str
-) -> None:
+def _seed_datastream_and_plan(conn: Any, project_id: str, ds_id: str, plan_id: str) -> None:
     """Seed a datastream + an immutable plan version using the REAL migration-030
     columns (contract_version/destination_policy/normalized_payload/content_hash/
     idempotency_key_hash/created_by)."""
@@ -62,8 +60,9 @@ def _seed_datastream_and_plan(
         cur.execute(
             """
             INSERT INTO app.datastreams
-                (id, project_id, name, module_name, source_kind, enabled, created_by)
-            VALUES (%s, %s, 'Mapping DS', 'generic', 'connector_pull', FALSE, 'test')
+                (id, project_id, name, module_name, source_kind, enabled, created_by, org_id)
+            VALUES (%s, %s, 'Mapping DS', 'generic', 'connector_pull', FALSE, 'test',
+                'org_test_fixture')
             """,
             (ds_id, project_id),
         )
@@ -183,8 +182,16 @@ def test_live_postgres_mapping_constraints_and_immutability(live_postgres: Any) 
                         (%s, %s, %s, 2, '1', %s, %s, %s, %s, '0.1.1', '1', true, 0,
                          '{}'::jsonb, '{}'::jsonb, %s, 'test_user')
                     """,
-                    (_id("dmap_"), ds_id, proj_id, sha_hash, _id("dsp_"), sha_hash,
-                     content_hash, "d" * 64),
+                    (
+                        _id("dmap_"),
+                        ds_id,
+                        proj_id,
+                        sha_hash,
+                        _id("dsp_"),
+                        sha_hash,
+                        content_hash,
+                        "d" * 64,
+                    ),
                 )
         with conn.cursor() as cur:
             cur.execute("ROLLBACK TO SAVEPOINT plan_fk_check")
@@ -312,9 +319,7 @@ def test_live_postgres_registry_constraints(live_postgres: Any) -> None:
                 "UPDATE app.mdm_canonical_fields SET status = 'archived' WHERE id = %s",
                 (platform_id,),
             )
-            cur.execute(
-                "SELECT status FROM app.mdm_canonical_fields WHERE id = %s", (platform_id,)
-            )
+            cur.execute("SELECT status FROM app.mdm_canonical_fields WHERE id = %s", (platform_id,))
             assert cur.fetchone()[0] == "archived"
 
         # Archiving frees the platform canonical_name for re-minting.
@@ -547,13 +552,21 @@ def test_live_postgres_idempotent_replay_and_conflict() -> None:
 
     with psycopg.connect(dsn) as conn:
         first = save_field_mapping(
-            datastream_id=ds_id, project_id=proj_id, mapping_payload=dict(base),
-            identity="tester", idempotency_key=key, conn=conn,
+            datastream_id=ds_id,
+            project_id=proj_id,
+            mapping_payload=dict(base),
+            identity="tester",
+            idempotency_key=key,
+            conn=conn,
         )
     with psycopg.connect(dsn) as conn:
         replay = save_field_mapping(
-            datastream_id=ds_id, project_id=proj_id, mapping_payload=dict(base),
-            identity="tester", idempotency_key=key, conn=conn,
+            datastream_id=ds_id,
+            project_id=proj_id,
+            mapping_payload=dict(base),
+            identity="tester",
+            idempotency_key=key,
+            conn=conn,
         )
     assert replay["id"] == first["id"]
     assert replay["idempotent_replay"] is True
@@ -563,6 +576,10 @@ def test_live_postgres_idempotent_replay_and_conflict() -> None:
     with psycopg.connect(dsn) as conn:
         with pytest.raises(DatastreamMappingConflict):
             save_field_mapping(
-                datastream_id=ds_id, project_id=proj_id, mapping_payload=conflicting,
-                identity="tester", idempotency_key=key, conn=conn,
+                datastream_id=ds_id,
+                project_id=proj_id,
+                mapping_payload=conflicting,
+                identity="tester",
+                idempotency_key=key,
+                conn=conn,
             )

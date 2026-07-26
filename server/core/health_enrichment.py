@@ -54,7 +54,7 @@ def enrich_envelope_with_health(envelope: dict, project_id: str) -> dict:
                     SELECT h.status, h.last_fetched_at, r.created_at
                     FROM app.connection_ref r
                     LEFT JOIN app.connection_health h ON h.connection_ref_id = r.id
-                    WHERE r.project_id = %s
+                    WHERE r.owner_org_id = (SELECT org_id FROM app.projects WHERE id = %s)
                     ORDER BY r.created_at
                     LIMIT 1
                     """,

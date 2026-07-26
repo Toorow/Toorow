@@ -26,6 +26,7 @@ from __future__ import annotations
 import html as _html_mod
 import json
 import logging
+import os
 import time
 
 from starlette.requests import Request
@@ -119,6 +120,47 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
     return await _admin_check_auth(request)
 
 
+def _authorize_snapshot_project(
+    identity: str,
+    project_id: str,
+    conn,
+    *,
+    minimum_capability: str,
+) -> bool:
+    """Resolve project access through the strict organization-rooted seam.
+
+    Auth-disabled self-host mode has one explicit compatibility subject:
+    ``anonymous``, representing the single local operator. A named bearer never
+    inherits that bypass. Authenticated modes require active organization
+    membership and an explicit resource grant, even when legacy project
+    membership rows are absent.
+    """
+    auth_mode = os.environ.get("TOOROW_AUTH_MODE", "disabled").strip().lower()
+    if auth_mode == "disabled":
+        return identity == "anonymous"
+
+    try:
+        from core.db import set_local_access_context  # noqa: PLC0415
+        from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
+
+        set_local_access_context(conn, identity, enforce_epic36=True)
+        decision = resolve_strict_resource_access(
+            identity,
+            conn,
+            project_id=project_id,
+            minimum_capability=minimum_capability,
+            auth_mode=auth_mode,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "snapshot_project_access_resolution_failed project_id=%s error=%s",
+            project_id,
+            exc,
+        )
+        return False
+    return bool(decision.allowed)
+
+
 # ---------------------------------------------------------------------------
 # GET /api/rendus/snapshots
 # ---------------------------------------------------------------------------
@@ -180,12 +222,16 @@ async def _list_snapshots(request: Request) -> Response:
 
     try:
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
         from core.snapshots import list_render_snapshots  # noqa: PLC0415
 
         with get_connection() as conn:
             # AD-5 : verifier l'acces au projet (404 non-disclosant).
-            if not identity_has_project_access(project_id, identity, conn):
+            if not _authorize_snapshot_project(
+                identity,
+                project_id,
+                conn,
+                minimum_capability="view",
+            ):
                 return JSONResponse(
                     {"code": "not_found", "message": "Projet non trouve"},
                     status_code=404,
@@ -255,12 +301,16 @@ async def _get_snapshot(request: Request) -> Response:
 
     try:
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
         from core.snapshots import get_render_snapshot  # noqa: PLC0415
 
         with get_connection() as conn:
             # AD-5 : verifier l'acces au projet (404 non-disclosant).
-            if not identity_has_project_access(project_id, identity, conn):
+            if not _authorize_snapshot_project(
+                identity,
+                project_id,
+                conn,
+                minimum_capability="view",
+            ):
                 return JSONResponse(
                     {"code": "not_found", "message": "Snapshot non trouve"},
                     status_code=404,
@@ -316,12 +366,16 @@ async def _delete_snapshot(request: Request) -> Response:
 
     try:
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
         from core.snapshots import delete_render_snapshot  # noqa: PLC0415
 
         with get_connection() as conn:
             # AD-5 : verifier l'acces au projet (404 non-disclosant).
-            if not identity_has_project_access(project_id, identity, conn):
+            if not _authorize_snapshot_project(
+                identity,
+                project_id,
+                conn,
+                minimum_capability="manage",
+            ):
                 return JSONResponse(
                     {"code": "not_found", "message": "Snapshot non trouve"},
                     status_code=404,
@@ -384,11 +438,15 @@ async def _create_share(request: Request) -> Response:
 
     try:
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
         from core.snapshot_shares import create_share  # noqa: PLC0415
 
         with get_connection() as conn:
-            if not identity_has_project_access(project_id, identity, conn):
+            if not _authorize_snapshot_project(
+                identity,
+                project_id,
+                conn,
+                minimum_capability="edit",
+            ):
                 return JSONResponse(
                     {"code": "not_found", "message": "Snapshot non trouve"},
                     status_code=404,
@@ -484,11 +542,15 @@ async def _list_shares(request: Request) -> Response:
 
     try:
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
         from core.snapshot_shares import list_shares  # noqa: PLC0415
 
         with get_connection() as conn:
-            if not identity_has_project_access(project_id, identity, conn):
+            if not _authorize_snapshot_project(
+                identity,
+                project_id,
+                conn,
+                minimum_capability="view",
+            ):
                 return JSONResponse(
                     {"code": "not_found", "message": "Snapshot non trouve"},
                     status_code=404,
@@ -544,11 +606,15 @@ async def _revoke_share(request: Request) -> Response:
 
     try:
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
         from core.snapshot_shares import revoke_share  # noqa: PLC0415
 
         with get_connection() as conn:
-            if not identity_has_project_access(project_id, identity, conn):
+            if not _authorize_snapshot_project(
+                identity,
+                project_id,
+                conn,
+                minimum_capability="manage",
+            ):
                 return JSONResponse(
                     {"code": "not_found", "message": "Partage non trouve"},
                     status_code=404,

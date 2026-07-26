@@ -32,6 +32,7 @@
  * renders only when a task is actually in the "expired" state.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { apiFetch } from "../../lib/apiFetch";
 import "../application.css";
 import "./getting-started.css";
 
@@ -72,7 +73,8 @@ interface GettingStartedProps {
 
 type FetchState =
   | { status: "loading" }
-  | { status: "ok"; journey: SetupJourney; live: boolean };
+  | { status: "ok"; journey: SetupJourney }
+  | { status: "error"; message: string };
 
 // English state labels for the SetupTaskCard status line.
 const STATE_LABELS: Record<string, string> = {
@@ -89,114 +91,6 @@ const ACTOR_LABELS: Record<string, string> = {
   credential_owner: "Credential owner",
   operator: "Operator",
   host_admin: "Host administrator",
-};
-
-/**
- * FALLBACK journey — a representative Getting-started coordination record that
- * mirrors the mockup story (accepted operator coordinating a Google Ads
- * account-authorization handoff, plus the two downstream tasks). Used only when
- * the real endpoint does not answer, so the screen renders finished offline.
- * Values here are literals; the live read model replaces them wholesale.
- */
-const FALLBACK_JOURNEY: SetupJourney = {
-  journey_id: "journey_demo",
-  organization_id: "acme-france",
-  project_id: "acquisition-europe",
-  state: "in_progress",
-  operator: "Camille",
-  progress: { completed: 2, total: 5 },
-  tasks: [
-    {
-      task_id: "task_1",
-      safe_id_suffix: "A1F0",
-      step_key: "invitation_accepted",
-      title: "Invitation accepted",
-      actor_type: "toorow_admin",
-      owner: "Nadia",
-      state: "completed",
-      expires_at: null,
-      handoff_method: "none",
-      reminder: { mode: "none", label: "No reminder" },
-      return_condition: { kind: "membership", resource_id: "acme-france" },
-      return_path: "/getting-started",
-      safe_scope: { accepted_at: "22 Jul 2026, 10:14 CEST" },
-      blocker: null,
-      actions: [],
-    },
-    {
-      task_id: "task_2",
-      safe_id_suffix: "B2E1",
-      step_key: "project_access",
-      title: "Project access confirmed",
-      actor_type: "operator",
-      owner: "Camille",
-      state: "completed",
-      expires_at: null,
-      handoff_method: "none",
-      reminder: { mode: "none", label: "No reminder" },
-      return_condition: { kind: "binding", resource_id: "acquisition-europe" },
-      return_path: "/getting-started",
-      safe_scope: { role: "Operator", project: "Acquisition Europe" },
-      blocker: null,
-      actions: [],
-    },
-    {
-      task_id: "task_3",
-      safe_id_suffix: "8C21",
-      step_key: "source_authorization",
-      title: "Authorize Google Ads and expose the account",
-      actor_type: "credential_owner",
-      owner: "Louis",
-      state: "blocked",
-      expires_at: "2026-07-28T18:00:00+02:00",
-      handoff_method: "signed_link",
-      reminder: { mode: "policy", label: "Returns here automatically once validated" },
-      return_condition: { kind: "account_exposed", resource_id: "google-ads" },
-      return_path: "/getting-started",
-      safe_scope: { expected_source: "Google Ads", exposed_account: "None" },
-      blocker:
-        "Louis must authorize Google Ads and select the accounts accessible to Acme France before 28 Jul 2026, 18:00 CEST.",
-      actions: ["prepare_handoff"],
-    },
-    {
-      task_id: "task_4",
-      safe_id_suffix: "D3C2",
-      step_key: "first_report",
-      title: "Create the first recent report",
-      actor_type: "operator",
-      owner: "Camille",
-      state: "upcoming",
-      expires_at: null,
-      handoff_method: "none",
-      reminder: { mode: "none", label: "After authorization" },
-      return_condition: { kind: "publication", resource_id: "acquisition-europe" },
-      return_path: "/getting-started",
-      safe_scope: {
-        guidance: "One source · one granted account · a recent interval recommended",
-      },
-      blocker: null,
-      actions: [],
-    },
-    {
-      task_id: "task_5",
-      safe_id_suffix: "E4D3",
-      step_key: "mcp_host",
-      title: "Connect an MCP Apps host",
-      actor_type: "host_admin",
-      owner: "Ines",
-      state: "upcoming",
-      expires_at: null,
-      handoff_method: "none",
-      reminder: { mode: "none", label: "Host administrator" },
-      return_condition: { kind: "mcp_install", resource_id: "acquisition-europe" },
-      return_path: "/getting-started",
-      safe_scope: {
-        guidance: "Plan, workspace and catalog preflight before installation",
-      },
-      blocker: null,
-      actions: [],
-    },
-  ],
 };
 
 function formatAbsolute(iso: string): string {
@@ -270,9 +164,7 @@ function SetupTaskCard({
                   ? "Prepare a new request"
                   : `Send the request to ${task.owner}`}
             </button>
-            <button className="secondary" type="button">
-              View scope
-            </button>
+
           </div>
         )}
       </div>
@@ -285,9 +177,9 @@ function SetupTaskCard({
 }
 
 export default function GettingStarted({
-  projectId = "default",
+  projectId = "",
   apiBase = "",
-  apiToken = import.meta.env.VITE_ADMIN_API_TOKEN ?? "",
+  apiToken = "",
 }: GettingStartedProps) {
   const [state, setState] = useState<FetchState>({ status: "loading" });
   const [busyTask, setBusyTask] = useState<string | null>(null);
@@ -303,17 +195,27 @@ export default function GettingStarted({
   );
 
   const load = useCallback(async () => {
+    if (!projectId || projectId === "default") {
+      if (mounted.current) {
+        setState({ status: "error", message: "Select a project to load Getting started." });
+      }
+      return;
+    }
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${apiBase}/api/projects/${encodeURIComponent(projectId)}/setup-journey`,
         { headers: headers(), cache: "no-store" },
       );
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const journey = (await response.json()) as SetupJourney;
-      if (mounted.current) setState({ status: "ok", journey, live: true });
-    } catch {
-      // Graceful fallback: render finished with representative literals.
-      if (mounted.current) setState({ status: "ok", journey: FALLBACK_JOURNEY, live: false });
+      if (mounted.current) setState({ status: "ok", journey });
+    } catch (reason) {
+      if (mounted.current) {
+        setState({
+          status: "error",
+          message: reason instanceof Error ? reason.message : "Getting started is unavailable.",
+        });
+      }
     }
   }, [apiBase, headers, projectId]);
 
@@ -332,7 +234,7 @@ export default function GettingStarted({
       setError(null);
       setAnnouncement("");
       try {
-        const response = await fetch(
+        const response = await apiFetch(
           `${apiBase}/api/setup/tasks/${encodeURIComponent(task.task_id)}/handoffs`,
           {
             method: "POST",
@@ -369,6 +271,16 @@ export default function GettingStarted({
     );
   }
 
+  if (state.status === "error") {
+    return (
+      <div className="gs-status" role="alert">
+        <p>Getting started is unavailable: {state.message}</p>
+        <button className="secondary" type="button" onClick={() => void load()}>
+          Retry
+        </button>
+      </div>
+    );
+  }
   const { journey } = state;
   // Defensive: a journey may arrive without a progress block — derive from tasks.
   const { completed = 0, total = journey.tasks?.length ?? 0 } = journey.progress ?? {};
@@ -379,8 +291,9 @@ export default function GettingStarted({
   const scopeTask =
     journey.tasks.find((t) => t.step_key === "source_authorization") ??
     journey.tasks.find((t) => t.state === "blocked" || t.state === "waiting");
-  const expectedSource = scopeTask?.safe_scope.expected_source ?? "Google Ads";
+  const expectedSource = scopeTask?.safe_scope.expected_source ?? "Not specified";
   const exposedAccount = scopeTask?.safe_scope.exposed_account ?? "None";
+  const scopeRole = scopeTask?.safe_scope.role ?? "Not specified";
 
   // The expired-handoff alternate panel renders only for a truly expired task.
   const expiredTask = journey.tasks.find((t) => t.state === "expired");
@@ -388,7 +301,7 @@ export default function GettingStarted({
   return (
     <>
       <div className="breadcrumb" style={{ marginBottom: 12 }}>
-        <strong>Acme France</strong> / Acquisition Europe
+        <strong>{journey.organization_id}</strong> / {journey.project_id}
       </div>
 
       <div className="page-header">
@@ -446,11 +359,11 @@ export default function GettingStarted({
           <h2>{journey.operator}&rsquo;s access</h2>
           <dl>
             <dt>Organization</dt>
-            <dd>Acme France</dd>
+            <dd>{journey.organization_id}</dd>
             <dt>Project</dt>
-            <dd>Acquisition Europe</dd>
+            <dd>{journey.project_id}</dd>
             <dt>Role</dt>
-            <dd>Operator</dd>
+            <dd>{scopeRole}</dd>
             <dt>Expected source</dt>
             <dd>{expectedSource}</dd>
             <dt>Exposed account</dt>

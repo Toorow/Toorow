@@ -1,24 +1,9 @@
 /**
- * Story 12.13 — the ONE source-first "Créer un flux" wizard shell.
+ * Canonical source-first Datastream wizard.
  *
- * Owns the whole local draft, a revisitable 6-stage stepper (Source, Configure,
- * Destination, Classify & map, Preview & validate, Schedule & activate), a
- * always-available Save draft, and the governed API orchestration. All source
- * paths converge on the SAME versioned mapping / preview / validation /
- * activation contract (AC2). Blocking validation OR source/schema drift disables
- * activation (AC1/AC4).
- *
- * Conventions match the Epic-36 datastream cards exactly: internal state-machine
- * routing (no react-router), MUI components + design tokens, a bearer-token
- * fetch helper (wizardApi), an assertive focusable error region + a polite live
- * region (WizardRegions), French copy that states data impact plainly, and a
- * one-column reflow at narrow widths. WCAG 2.2 AA.
- *
- * Honest Phase-B: the external-BigQuery registration route and a server-side
- * connector "validate plan" route are not yet wired; those paths degrade with
- * explicit copy (see BigQueryConfigSubflow) and the client assembles the
- * validation plan from data it actually holds — it never fabricates a server
- * response.
+ * The six revisitable stages share one versioned server contract. Validation
+ * always targets the exact immutable plan saved by this wizard, and activation
+ * is blocked after any configuration drift until the plan is revalidated.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -41,19 +26,22 @@ import ClassifyStage from "./ClassifyStage";
 import PreviewStage from "./PreviewStage";
 import ScheduleStage from "./ScheduleStage";
 import {
+  activateDatastream,
   configureManagedFeed,
   fileToBase64,
   getSourceCapabilities,
   listConnections,
   previewImport,
   reviseDatastreamDraft,
+  validateDatastreamDraft,
   saveDatastreamDraft,
   type WizardApiConfig,
 } from "./wizardApi";
 import {
   activationBlockingReasons,
   buildIntent,
-  currentSchemaSignature,
+  connectionBlockingReason,
+  currentIntentSignature,
   deriveClassifiedFields,
   isPreviewObsolete,
 } from "./wizardLogic";
@@ -73,7 +61,6 @@ import {
 interface Props {
   projectId: string;
   apiBase?: string;
-  apiToken?: string;
   /** Called after activation succeeds (e.g. return to the list). */
   onActivated?: (datastreamId: string) => void;
   /** Called when the operator cancels/leaves the wizard. */
@@ -83,7 +70,6 @@ interface Props {
 export default function CreerFluxWizard({
   projectId,
   apiBase = "",
-  apiToken = import.meta.env.VITE_ADMIN_API_TOKEN ?? "",
   onActivated,
   onCancel,
 }: Props) {
@@ -92,6 +78,7 @@ export default function CreerFluxWizard({
   const [visited, setVisited] = useState<Set<WizardStage>>(new Set(["source"]));
 
   const [connections, setConnections] = useState<ConnectionSummary[]>([]);
+  const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [capabilities, setCapabilities] = useState<SourceCapabilities | null>(null);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
 
@@ -105,10 +92,30 @@ export default function CreerFluxWizard({
   const errorRef = useRef<HTMLDivElement | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const mounted = useRef(true);
+  const capabilitiesRequest = useRef(0);
+  const scopeGeneration = useRef(0);
+  const mutationKeys = useRef<
+    Record<string, { signature: string; key: string } | undefined>
+  >({});
+
+  const idempotencyKeyFor = useCallback((operation: string, payload: unknown) => {
+    const signature = JSON.stringify(payload);
+    const pending = mutationKeys.current[operation];
+    if (pending?.signature === signature) return pending.key;
+    const key = crypto.randomUUID();
+    mutationKeys.current[operation] = { signature, key };
+    return key;
+  }, []);
+
+  const clearIdempotencyKey = useCallback((operation: string, key: string) => {
+    if (mutationKeys.current[operation]?.key === key) {
+      delete mutationKeys.current[operation];
+    }
+  }, []);
 
   const cfg: WizardApiConfig = useMemo(
-    () => ({ apiBase, apiToken, projectId }),
-    [apiBase, apiToken, projectId],
+    () => ({ apiBase, projectId }),
+    [apiBase, projectId],
   );
 
   const stage = WIZARD_STAGES[stageIndex];
@@ -120,20 +127,53 @@ export default function CreerFluxWizard({
     };
   }, []);
 
+  // Route scope is part of every command identity. A mounted wizard changing
+  // projects must discard all prior draft/evidence and invalidate in-flight work.
+  useEffect(() => {
+    scopeGeneration.current += 1;
+    capabilitiesRequest.current += 1;
+    mutationKeys.current = {};
+    setDraft(emptyDraft());
+    setStageIndex(0);
+    setVisited(new Set(["source"]));
+    setConnections([]);
+    setConnectionsLoading(true);
+    setCapabilities(null);
+    setCapabilitiesLoading(false);
+    setError(null);
+    setAnnouncement("");
+    setSavingDraft(false);
+    setPreviewBusy(false);
+    setValidating(false);
+    setActivating(false);
+  }, [apiBase, projectId]);
+
   // Move focus to the error region when an error appears (WCAG focus mgmt).
   useEffect(() => {
     if (error && errorRef.current) errorRef.current.focus();
   }, [error]);
 
-  // Load project connections once (Source/Configure need them for the connector path).
+  // Load only provider accounts authorized for the route project.
   useEffect(() => {
+    let cancelled = false;
+    setConnectionsLoading(true);
     listConnections(cfg)
       .then((rows) => {
-        if (mounted.current) setConnections(rows);
+        if (!cancelled && mounted.current) {
+          setConnections(rows);
+          setConnectionsLoading(false);
+        }
       })
-      .catch(() => {
-        /* Non-fatal: the connector picker simply shows "no connections". */
+      .catch((reason) => {
+        if (!cancelled && mounted.current) {
+          setConnections([]);
+          setConnectionsLoading(false);
+          setError(reason instanceof Error ? reason.message : "Provider accounts are unavailable.");
+        }
       });
+    return () => {
+      cancelled = true;
+    };
   }, [cfg]);
 
   const patch = useCallback((next: Partial<WizardDraft>) => {
@@ -143,17 +183,23 @@ export default function CreerFluxWizard({
   // ---- Connector capabilities load on connection change -------------------
   const loadCapabilities = useCallback(
     async (connectionRefId: string) => {
+      const requestId = ++capabilitiesRequest.current;
       setCapabilitiesLoading(true);
       setCapabilities(null);
+      setError(null);
       try {
         const caps = await getSourceCapabilities(cfg, connectionRefId);
-        if (mounted.current) setCapabilities(caps);
+        if (mounted.current && requestId === capabilitiesRequest.current) {
+          setCapabilities(caps);
+        }
       } catch (reason) {
-        if (mounted.current) {
-          setError(reason instanceof Error ? reason.message : "Capacités indisponibles.");
+        if (mounted.current && requestId === capabilitiesRequest.current) {
+          setError(reason instanceof Error ? reason.message : "Source capabilities are unavailable.");
         }
       } finally {
-        if (mounted.current) setCapabilitiesLoading(false);
+        if (mounted.current && requestId === capabilitiesRequest.current) {
+          setCapabilitiesLoading(false);
+        }
       }
     },
     [cfg],
@@ -161,6 +207,14 @@ export default function CreerFluxWizard({
 
   const onConnectionChange = useCallback(
     (id: string) => {
+      const selected = connections.find(
+        (connection) => (connection.connection_ref_id ?? connection.id) === id,
+      );
+      const blocked = connectionBlockingReason(selected);
+      if (blocked) {
+        setError(blocked);
+        return;
+      }
       patch({
         connectionRefId: id,
         reportId: null,
@@ -168,11 +222,26 @@ export default function CreerFluxWizard({
         selectedDimensions: [],
         grain: [],
         plan: null,
-        validatedSchemaHash: null,
+        validatedIntentSignature: null,
       });
       void loadCapabilities(id);
     },
-    [patch, loadCapabilities],
+    [connections, patch, loadCapabilities],
+  );
+
+  const onSheetsConnectionChange = useCallback(
+    (id: string) => {
+      const selected = connections.find(
+        (connection) => (connection.connection_ref_id ?? connection.id) === id,
+      );
+      const blocked = connectionBlockingReason(selected);
+      if (blocked) {
+        setError(blocked);
+        return;
+      }
+      patch({ sheetsConnectionId: id, plan: null, validatedIntentSignature: null });
+    },
+    [connections, patch],
   );
 
   const onReportChange = useCallback(
@@ -184,7 +253,7 @@ export default function CreerFluxWizard({
         selectedDimensions: [],
         grain: report?.supported_grains[0] ?? [],
         plan: null,
-        validatedSchemaHash: null,
+        validatedIntentSignature: null,
       });
     },
     [capabilities, patch],
@@ -199,7 +268,7 @@ export default function CreerFluxWizard({
           ? current.filter((f) => f !== fieldId)
           : [...current, fieldId];
         // Any field change invalidates a previously validated plan.
-        return { ...prev, [key]: next, plan: null, validatedSchemaHash: null };
+        return { ...prev, [key]: next, plan: null, validatedIntentSignature: null };
       });
     },
     [],
@@ -209,55 +278,66 @@ export default function CreerFluxWizard({
   const onUpload = useCallback(
     async (file: File) => {
       if (!draft.datastreamId) {
-        setError("Enregistrez d’abord un brouillon avant de prévisualiser un fichier.");
+        setError("Save a draft before previewing a file.");
         return;
       }
+      const operationScope = scopeGeneration.current;
       setPreviewBusy(true);
       setError(null);
       try {
         const b64 = await fileToBase64(file);
         const preview = await previewImport(cfg, draft.datastreamId, b64, file.name);
-        if (!mounted.current) return;
+        if (!mounted.current || operationScope !== scopeGeneration.current) return;
         // A new preview supersedes any validated plan (schema may have drifted).
-        patch({ importPreview: preview, plan: null, validatedSchemaHash: null });
+        patch({ importPreview: preview, plan: null, validatedIntentSignature: null });
         setAnnouncement(
-          `Aperçu prêt : ${preview.row_count} ligne(s), ${preview.rejected_count} rejet(s).`,
+          `Preview ready: ${preview.row_count} row(s), ${preview.rejected_count} rejected.`,
         );
       } catch (reason) {
-        if (mounted.current) {
-          setError(reason instanceof Error ? reason.message : "Aperçu impossible.");
+        if (mounted.current && operationScope === scopeGeneration.current) {
+          setError(reason instanceof Error ? reason.message : "Preview failed.");
         }
       } finally {
-        if (mounted.current) setPreviewBusy(false);
+        if (mounted.current && operationScope === scopeGeneration.current) {
+          setPreviewBusy(false);
+        }
       }
     },
     [cfg, draft.datastreamId, patch],
   );
 
-  // ---- Save draft (always available) --------------------------------------
+  // ---- Save/revise one recoverable versioned draft ------------------------
+  const persistDraft = useCallback(
+    async (reason: string) => {
+      if (!draft.sourceKind) throw new Error("Choose a source before saving a draft.");
+      if (!draft.name.trim()) throw new Error("Enter a Datastream name before saving.");
+
+      const intent = buildIntent(draft);
+      const body = { name: draft.name.trim(), intent, reason };
+      const operation = draft.datastreamId ? `revise:${draft.datastreamId}` : "create";
+      // The reason is evidence, not command identity. A retry from another wizard
+      // action with the same exact name/intent must recover the same create.
+      const key = idempotencyKeyFor(operation, { name: body.name, intent });
+      const result = draft.datastreamId
+        ? await reviseDatastreamDraft(cfg, draft.datastreamId, body, key)
+        : await saveDatastreamDraft(cfg, body, key);
+      clearIdempotencyKey(operation, key);
+      return { result, intent, signature: currentIntentSignature(draft) };
+    },
+    [cfg, clearIdempotencyKey, draft, idempotencyKeyFor],
+  );
+
   const saveDraft = useCallback(async () => {
-    if (!draft.sourceKind) {
-      setError("Choisissez une source avant d’enregistrer un brouillon.");
-      return;
-    }
+    const operationScope = scopeGeneration.current;
     setSavingDraft(true);
     setError(null);
     setAnnouncement("");
     try {
-      const result = await saveDatastreamDraft(cfg, {
-        name: draft.name || "Nouveau flux",
-        intent: buildIntent(draft),
-        reason: "wizard_draft_saved",
-      });
-      if (!mounted.current) return;
-      patch({ datastreamId: result.id });
-      setAnnouncement("Brouillon enregistré. Les versions du plan sont figées côté serveur.");
+      const { result } = await persistDraft("wizard_draft_saved");
+      if (!mounted.current || operationScope !== scopeGeneration.current) return;
+      patch({ datastreamId: result.id, plan: null, validatedIntentSignature: null });
+      setAnnouncement("Draft saved. The server created an immutable plan version.");
 
-      // Google Sheets: once the draft exists, persist the recurring sync config
-      // (12.10). The server REQUIRES a non-empty connection_id/spreadsheet_id/
-      // sheet_range (422 otherwise), so we ONLY fire the call when a Google
-      // connection has actually been picked. Missing connection => honest,
-      // non-fabricated degradation copy instead of a doomed request.
       if (
         draft.sourceKind === "managed_feed" &&
         draft.managedFeedFormat === "google_sheets" &&
@@ -265,44 +345,51 @@ export default function CreerFluxWizard({
         draft.sheetRange
       ) {
         if (draft.sheetsConnectionId) {
+          const syncBody = {
+            connection_id: draft.sheetsConnectionId,
+            spreadsheet_id: draft.spreadsheetId,
+            sheet_range: draft.sheetRange,
+            cadence_mode: draft.schedule.cadence_mode,
+            quota_profile: { allow_hourly: draft.schedule.allow_hourly },
+          };
+          const operation = `managed-feed:${result.id}`;
+          const key = idempotencyKeyFor(operation, syncBody);
           try {
-            await configureManagedFeed(cfg, result.id, {
-              connection_id: draft.sheetsConnectionId,
-              spreadsheet_id: draft.spreadsheetId,
-              sheet_range: draft.sheetRange,
-              cadence_mode: draft.schedule.cadence_mode,
-              quota_profile: { allow_hourly: draft.schedule.allow_hourly },
-            });
-            if (mounted.current) {
-              setAnnouncement(
-                "Brouillon enregistré. Synchronisation Google Sheets configurée.",
-              );
+            await configureManagedFeed(cfg, result.id, syncBody, key);
+            clearIdempotencyKey(operation, key);
+            if (mounted.current && operationScope === scopeGeneration.current) {
+              setAnnouncement("Draft saved. Google Sheets synchronization is configured.");
             }
           } catch (reason) {
-            // Non-fatal for the draft itself: the draft is saved; surface the
-            // real reason the sync config did not persist.
-            if (mounted.current) {
+            if (mounted.current && operationScope === scopeGeneration.current) {
               setAnnouncement(
                 reason instanceof Error
-                  ? `Brouillon enregistré. Configuration de synchronisation non appliquée : ${reason.message}`
-                  : "Brouillon enregistré. Configuration de synchronisation non appliquée.",
+                  ? `Draft saved, but synchronization configuration failed: ${reason.message}`
+                  : "Draft saved, but synchronization configuration failed.",
               );
             }
           }
-        } else if (mounted.current) {
+        } else if (mounted.current && operationScope === scopeGeneration.current) {
           setAnnouncement(
-            "Brouillon enregistré. Sélectionnez une connexion Google à l’étape Configurer pour programmer la synchronisation récurrente.",
+            "Draft saved. Select a Google provider account before scheduling synchronization.",
           );
         }
       }
     } catch (reason) {
-      if (mounted.current) {
-        setError(reason instanceof Error ? reason.message : "Enregistrement impossible.");
+      if (mounted.current && operationScope === scopeGeneration.current) {
+        setError(reason instanceof Error ? reason.message : "Draft could not be saved.");
       }
     } finally {
-      if (mounted.current) setSavingDraft(false);
+      if (mounted.current && operationScope === scopeGeneration.current) setSavingDraft(false);
     }
-  }, [cfg, draft, patch]);
+  }, [
+    cfg,
+    clearIdempotencyKey,
+    draft,
+    idempotencyKeyFor,
+    patch,
+    persistDraft,
+  ]);
 
   // ---- Classified fields (source-agnostic) --------------------------------
   const classifiedFields = useMemo(
@@ -310,70 +397,100 @@ export default function CreerFluxWizard({
     [draft, capabilities],
   );
 
-  // ---- Validate the plan (freeze schema hash for drift detection) ----------
+  // ---- Validate the exact saved plan against current server capabilities ---
   const validatePlan = useCallback(async () => {
+    const operationScope = scopeGeneration.current;
     setValidating(true);
     setError(null);
+    setAnnouncement("");
     try {
-      const signature = currentSchemaSignature(draft);
-      const grain =
-        draft.sourceKind === "connector_pull"
-          ? draft.grain
-          : classifiedFields
-              .filter((f) => f.semantic_role === "date" || f.semantic_role === "identifier")
-              .map((f) => f.field_id);
-
-      const blocking: { code: string; message: string }[] = [];
-      if (draft.sourceKind === "connector_pull" && draft.selectedMetrics.length === 0) {
-        blocking.push({
-          code: "no_metrics",
-          message: "Sélectionnez au moins une métrique.",
-        });
+      const { result, intent, signature } = await persistDraft("wizard_preview_validated");
+      if (!mounted.current || operationScope !== scopeGeneration.current) return;
+      // Preserve the server-owned draft identity before any later validation call
+      // can fail, so retry revises this draft instead of creating another shell.
+      patch({ datastreamId: result.id });
+      const savedPlan = result.plan_version;
+      if (!savedPlan?.id) {
+        throw new Error("The server did not return an immutable plan version.");
       }
-      if (classifiedFields.length === 0) {
-        blocking.push({
-          code: "no_fields",
-          message: "Aucun champ classé : complétez la configuration.",
-        });
+      const validation = await validateDatastreamDraft(cfg, result.id, intent);
+      if (
+        savedPlan.content_hash &&
+        validation.content_hash &&
+        savedPlan.content_hash !== validation.content_hash
+      ) {
+        throw new Error("Intent evidence no longer matches the saved plan version.");
+      }
+      const savedCapabilityContract = savedPlan.capability_contract_version ?? null;
+      const savedCapabilityFingerprint = savedPlan.capability_fingerprint ?? null;
+      if (
+        draft.sourceKind === "connector_pull" &&
+        (!savedCapabilityContract || !savedCapabilityFingerprint)
+      ) {
+        throw new Error("The saved connector plan lacks frozen capability evidence.");
+      }
+      if (
+        savedCapabilityContract !== validation.capability_contract_version ||
+        savedCapabilityFingerprint !== validation.capability_fingerprint
+      ) {
+        throw new Error("Capability evidence no longer matches the saved plan version.");
       }
 
+      const normalizedSource =
+        (validation.normalized_intent.source as Record<string, unknown> | undefined) ?? {};
+      const selection =
+        (normalizedSource.selection as Record<string, unknown> | undefined) ?? {};
+      const historical =
+        (validation.normalized_intent.historical as Record<string, unknown> | undefined) ?? {};
+      const schedule =
+        (validation.normalized_intent.schedule as Record<string, unknown> | undefined) ?? {};
+
+      const grain = Array.isArray(selection.grain)
+        ? selection.grain.filter((value): value is string => typeof value === "string")
+        : [];
       const plan: ValidationPlan = {
-        // The immutable plan/mapping version ids are minted SERVER-SIDE when the
-        // intent is versioned (save_datastream_intent). This local estimate does
-        // not have them, so we leave them null rather than fabricating a
-        // "pending:<id>" that never exists server-side (M1).
-        plan_version_id: null,
+        plan_version_id: savedPlan.id,
         mapping_version_id: null,
-        schema_hash: signature,
+        intent_content_hash: savedPlan.content_hash ?? validation.content_hash,
+        capability_contract_version: savedCapabilityContract,
+        capability_fingerprint: savedCapabilityFingerprint,
         full_grain: grain,
-        interval: null,
-        timezone: draft.schedule.timezone,
-        safe_kpi_projection:
-          draft.sourceKind === "connector_pull"
-            ? draft.selectedMetrics.map((m) => ({ name: m }))
-            : [],
-        // DQ/rejections known only for the managed-feed preview; otherwise null
-        // (honest — no server DQ run happens at wizard-validate time).
-        dq:
-          draft.sourceKind === "managed_feed" && draft.importPreview
-            ? { total_unresolved: draft.importPreview.rejected_count, degraded: false }
-            : null,
+        interval: {
+          start: typeof historical.start === "string" ? historical.start : null,
+          end_exclusive:
+            typeof historical.end_exclusive === "string" ? historical.end_exclusive : null,
+        },
+        timezone: typeof schedule.timezone === "string" ? schedule.timezone : null,
+        // This endpoint does not issue Safe-KPI or server-DQ evidence.
+        safe_kpi_projection: [],
+        dq: null,
         rejected_count: draft.importPreview?.rejected_count ?? null,
         classified_fields: classifiedFields,
-        blocking_issues: blocking,
+        blocking_issues: validation.issues.map((issue) => ({
+          code: issue.code,
+          message: issue.path ? `${issue.message} (${issue.path})` : issue.message,
+        })),
       };
 
-      if (!mounted.current) return;
-      patch({ plan, validatedSchemaHash: signature });
+      if (!mounted.current || operationScope !== scopeGeneration.current) return;
+      patch({
+        datastreamId: result.id,
+        plan,
+        validatedIntentSignature: signature,
+      });
       setAnnouncement(
-        blocking.length > 0
-          ? `Plan validé avec ${blocking.length} problème(s) bloquant(s).`
-          : "Plan validé : versions et empreinte de schéma figées.",
+        validation.executable
+          ? "Plan validated by the server and ready for activation."
+          : `Server validation found ${validation.issues.length} blocking issue(s).`,
       );
+    } catch (reason) {
+      if (mounted.current && operationScope === scopeGeneration.current) {
+        setError(reason instanceof Error ? reason.message : "Plan validation failed.");
+      }
     } finally {
-      if (mounted.current) setValidating(false);
+      if (mounted.current && operationScope === scopeGeneration.current) setValidating(false);
     }
-  }, [draft, classifiedFields, patch]);
+  }, [cfg, classifiedFields, draft, patch, persistDraft]);
 
   // ---- Activate -----------------------------------------------------------
   const drifted = isPreviewObsolete(draft);
@@ -382,44 +499,52 @@ export default function CreerFluxWizard({
     [draft],
   );
 
-  // C2 — honest final action. There is NO versioned enable/activate seam wired:
-  // PATCH /api/datastreams/{id} with enabled:true returns 422
-  // `activation_not_available` ("l'activation versionnée appartient à la Story
-  // 12.6"), and the versioned create persists enabled:FALSE (flows.py). So this
-  // action PERSISTS the ready-to-activate flow (a fresh versioned intent) and
-  // honestly reports that scheduled activation is Phase B — it never claims the
-  // server enabled the flow. `finalize` always writes a NEW version so the saved
-  // intent reflects the current selection/cadence.
+  // Activate the exact current immutable plan. Configuration drift is already
+  // represented by blockingReasons, so no plan revision occurs in this command.
   const finalize = useCallback(async () => {
-    if (blockingReasons.length > 0) return; // guarded; button is also disabled.
+    if (blockingReasons.length > 0 || !draft.datastreamId || !draft.plan?.plan_version_id) {
+      return;
+    }
+    const operationScope = scopeGeneration.current;
     setActivating(true);
     setError(null);
+    setAnnouncement("");
+    const operation = `activate:${draft.datastreamId}`;
+    const command = {
+      datastream_id: draft.datastreamId,
+      plan_version_id: draft.plan.plan_version_id,
+    };
+    const key = idempotencyKeyFor(operation, command);
     try {
-      const payload = {
-        name: draft.name || "Nouveau flux",
-        intent: buildIntent(draft),
-        reason: "wizard_ready_to_activate",
-      };
-      // Version an EXISTING draft in place (PATCH) rather than creating a
-      // duplicate row; create only when there is no draft id yet.
-      const result = draft.datastreamId
-        ? await reviseDatastreamDraft(cfg, draft.datastreamId, payload)
-        : await saveDatastreamDraft(cfg, payload);
-      const id = result.id;
-      if (!mounted.current) return;
-      patch({ datastreamId: id });
-      setAnnouncement(
-        "Flux enregistré, prêt à activer. L’activation planifiée (mise en service) arrive en Phase B (Story 12.6) ; le flux reste désactivé côté serveur jusque-là.",
+      const result = await activateDatastream(
+        cfg,
+        draft.datastreamId,
+        draft.plan.plan_version_id,
+        key,
       );
-      onActivated?.(id);
+      if (result.enabled !== true) {
+        throw new Error("The server did not confirm Datastream activation.");
+      }
+      clearIdempotencyKey(operation, key);
+      if (!mounted.current || operationScope !== scopeGeneration.current) return;
+      setAnnouncement("Datastream activated. Opening first publication.");
+      onActivated?.(draft.datastreamId);
     } catch (reason) {
-      if (mounted.current) {
-        setError(reason instanceof Error ? reason.message : "Enregistrement impossible.");
+      if (mounted.current && operationScope === scopeGeneration.current) {
+        setError(reason instanceof Error ? reason.message : "Datastream activation failed.");
       }
     } finally {
-      if (mounted.current) setActivating(false);
+      if (mounted.current && operationScope === scopeGeneration.current) setActivating(false);
     }
-  }, [blockingReasons, cfg, draft, patch, onActivated]);
+  }, [
+    blockingReasons.length,
+    cfg,
+    clearIdempotencyKey,
+    draft.datastreamId,
+    draft.plan?.plan_version_id,
+    idempotencyKeyFor,
+    onActivated,
+  ]);
 
   // ---- Stage navigation (revisitable) -------------------------------------
   const goToStage = useCallback((index: number) => {
@@ -453,12 +578,11 @@ export default function CreerFluxWizard({
               ref={headingRef}
               sx={{ outline: "none" }}
             >
-              Créer un flux — {STAGE_LABELS[stage]}
+              Create a Datastream — {STAGE_LABELS[stage]}
             </Typography>
             <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-              Un seul assistant, quelle que soit la source. Les étapes sont
-              révisables et « Enregistrer le brouillon » est disponible à tout
-              moment.
+              Use the same six-stage workflow for every source. You can revisit any
+              stage and save a recoverable draft at any time.
             </Typography>
           </Box>
 
@@ -493,9 +617,28 @@ export default function CreerFluxWizard({
                 name={draft.name}
                 onNameChange={(name) => patch({ name })}
                 sourceKind={draft.sourceKind}
-                onSourceKindChange={(kind: SourceKind) =>
-                  patch({ sourceKind: kind, plan: null, validatedSchemaHash: null })
-                }
+                onSourceKindChange={(kind: SourceKind) => {
+                  capabilitiesRequest.current += 1;
+                  setCapabilities(null);
+                  setCapabilitiesLoading(false);
+                  patch({
+                    sourceKind: kind,
+                    managedFeedFormat:
+                      kind === "managed_feed" ? draft.managedFeedFormat : null,
+                    connectionRefId: null,
+                    reportId: null,
+                    selectedMetrics: [],
+                    selectedDimensions: [],
+                    grain: [],
+                    bigqueryTable: null,
+                    importPreview: null,
+                    spreadsheetId: null,
+                    sheetRange: null,
+                    sheetsConnectionId: null,
+                    plan: null,
+                    validatedIntentSignature: null,
+                  });
+                }}
                 managedFeedFormat={draft.managedFeedFormat}
                 onManagedFeedFormatChange={(format: ManagedFeedFormat) =>
                   patch({ managedFeedFormat: format })
@@ -509,6 +652,7 @@ export default function CreerFluxWizard({
                 managedFeedFormat={draft.managedFeedFormat}
                 datastreamId={draft.datastreamId}
                 connections={connections}
+                connectionsLoading={connectionsLoading}
                 connectionRefId={draft.connectionRefId}
                 onConnectionChange={onConnectionChange}
                 capabilities={capabilities}
@@ -519,10 +663,10 @@ export default function CreerFluxWizard({
                 selectedDimensions={draft.selectedDimensions}
                 onToggleField={onToggleField}
                 grain={draft.grain}
-                onGrainChange={(grain) => patch({ grain, plan: null, validatedSchemaHash: null })}
+                onGrainChange={(grain) => patch({ grain, plan: null, validatedIntentSignature: null })}
                 bigqueryTable={draft.bigqueryTable}
                 onTableChange={(bigqueryTable) =>
-                  patch({ bigqueryTable, plan: null, validatedSchemaHash: null })
+                  patch({ bigqueryTable, plan: null, validatedIntentSignature: null })
                 }
                 importPreview={draft.importPreview}
                 previewBusy={previewBusy}
@@ -532,14 +676,12 @@ export default function CreerFluxWizard({
                 onSpreadsheetChange={(spreadsheetId) => patch({ spreadsheetId })}
                 onSheetRangeChange={(sheetRange) => patch({ sheetRange })}
                 sheetsConnectionId={draft.sheetsConnectionId}
-                onSheetsConnectionChange={(sheetsConnectionId) =>
-                  patch({ sheetsConnectionId })
-                }
+                onSheetsConnectionChange={onSheetsConnectionChange}
               />
             )}
             {stage === "configure" && !draft.sourceKind && (
               <Typography color="text.secondary">
-                Revenez à l’étape Source pour choisir une source.
+                Return to Source and choose a source.
               </Typography>
             )}
 
@@ -587,7 +729,7 @@ export default function CreerFluxWizard({
           >
             <Stack direction="row" spacing={1}>
               <Button onClick={back} disabled={stageIndex === 0} data-testid="wizard-back">
-                Précédent
+                Back
               </Button>
               <Button
                 variant="outlined"
@@ -595,13 +737,13 @@ export default function CreerFluxWizard({
                 disabled={stageIndex === WIZARD_STAGES.length - 1 || !canAdvance}
                 data-testid="wizard-next"
               >
-                Suivant
+                Next
               </Button>
             </Stack>
             <Stack direction="row" spacing={1}>
               {onCancel && (
                 <Button onClick={onCancel} data-testid="wizard-cancel">
-                  Annuler
+                  Cancel
                 </Button>
               )}
               <Button
@@ -610,7 +752,7 @@ export default function CreerFluxWizard({
                 disabled={savingDraft || !draft.sourceKind}
                 data-testid="wizard-save-draft"
               >
-                {savingDraft ? "Enregistrement…" : "Enregistrer le brouillon"}
+                {savingDraft ? "Saving…" : "Save draft"}
               </Button>
             </Stack>
           </Stack>

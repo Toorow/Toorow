@@ -20,23 +20,15 @@ import respx
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 
-_CONNECTOR_PATH = (
-    Path(__file__).parents[4] / "server" / "modules" / "gsc" / "connector.py"
-)
+_CONNECTOR_PATH = Path(__file__).parents[4] / "server" / "modules" / "gsc" / "connector.py"
 
 _SITES_URL = "https://www.googleapis.com/webmasters/v3/sites"
 
 # Mocked sites.list payload: 2 sites (one URL-prefix, one domain property).
 _SITES_RESPONSE = {
     "siteEntry": [
-        {
-            "siteUrl": "https://example.com/",
-            "permissionLevel": "siteOwner"
-        },
-        {
-            "siteUrl": "sc-domain:example.com",
-            "permissionLevel": "siteOwner"
-        }
+        {"siteUrl": "https://example.com/", "permissionLevel": "siteOwner"},
+        {"siteUrl": "sc-domain:example.com", "permissionLevel": "siteOwner"},
     ]
 }
 
@@ -56,9 +48,7 @@ def connector():
 @respx.mock
 def test_discover_accounts_returns_site_list(connector):
     """AC4: mocked sites.list -> flat site list (id=siteUrl, label=siteUrl)."""
-    route = respx.get(_SITES_URL).mock(
-        return_value=httpx.Response(200, json=_SITES_RESPONSE)
-    )
+    route = respx.get(_SITES_URL).mock(return_value=httpx.Response(200, json=_SITES_RESPONSE))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         sites = connector.discover_accounts("conn_test")
@@ -96,7 +86,10 @@ def test_discover_accounts_401_raises_auth_expired(connector):
 
     respx.get(_SITES_URL).mock(
         return_value=httpx.Response(
-            401, json={"error": {"code": 401, "message": "Request had invalid authentication credentials."}}
+            401,
+            json={
+                "error": {"code": 401, "message": "Request had invalid authentication credentials."}
+            },
         )
     )
 
@@ -132,9 +125,7 @@ def test_discover_accounts_429_raises_rate_limit_error(connector):
 @respx.mock
 def test_discover_accounts_empty_site_list(connector):
     """An account with no verified sites returns an empty list (not an error)."""
-    respx.get(_SITES_URL).mock(
-        return_value=httpx.Response(200, json={"siteEntry": []})
-    )
+    respx.get(_SITES_URL).mock(return_value=httpx.Response(200, json={"siteEntry": []}))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         sites = connector.discover_accounts("conn_test")
@@ -145,9 +136,7 @@ def test_discover_accounts_empty_site_list(connector):
 @respx.mock
 def test_discover_accounts_missing_site_entry_key(connector):
     """If siteEntry key is absent (API returned no property), return empty list."""
-    respx.get(_SITES_URL).mock(
-        return_value=httpx.Response(200, json={})
-    )
+    respx.get(_SITES_URL).mock(return_value=httpx.Response(200, json={}))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         sites = connector.discover_accounts("conn_test")

@@ -18,6 +18,48 @@ from __future__ import annotations
 
 _PROFILE_COLUMNS = ("identity", "display_name", "email", "avatar_url", "avatar_source")
 
+# app.user_profiles.display_name is TEXT but the API caps it at 255; a name from a
+# third-party token must obey the same cap rather than fail the write downstream.
+_DISPLAY_NAME_MAX = 255
+
+
+def display_name_from_claims(claims: object) -> str | None:
+    """The person's name as the identity provider states it, or None.
+
+    Chosen order: ``name`` (what the provider itself considers the display form),
+    then ``given_name``/``family_name`` recomposed -- either alone is accepted,
+    because plenty of people have only one.
+
+    The header of this module says an avatar is never populated from the Google
+    DATA callback, and that remains true: this reads the claims of the IDENTITY
+    token the console authenticates with (issuer accounts.google.com), which is a
+    different thing entirely and is exactly the provider this file anticipated.
+
+    Returns None rather than a placeholder whenever nothing usable is present, so
+    the caller can tell "the provider gave us a name" apart from "we must ask" --
+    the whole point of the flow: invitation -> ask ONLY if the token has no name.
+    Deliberately total: any shape of input yields a name or None, never raises,
+    because it runs on a path that must not be able to fail an acceptance.
+    """
+    if not isinstance(claims, dict):
+        return None
+
+    def _clean(key: str) -> str:
+        value = claims.get(key)
+        return value.strip() if isinstance(value, str) else ""
+
+    name = _clean("name") or " ".join(p for p in (_clean("given_name"), _clean("family_name")) if p)
+    if not name:
+        return None
+    # Truncate rather than refuse: a 300-character name is still that person's
+    # name, and refusing it would send them to a form to retype what we already
+    # have. Cut on a word boundary when there is one nearby.
+    if len(name) > _DISPLAY_NAME_MAX:
+        cut = name[:_DISPLAY_NAME_MAX]
+        space = cut.rfind(" ")
+        name = (cut[:space] if space > _DISPLAY_NAME_MAX // 2 else cut).strip()
+    return name or None
+
 
 def fetch_user_profile(identity: str, conn) -> dict:
     """Return the profile for *identity*, or a default (all-None) shape if absent.

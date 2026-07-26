@@ -3,7 +3,8 @@
 Uses respx to mock the GSC Search Analytics API. No test contacts the real API.
 
 AC coverage:
-  AC1 — profile catalog_daily in manifest (selection_mode catalog_driven, dispatch pull_catalog_daily)
+  AC1 — profile catalog_daily in manifest
+        (selection_mode catalog_driven, dispatch pull_catalog_daily)
   AC2 — dimension list built from selection; 'date' always leads
   AC3 — metric projection at parse time (non-selected metrics zeroed, ctr never stored)
   AC4 — searchAppearance combo refusal (InvalidRequestError BEFORE API call)
@@ -26,9 +27,7 @@ import respx
 
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 
-_CONNECTOR_PATH = (
-    Path(__file__).parents[4] / "server" / "modules" / "gsc" / "connector.py"
-)
+_CONNECTOR_PATH = Path(__file__).parents[4] / "server" / "modules" / "gsc" / "connector.py"
 _MANIFEST_PATH = _CONNECTOR_PATH.parent / "manifest.json"
 _CATALOG_PATH = _CONNECTOR_PATH.parent / "api_catalog.json"
 
@@ -95,16 +94,25 @@ def test_manifest_existing_10_profiles_untouched():
     reports = manifest["source_capabilities"]["reports"]
     exact_bundle_ids = [r["id"] for r in reports if r.get("selection_mode") == "exact_bundle"]
     expected_existing = {
-        "page_daily", "country_daily", "device_daily", "query_page_daily",
-        "discover_daily", "google_news_daily", "news_daily", "image_daily",
-        "video_daily", "search_appearance_daily",
+        "page_daily",
+        "country_daily",
+        "device_daily",
+        "query_page_daily",
+        "discover_daily",
+        "google_news_daily",
+        "news_daily",
+        "image_daily",
+        "video_daily",
+        "search_appearance_daily",
     }
     assert set(exact_bundle_ids) == expected_existing, (
         f"Exact-bundle profiles changed. Got: {sorted(exact_bundle_ids)}"
     )
     # report_profiles list (the old top-level list) also untouched
     rp_ids = {p["id"] for p in manifest["report_profiles"]}
-    assert rp_ids == expected_existing | {"catalog_daily"}  # 25.9: transitional profile required by the registry validator
+    assert rp_ids == expected_existing | {
+        "catalog_daily"
+    }  # 25.9: transitional profile required by the registry validator
 
 
 # ---------------------------------------------------------------------------
@@ -119,9 +127,7 @@ def test_catalog_daily_dimensions_from_selection(connector, tmp_path, monkeypatc
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_cat_dims.duckdb"))
     monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json=_GSC_RESPONSE)
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=_GSC_RESPONSE))
 
     selection = {
         "metrics": ["clicks", "impressions"],
@@ -162,9 +168,7 @@ def test_catalog_daily_date_always_leads_even_if_not_in_selection(connector, tmp
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_cat_nodate.duckdb"))
     monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json={"rows": []})
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     selection = {
         "metrics": ["clicks"],
@@ -188,19 +192,23 @@ def test_catalog_daily_date_always_leads_even_if_not_in_selection(connector, tmp
 
 @respx.mock
 def test_catalog_daily_search_type_maps_to_type_param(connector, tmp_path, monkeypatch):
-    """AC2: 'search_type' in selection dims maps to the API 'type' param, not to the dimensions list."""
+    """AC2: 'search_type' in selection dims maps to the API 'type' param,
+    not to the dimensions list."""
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_cat_st.duckdb"))
     monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json={"rows": []})
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     selection = {
         "metrics": ["clicks"],
         "dimensions": ["date", "page", "search_type"],
-        "source_fields": {"clicks": "clicks", "date": "date", "page": "page", "search_type": "type"},
+        "source_fields": {
+            "clicks": "clicks",
+            "date": "date",
+            "page": "page",
+            "search_type": "type",
+        },
     }
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
@@ -228,7 +236,8 @@ def test_catalog_daily_search_type_maps_to_type_param(connector, tmp_path, monke
 
 @respx.mock
 def test_catalog_daily_projects_only_selected_metrics(connector, tmp_path, monkeypatch):
-    """AC3: non-selected metrics land as 0 (API always returns all metrics; selection = projection)."""
+    """AC3: non-selected metrics land as 0
+    (API always returns all metrics; selection = projection)."""
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "gsc_cat_proj.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
@@ -256,6 +265,7 @@ def test_catalog_daily_projects_only_selected_metrics(connector, tmp_path, monke
     assert result["row_count"] == 2
 
     import duckdb
+
     con = duckdb.connect(db_path, read_only=True)
     rows = con.execute(
         "SELECT clicks, impressions, average_position FROM raw_gsc_daily "
@@ -304,10 +314,9 @@ def test_catalog_daily_ctr_never_stored(connector, tmp_path, monkeypatch):
         )
 
     import duckdb
+
     con = duckdb.connect(db_path, read_only=True)
-    cols = [c[0] for c in con.execute(
-        "DESCRIBE raw_gsc_daily"
-    ).fetchall()]
+    cols = [c[0] for c in con.execute("DESCRIBE raw_gsc_daily").fetchall()]
     con.close()
     assert "ctr" not in cols, "ctr must never appear as a column in raw_gsc_daily"
 
@@ -345,6 +354,7 @@ def test_catalog_daily_all_metrics_kept_when_all_selected(connector, tmp_path, m
         )
 
     import duckdb
+
     con = duckdb.connect(db_path, read_only=True)
     rows = con.execute(
         "SELECT clicks, impressions, average_position FROM raw_gsc_daily "
@@ -393,7 +403,10 @@ def test_catalog_daily_refuses_search_appearance_with_other_dims(connector, monk
                 selection=selection,
             )
 
-    assert "search_appearance" in str(exc_info.value).lower() or "standalone" in str(exc_info.value).lower()
+    assert (
+        "search_appearance" in str(exc_info.value).lower()
+        or "standalone" in str(exc_info.value).lower()
+    )
     # The respx mock had no routes registered; the test passes only if no HTTP request was sent.
 
 
@@ -441,7 +454,13 @@ def test_catalog_daily_search_appearance_alone_triggers_per_day_loop(
             200,
             json={
                 "rows": [
-                    {"keys": ["RICHRESULT"], "clicks": 5, "impressions": 100, "ctr": 0.05, "position": 3.0}
+                    {
+                        "keys": ["RICHRESULT"],
+                        "clicks": 5,
+                        "impressions": 100,
+                        "ctr": 0.05,
+                        "position": 3.0,
+                    }
                 ]
             },
         )
@@ -491,9 +510,7 @@ def test_catalog_daily_dispatch_resolves(connector):
     gsc_mod = connector
     manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
 
-    loaded = types.SimpleNamespace(
-        name="gsc", connector_module=gsc_mod, manifest=manifest
-    )
+    loaded = types.SimpleNamespace(name="gsc", connector_module=gsc_mod, manifest=manifest)
     with patch("core.main._loaded_modules", [loaded]):
         fn = get_module_pull_fn("gsc", profile_id="catalog_daily")
 
@@ -508,14 +525,19 @@ def test_all_legacy_profiles_dispatch_green(connector):
     manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
 
     existing_profile_ids = [
-        "page_daily", "country_daily", "device_daily", "query_page_daily",
-        "discover_daily", "google_news_daily", "news_daily", "image_daily",
-        "video_daily", "search_appearance_daily",
+        "page_daily",
+        "country_daily",
+        "device_daily",
+        "query_page_daily",
+        "discover_daily",
+        "google_news_daily",
+        "news_daily",
+        "image_daily",
+        "video_daily",
+        "search_appearance_daily",
     ]
 
-    loaded = types.SimpleNamespace(
-        name="gsc", connector_module=gsc_mod, manifest=manifest
-    )
+    loaded = types.SimpleNamespace(name="gsc", connector_module=gsc_mod, manifest=manifest)
     with patch("core.main._loaded_modules", [loaded]):
         for pid in existing_profile_ids:
             fn = get_module_pull_fn("gsc", profile_id=pid)
@@ -563,7 +585,8 @@ def test_api_catalog_ctr_excluded_with_reason():
 
 
 def test_api_catalog_no_planned_fields():
-    """Story 25.9 gate: zero fields with exposure=planned (all fields resolved to exposed/excluded)."""
+    """Story 25.9 gate: zero fields with exposure=planned
+    (all fields resolved to exposed/excluded)."""
     catalog = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
     planned = [f["field_id"] for f in catalog["fields"] if f.get("exposure") == "planned"]
     assert not planned, f"Fields still in 'planned' state: {planned}"
@@ -576,9 +599,7 @@ def test_catalog_daily_default_selection_falls_back_to_tier_core(connector, tmp_
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_cat_default.duckdb"))
     monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json=_GSC_RESPONSE)
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=_GSC_RESPONSE))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         result = connector.pull_catalog_daily(

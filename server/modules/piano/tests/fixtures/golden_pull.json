@@ -1,0 +1,47 @@
+[
+  {
+    "_fixture_note": "Charge brute Piano Analytics telle que _flatten_row la produit : une ligne large clee par field_id du catalogue (les tokens m_* pour les metriques, les tokens de propriete pour les dimensions). expected_facts.json = transform(golden_pull.json).",
+    "_fixture_note_2": "Pas de compte de test Piano (doctrine no-connector-test-accounts) : les valeurs sont representatives, pas enregistrees. Ce qui est teste ici est le CONTRAT de renommage du manifest, pas des chiffres reels.",
+    "_provenance": "redigee a la main d'apres canonical_metric_mapping / canonical_dimension_mapping du manifest et _flatten_row",
+    "pull_id": "pull_piano_001",
+    "connector": "piano",
+    "date": "2026-07-01",
+    "site_id": "site_412",
+    "device_type": "desktop",
+    "geo_country": "FR",
+    "src_source": "google",
+    "src_medium": "organic",
+    "m_visits": "1840",
+    "m_unique_visitors": "1502",
+    "m_page_loads": "4120",
+    "m_events": "236"
+  },
+  {
+    "pull_id": "pull_piano_001",
+    "connector": "piano",
+    "date": "2026-07-01",
+    "site_id": "site_412",
+    "device_type": "mobile",
+    "geo_country": "unknown",
+    "src_source": "direct",
+    "src_medium": "none",
+    "m_visits": "2675",
+    "m_unique_visitors": "2311",
+    "m_page_loads": "5008",
+    "m_events": "412"
+  },
+  {
+    "pull_id": "pull_piano_001",
+    "connector": "piano",
+    "date": "2026-07-02",
+    "site_id": "site_412",
+    "device_type": "desktop",
+    "geo_country": "BE",
+    "src_source": "newsletter",
+    "src_medium": "email",
+    "m_visits": "301",
+    "m_unique_visitors": "288",
+    "m_page_loads": "703",
+    "m_events": "54"
+  }
+]

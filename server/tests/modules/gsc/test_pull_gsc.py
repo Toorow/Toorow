@@ -19,9 +19,7 @@ import respx
 
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 
-_TOOROW_PATH = (
-    Path(__file__).parents[4] / "server" / "modules" / "gsc" / "connector.py"
-)
+_TOOROW_PATH = Path(__file__).parents[4] / "server" / "modules" / "gsc" / "connector.py"
 
 _SITE_URL = "https://example.com/"
 _SITE_URL_ENCODED = "https%3A%2F%2Fexample.com%2F"
@@ -76,9 +74,7 @@ def test_pull_calls_gsc_api_with_correct_params(connector, tmp_path, monkeypatch
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc.duckdb"))
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json=_GSC_RESPONSE)
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=_GSC_RESPONSE))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         connector.pull(
@@ -95,6 +91,7 @@ def test_pull_calls_gsc_api_with_correct_params(connector, tmp_path, monkeypatch
     request = route.calls.last.request
     body = request.read()
     import json
+
     payload = json.loads(body)
     assert payload["rowLimit"] == 25000
     assert "page" in payload["dimensions"]
@@ -128,6 +125,7 @@ def test_pull_returns_row_count(connector, tmp_path, monkeypatch):
     assert result["date_to"] == "2026-07-03"
 
     import duckdb
+
     con = duckdb.connect(db_path, read_only=True)
     rows = con.execute(
         "SELECT page, average_position, impressions FROM raw_gsc_daily "
@@ -147,9 +145,7 @@ def test_pull_regex_filter_passed_through(connector, tmp_path, monkeypatch):
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_filter.duckdb"))
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json={"rows": []})
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         connector.pull(
@@ -164,6 +160,7 @@ def test_pull_regex_filter_passed_through(connector, tmp_path, monkeypatch):
         )
 
     import json
+
     body = json.loads(route.calls.last.request.read())
     assert "dimensionFilterGroups" in body
     assert body["dimensionFilterGroups"][0]["filters"][0]["expression"] == "^/blog/"
@@ -201,9 +198,7 @@ def test_pull_row_limit_25000(connector, tmp_path, monkeypatch):
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_limit.duckdb"))
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json={"rows": []})
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         connector.pull(
@@ -217,6 +212,7 @@ def test_pull_row_limit_25000(connector, tmp_path, monkeypatch):
         )
 
     import json
+
     body = json.loads(route.calls.last.request.read())
     assert body["rowLimit"] == 25000
 
@@ -228,9 +224,7 @@ def test_pull_site_url_url_encoded(connector, tmp_path, monkeypatch):
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_url.duckdb"))
 
     # The site_url with slashes must produce an encoded URL in the path
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json={"rows": []})
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         connector.pull(
@@ -315,9 +309,7 @@ def test_pull_non_429_error_raises_runtime_error(connector, tmp_path, monkeypatc
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_500.duckdb"))
 
-    respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(500, json={"error": {"code": 500}})
-    )
+    respx.post(_GSC_API_URL).mock(return_value=httpx.Response(500, json={"error": {"code": 500}}))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         with pytest.raises(RuntimeError) as exc_info:
@@ -344,15 +336,24 @@ def test_pull_device_normalized_to_lowercase(connector, tmp_path, monkeypatch):
         "rows": [
             {
                 "keys": ["https://example.com/blog/", "DESKTOP"],
-                "clicks": 42, "impressions": 850, "ctr": 0.049, "position": 7.3,
+                "clicks": 42,
+                "impressions": 850,
+                "ctr": 0.049,
+                "position": 7.3,
             },
             {
                 "keys": ["https://example.com/blog/", "MOBILE"],
-                "clicks": 28, "impressions": 620, "ctr": 0.045, "position": 9.2,
+                "clicks": 28,
+                "impressions": 620,
+                "ctr": 0.045,
+                "position": 9.2,
             },
             {
                 "keys": ["https://example.com/blog/", "TABLET"],
-                "clicks": 8, "impressions": 180, "ctr": 0.044, "position": 5.4,
+                "clicks": 8,
+                "impressions": 180,
+                "ctr": 0.044,
+                "position": 5.4,
             },
         ]
     }
@@ -373,9 +374,11 @@ def test_pull_device_normalized_to_lowercase(connector, tmp_path, monkeypatch):
         )
 
     import duckdb
+
     con = duckdb.connect(db_path, read_only=True)
     devices = set(
-        r[0] for r in con.execute(
+        r[0]
+        for r in con.execute(
             "SELECT device FROM raw_gsc_daily WHERE pull_id = 'pull_gsc_device'"
         ).fetchall()
     )
@@ -410,22 +413,29 @@ def test_pull_query_page_daily_uses_query_page_dimensions(connector, tmp_path, m
         "rows": [
             {
                 "keys": ["2026-07-01", "chaussures running", "https://example.com/run/"],
-                "clicks": 10, "impressions": 200, "ctr": 0.05, "position": 4.2,
+                "clicks": 10,
+                "impressions": 200,
+                "ctr": 0.05,
+                "position": 4.2,
             },
             {
                 "keys": ["2026-07-02", "chaussures running", "https://example.com/run/"],
-                "clicks": 12, "impressions": 240, "ctr": 0.05, "position": 4.0,
+                "clicks": 12,
+                "impressions": 240,
+                "ctr": 0.05,
+                "position": 4.0,
             },
             {
                 "keys": ["2026-07-02", "chaussures running", "https://example.com/trail/"],
-                "clicks": 3, "impressions": 90, "ctr": 0.033, "position": 9.1,
+                "clicks": 3,
+                "impressions": 90,
+                "ctr": 0.033,
+                "position": 9.1,
             },
         ],
         "responseAggregationType": "byPage",
     }
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json=qp_response)
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=qp_response))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         # Dispatch contract: no site_url/dimensions passed (queue.py passes only these 5).
@@ -439,6 +449,7 @@ def test_pull_query_page_daily_uses_query_page_dimensions(connector, tmp_path, m
 
     assert route.called
     import json
+
     body = json.loads(route.calls.last.request.read())
     assert body["dimensions"] == ["date", "query", "page"]
     assert body["rowLimit"] == 25000
@@ -488,9 +499,7 @@ def test_query_page_daily_dispatch_resolves_profile_fn():
     loaded = types.SimpleNamespace(
         name="gsc",
         connector_module=gsc_mod,
-        manifest=json.loads(
-            (_TOOROW_PATH.parent / "manifest.json").read_text(encoding="utf-8")
-        ),
+        manifest=json.loads((_TOOROW_PATH.parent / "manifest.json").read_text(encoding="utf-8")),
     )
     with patch("core.main._loaded_modules", [loaded]):
         default_fn = get_module_pull_fn("gsc")
@@ -563,6 +572,7 @@ def test_pull_paginates_until_short_page(connector, tmp_path, monkeypatch):
     assert result["truncated"] is False
 
     import duckdb
+
     con = duckdb.connect(db_path, read_only=True)
     landed = con.execute(
         "SELECT COUNT(*) FROM raw_gsc_daily WHERE pull_id = 'pull_gsc_paged'"
@@ -572,17 +582,13 @@ def test_pull_paginates_until_short_page(connector, tmp_path, monkeypatch):
 
 
 @respx.mock
-def test_pull_sends_type_web_by_default_and_stamps_search_type(
-    connector, tmp_path, monkeypatch
-):
+def test_pull_sends_type_web_by_default_and_stamps_search_type(connector, tmp_path, monkeypatch):
     """The 'type' parameter is sent explicitly (web default) and stamped on raw rows."""
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "gsc_type.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json=_GSC_RESPONSE)
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=_GSC_RESPONSE))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         connector.pull(
@@ -599,9 +605,11 @@ def test_pull_sends_type_web_by_default_and_stamps_search_type(
     assert body["type"] == "web"
 
     import duckdb
+
     con = duckdb.connect(db_path, read_only=True)
     types = set(
-        r[0] for r in con.execute(
+        r[0]
+        for r in con.execute(
             "SELECT DISTINCT search_type FROM raw_gsc_daily WHERE pull_id = 'pull_gsc_type'"
         ).fetchall()
     )
@@ -621,13 +629,14 @@ def test_pull_discover_daily_shim(connector, tmp_path, monkeypatch):
         "rows": [
             {
                 "keys": ["2026-07-01", "https://example.com/article/"],
-                "clicks": 120, "impressions": 4000, "ctr": 0.03, "position": 1.0,
+                "clicks": 120,
+                "impressions": 4000,
+                "ctr": 0.03,
+                "position": 1.0,
             },
         ]
     }
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json=discover_response)
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=discover_response))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         result = connector.pull_discover_daily(
@@ -644,6 +653,7 @@ def test_pull_discover_daily_shim(connector, tmp_path, monkeypatch):
     assert result["row_count"] == 1
 
     import duckdb
+
     con = duckdb.connect(db_path, read_only=True)
     row = con.execute(
         "SELECT search_type, date, page FROM raw_gsc_daily WHERE pull_id = 'pull_gsc_disc'"
@@ -688,9 +698,7 @@ def test_pull_aggregation_type_passthrough(connector, tmp_path, monkeypatch):
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_agg.duckdb"))
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json={"rows": []})
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         connector.pull(
@@ -725,9 +733,7 @@ def test_pull_multiple_filters_single_group(connector, tmp_path, monkeypatch):
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_flt.duckdb"))
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json={"rows": []})
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     filters = [
         {"dimension": "page", "operator": "includingRegex", "expression": "^/blog/"},
@@ -769,7 +775,10 @@ def test_pull_search_appearance_daily_per_day_loop(connector, tmp_path, monkeypa
                 "rows": [
                     {
                         "keys": ["RICHRESULT"],
-                        "clicks": 5, "impressions": 100, "ctr": 0.05, "position": 3.0,
+                        "clicks": 5,
+                        "impressions": 100,
+                        "ctr": 0.05,
+                        "position": 3.0,
                     }
                 ]
             },
@@ -795,6 +804,7 @@ def test_pull_search_appearance_daily_per_day_loop(connector, tmp_path, monkeypa
     assert result["row_count"] == 2
 
     import duckdb
+
     con = duckdb.connect(db_path, read_only=True)
     rows = con.execute(
         "SELECT date, search_appearance FROM raw_gsc_daily "
@@ -825,9 +835,7 @@ def test_daily_profile_shims_pin_date_grain(
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / f"gsc_{shim_name}.duckdb"))
     monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
-    route = respx.post(_GSC_API_URL).mock(
-        return_value=httpx.Response(200, json={"rows": []})
-    )
+    route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-token"):
         getattr(connector, shim_name)(
@@ -851,15 +859,13 @@ def test_all_manifest_profiles_have_dispatch_shims():
     from core.main import get_module_pull_fn
 
     gsc_mod = _import_connector()
-    manifest = json.loads(
-        (_TOOROW_PATH.parent / "manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((_TOOROW_PATH.parent / "manifest.json").read_text(encoding="utf-8"))
     profile_ids = [p["id"] for p in manifest["report_profiles"]]
-    assert len(profile_ids) == 11  # 10 exact_bundle (searchanalytics coverage) + catalog_daily (25.9)
+    assert (
+        len(profile_ids) == 11
+    )  # 10 exact_bundle (searchanalytics coverage) + catalog_daily (25.9)
 
-    loaded = types.SimpleNamespace(
-        name="gsc", connector_module=gsc_mod, manifest=manifest
-    )
+    loaded = types.SimpleNamespace(name="gsc", connector_module=gsc_mod, manifest=manifest)
     with patch("core.main._loaded_modules", [loaded]):
         for pid in profile_ids:
             shim = getattr(gsc_mod, f"pull_{pid}", None)

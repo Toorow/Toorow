@@ -42,11 +42,11 @@ export const WIZARD_STAGES: WizardStage[] = [
 
 export const STAGE_LABELS: Record<WizardStage, string> = {
   source: "Source",
-  configure: "Configurer",
+  configure: "Configure",
   destination: "Destination",
-  classify: "Classer & mapper",
-  preview: "Aperçu & valider",
-  schedule: "Planifier & activer",
+  classify: "Classify & map",
+  preview: "Preview & validate",
+  schedule: "Schedule & activate",
 };
 
 /**
@@ -112,14 +112,22 @@ export interface SourceCapabilities {
   reports: CapabilityReport[];
 }
 
-/** A project-owned connection (GET /api/connections). */
+/** A project/org-scoped provider account returned by GET /api/connections. */
 export interface ConnectionSummary {
   id: string;
   connection_ref_id?: string;
   provider?: string;
   display_name?: string;
-  status?: string;
-  health?: string | null;
+  nango_connection_id?: string;
+  account_label?: string | null;
+  account_state?: string | null;
+  status?: string | null;
+  enabled?: boolean;
+  health?: {
+    status: string;
+    last_checked_at?: string | null;
+    last_fetched_at?: string | null;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,8 +176,11 @@ export interface ValidationPlan {
   /** Immutable version identifiers frozen for this validated plan. */
   plan_version_id: string | null;
   mapping_version_id: string | null;
-  /** Deterministic schema hash of the classified source shape. */
-  schema_hash: string | null;
+  /** Hash of the normalized intent validated for this immutable plan. */
+  intent_content_hash: string | null;
+  /** Governed provider-catalog evidence used during validation. */
+  capability_contract_version: string | null;
+  capability_fingerprint: string | null;
   /** Effective full grain (ordered key columns). */
   full_grain: string[];
   interval: { start: string | null; end_exclusive: string | null } | null;
@@ -229,8 +240,8 @@ export interface WizardDraft {
   destinationDataset: string;
   /** The validated plan (Preview & validate). */
   plan: ValidationPlan | null;
-  /** The schema hash observed at validation time (drift detection). */
-  validatedSchemaHash: string | null;
+  /** The canonical intent signature observed at validation time (drift detection). */
+  validatedIntentSignature: string | null;
   schedule: ScheduleConfig;
   timezone: string;
 }
@@ -253,7 +264,7 @@ export function emptyDraft(): WizardDraft {
     sheetsConnectionId: null,
     destinationDataset: "",
     plan: null,
-    validatedSchemaHash: null,
+    validatedIntentSignature: null,
     schedule: { cadence_mode: "daily", timezone: "Europe/Paris", allow_hourly: false },
     timezone: "Europe/Paris",
   };
@@ -262,33 +273,33 @@ export function emptyDraft(): WizardDraft {
 export const SOURCE_KIND_META: SourceKindMeta[] = [
   {
     kind: "connector_pull",
-    label: "Connecteur",
+    label: "Connector",
     writer: "toorow",
     destinationPolicy: "managed_raw",
     ownership:
-      "toorow possède la destination : les données extraites atterrissent dans un jeu managé toorow.",
+      "toorow owns the destination: extracted data lands in a toorow-managed dataset.",
     writeBehavior:
-      "toorow extrait le rapport depuis la source à chaque exécution et écrit des candidats versionnés. Aucune écriture chez la source.",
+      "toorow reads the report on each run and writes versioned candidates. The source is never modified.",
   },
   {
     kind: "external_bq",
-    label: "BigQuery existant",
+    label: "Existing BigQuery",
     writer: "external",
     destinationPolicy: "external_read_only",
     ownership:
-      "Vous possédez la table BigQuery : toorow n’en devient jamais propriétaire et ne la modifie pas.",
+      "You own the BigQuery table: toorow never owns or modifies it.",
     writeBehavior:
-      "toorow lit la table en lecture seule. Aucune donnée n’est écrite ni copiée hors de votre projet BigQuery.",
+      "toorow reads the table only. No data is written or copied outside your BigQuery project.",
   },
   {
     kind: "managed_feed",
-    label: "Flux managé (CSV, Excel, Google Sheets)",
+    label: "Managed feed (CSV, Excel, Google Sheets)",
     writer: "toorow",
     destinationPolicy: "managed_raw",
     ownership:
-      "toorow possède le jeu managé : chaque import ou synchronisation crée un candidat immuable dans une destination dédiée.",
+      "toorow owns the managed dataset: every import or synchronization creates an immutable candidate in a dedicated destination.",
     writeBehavior:
-      "Vous fournissez un fichier ou une feuille ; toorow écrit un candidat versionné après validation. La source d’origine n’est jamais modifiée.",
+      "You provide a file or sheet; toorow writes a versioned candidate after validation. The original source is never modified.",
   },
 ];
 

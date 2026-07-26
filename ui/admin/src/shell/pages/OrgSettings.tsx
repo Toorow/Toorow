@@ -52,7 +52,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Org } from "../../orgs/types";
 import OrgDetailPanel from "../../orgs/OrgDetailPanel";
-import { ApiError, apiGet, apiJson } from "../../lib/apiFetch";
+import { ApiError, apiFetch, apiGet, apiJson } from "../../lib/apiFetch";
 import "../application.css";
 import "./org-settings.css";
 import "./danger-zone.css";
@@ -162,7 +162,7 @@ export default function OrgSettings({
     setLoadError(null);
     void (async () => {
       try {
-        const resp = await fetch(
+        const resp = await apiFetch(
           `${apiBase}/api/organizations/${encodeURIComponent(orgId)}`,
           { headers },
         );
@@ -187,7 +187,7 @@ export default function OrgSettings({
     let cancelled = false;
     void (async () => {
       try {
-        const resp = await fetch(`${apiBase}/api/vocabularies/countries`, { headers });
+        const resp = await apiFetch(`${apiBase}/api/vocabularies/countries`, { headers });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = (await resp.json()) as { countries?: CountryVocabularyEntry[] };
         if (!cancelled) setCountries(data.countries ?? []);
@@ -206,7 +206,7 @@ export default function OrgSettings({
   const patchOrg = useCallback(
     async (body: Record<string, unknown>): Promise<OrgSettingsRecord> => {
       if (!org) throw new Error("No organization loaded.");
-      const resp = await fetch(
+      const resp = await apiFetch(
         `${apiBase}/api/organizations/${encodeURIComponent(org.id)}`,
         { method: "PATCH", headers, body: JSON.stringify(body) },
       );

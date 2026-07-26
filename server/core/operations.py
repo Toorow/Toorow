@@ -62,7 +62,10 @@ class OperationIdempotencyConflict(RuntimeError):
 class OperationSpec:
     command_type: str
     actor: str
-    effective_org_id: str
+    # None = PLATFORM SCOPE (migration 109): an act of the platform that belongs to
+    # no tenant -- issuing / accepting an ENTRY invitation, which has no target
+    # organization. Every other operation still names the org it acts for.
+    effective_org_id: str | None
     resource_path: tuple[str, ...]
     idempotency_key: str
     host_context: dict[str, Any]
@@ -164,10 +167,17 @@ def _validate_json(
 
 
 def prepare_operation(spec: OperationSpec) -> PreparedOperation:
-    for name in ("command_type", "actor", "effective_org_id", "idempotency_key"):
+    for name in ("command_type", "actor", "idempotency_key"):
         value = getattr(spec, name)
         if not isinstance(value, str) or not value.strip():
             raise OperationValidationError(f"{name} is required")
+    # effective_org_id is required to be a real org id OR explicitly absent
+    # (None = platform scope). An empty / blank string is neither, and would
+    # silently become an FK violation: reject it here.
+    if spec.effective_org_id is not None and (
+        not isinstance(spec.effective_org_id, str) or not spec.effective_org_id.strip()
+    ):
+        raise OperationValidationError("effective_org_id is required")
     if len(spec.idempotency_key) > 255:
         raise OperationValidationError("idempotency_key is too long")
     if not spec.resource_path or len(spec.resource_path) > 16:
@@ -210,7 +220,7 @@ def _existing_operation(cur, prepared: PreparedOperation):
         """
         SELECT id, state, result, audit_event_id, outbox_event_id, request_hash
         FROM app.operations
-        WHERE effective_org_id = %s AND command_type = %s
+        WHERE effective_org_id IS NOT DISTINCT FROM %s AND command_type = %s
           AND idempotency_key_hash = %s
         """,
         (spec.effective_org_id, spec.command_type, prepared.idempotency_key_hash),
@@ -246,6 +256,12 @@ def execute_operation(
         if existing:
             return _replayed_result(existing, prepared)
         operation_id = f"op_{ULID()}"
+        # ON CONFLICT is UNTARGETED on purpose (migration 109): idempotency is now
+        # arbitrated by TWO objects -- uq_operations_idempotency for org-scoped rows,
+        # and the partial unique index operations_platform_idempotency for
+        # platform-scope rows (effective_org_id IS NULL), which the named constraint
+        # cannot cover because UNIQUE never collides on NULL. Naming one of them
+        # would let the other raise instead of routing to the replay path below.
         cur.execute(
             """
             INSERT INTO app.operations
@@ -255,8 +271,7 @@ def execute_operation(
                  idempotency_key_hash, trace_id, state)
             VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s,
                     %s::jsonb, %s, %s, %s, %s, 'pending')
-            ON CONFLICT (effective_org_id, command_type, idempotency_key_hash)
-            DO NOTHING RETURNING id
+            ON CONFLICT DO NOTHING RETURNING id
             """,
             (
                 operation_id,

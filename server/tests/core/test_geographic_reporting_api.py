@@ -99,6 +99,7 @@ def test_missing_preference_row_resolves_to_legacy_global_default():
 
     assert posture.as_dict() == {
         "geographic_mode": "global",
+        "local_markets": [],
         "local_market_country_codes": [],
     }
 
@@ -114,7 +115,14 @@ def test_geographic_upsert_writes_both_invariant_fields_together():
     [(sql, params)] = conn.cursor_instance.executed
     assert "geographic_mode = EXCLUDED.geographic_mode" in sql
     assert "local_market_country_codes = EXCLUDED.local_market_country_codes" in sql
-    assert params == ("proj_one", "local_markets", ["DE", "FR"])
+    assert "local_markets = EXCLUDED.local_markets" in sql
+    # Story 37.8: markets are the source of truth, the flat column stays in
+    # sync as the derived union so pre-37.8 readers keep working.
+    assert params[:3] == ("proj_one", "local_markets", ["DE", "FR"])
+    assert json.loads(params[3]) == [
+        {"id": "DE", "label": "DE", "country_codes": ["DE"]},
+        {"id": "FR", "label": "FR", "country_codes": ["FR"]},
+    ]
 
 
 def test_country_vocabulary_route_is_wired_through_build_asgi_app(monkeypatch):

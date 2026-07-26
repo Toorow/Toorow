@@ -1,0 +1,595 @@
+{
+  "version": 1,
+  "migrations": [
+    {
+      "identifier": "001",
+      "filename": "001_create_connection_ref.sql",
+      "sha256": "b99299338baf9efe23825d6d12a6310d0dc7d6368e2bdbe47d34bc5a772424f1"
+    },
+    {
+      "identifier": "002",
+      "filename": "002_create_audit_log.sql",
+      "sha256": "d16a02e97b461ed8b3b516acef7faa9ceffd0713c048ea70272e25c7ef1330da"
+    },
+    {
+      "identifier": "003",
+      "filename": "003_audit_log_append_only_trigger.sql",
+      "sha256": "2a40ba663686d17b0213db6e02e6c0c69fd817cbc0a9d3abc4c3f211fdeadd08"
+    },
+    {
+      "identifier": "004",
+      "filename": "004_audit_log_block_truncate.sql",
+      "sha256": "990b135b947769b38976d952025caa270a2d4374b2dd782fed87b9930d3f1fb0"
+    },
+    {
+      "identifier": "005",
+      "filename": "005_create_connection_health.sql",
+      "sha256": "e3a542ccd82b48ee5a50ab7ac7499c04e3cad310639c9481335e8b9809c85eb8"
+    },
+    {
+      "identifier": "006",
+      "filename": "006_create_pull_jobs.sql",
+      "sha256": "f1a55bc2fd1de59421482c4e1e84af71ffc45191acfbbd17c68669f9ce48b0a2"
+    },
+    {
+      "identifier": "007",
+      "filename": "007_create_pull_verifications.sql",
+      "sha256": "bbe5fd291f683eb3262b6099bf7574c37573023f79949ec527f3599a36c16c8b"
+    },
+    {
+      "identifier": "008",
+      "filename": "008_create_project_preferences.sql",
+      "sha256": "3b197d0f907e77dbb6026d91c5c4b5be347f3c895c5ceb2734241ed7be40bdf4"
+    },
+    {
+      "identifier": "009",
+      "filename": "009_create_context_events.sql",
+      "sha256": "608c8e89c1f1c2bcb204ef4de3e41ca77f6b223fdfd26cd86ab89590b0ce3f02"
+    },
+    {
+      "identifier": "010",
+      "filename": "010_add_trace_id_to_pull_jobs.sql",
+      "sha256": "9255d9d86b88ea889424f44775fc8e4e8aef63925cda38dcd1e5865b2fcd58af"
+    },
+    {
+      "identifier": "011",
+      "filename": "011_create_alert_tables.sql",
+      "sha256": "695e8397bf1ee1e4f902494b0a4d748d1302bb47316467d135c6480fa9681a32"
+    },
+    {
+      "identifier": "012",
+      "filename": "012_create_feedback.sql",
+      "sha256": "05f2de2e7214a6b1e87f1ade420d54bfba06757aad4dd6196a02b88f4419a124"
+    },
+    {
+      "identifier": "013",
+      "filename": "013_alert_firings_project_metric.sql",
+      "sha256": "f8c4cd72b0b50cd62da7775f64f4b114a957ec7088d765c9772e5c2b73904674"
+    },
+    {
+      "identifier": "014",
+      "filename": "014_project_reports.sql",
+      "sha256": "1959152b6afe1fe61635cca7a9aea79e296d11575359fa3bce31b50a4d72a4af"
+    },
+    {
+      "identifier": "015",
+      "filename": "015_notebooks.sql",
+      "sha256": "d99aee3869a8aab888121fe22c71dfbb981d544e4cbee3060131d3e80b82c714"
+    },
+    {
+      "identifier": "016",
+      "filename": "016_notebook_schedule.sql",
+      "sha256": "abdc3845c916e8ee8eeecacb534d8daf8d4a72a8089dc41fdf642fb59bf7e8b3"
+    },
+    {
+      "identifier": "017",
+      "filename": "017_morning_briefings.sql",
+      "sha256": "02a8fbf1451122fe0906415d98c5449a72f134f5057889c51ac077e6441a1297"
+    },
+    {
+      "identifier": "018",
+      "filename": "018_projects.sql",
+      "sha256": "b5f17b906c7227d83dd1ee3d2b12bc49718b845c41ef876f0a1709d41031d2ee"
+    },
+    {
+      "identifier": "019",
+      "filename": "019_project_modules.sql",
+      "sha256": "6f7553d3bcde122c00586cb4610323ad6f25dbdac0ff23b2545e59a88c77dc2c"
+    },
+    {
+      "identifier": "020",
+      "filename": "020_tenant_keys.sql",
+      "sha256": "62fa1f91c8ae65d5a3330ab2460f5550bafb96eda8f429f4f2a77755b6171b60"
+    },
+    {
+      "identifier": "021",
+      "filename": "021_project_members.sql",
+      "sha256": "bd56c938646c850aa56b719ca476d1207f763eacfe0e97fdec007400224990ec"
+    },
+    {
+      "identifier": "022",
+      "filename": "022_pull_jobs_dedup_index.sql",
+      "sha256": "ecb341ce8df8c915779c172d1a33859c7ec1ba46742e4a646f646e2297015006"
+    },
+    {
+      "identifier": "023",
+      "filename": "023_datastreams.sql",
+      "sha256": "89433cda0fbe85691f04d1a89f129e82bba4b201518e430c11b8da391148cd70"
+    },
+    {
+      "identifier": "024",
+      "filename": "024_dq_baselines.sql",
+      "sha256": "f339e7fefedaf90f1262d32f23679207d1d0aea6c54f2a6372e11dce0f2ad7ee"
+    },
+    {
+      "identifier": "025",
+      "filename": "025_report_overrides.sql",
+      "sha256": "1e8ccf75ad47895d5680fc29669c9879b2481e87ad06a5a19af8de8af303d881"
+    },
+    {
+      "identifier": "026",
+      "filename": "026_pull_verifications_rejected_rows.sql",
+      "sha256": "0caae9fef4e5641fb8c180f4f8d780b2e9e5b84ef0bcb22de48397e75a49910a"
+    },
+    {
+      "identifier": "027",
+      "filename": "027_gsc_query_column.sql",
+      "sha256": "971b2342effeb6f9cb9f234d89d4888f741f7bcb018cc053f17682a48eb252d3"
+    },
+    {
+      "identifier": "028",
+      "filename": "028_verification_source_prefs.sql",
+      "sha256": "b902edf208a3287a345d336ffd0d9c929c479223b02fff2194684616f3eb946c"
+    },
+    {
+      "identifier": "029",
+      "filename": "029_google_direct_token_store.sql",
+      "sha256": "d120fe9deb7c0ebd910e29618c3e4696f9d191469700b08caf7f2f4b8c604588"
+    },
+    {
+      "identifier": "030",
+      "filename": "030_versioned_datastream_intents.sql",
+      "sha256": "342fad51e848e32e9d9a7fc11c12a4ff44e6b7ca8ea4b9f484cd9b001e82d1ab"
+    },
+    {
+      "identifier": "031",
+      "filename": "031_context_layer.sql",
+      "sha256": "1ae4bc96256f020cf6cd53282e9bb61e82aa9581614e40a655b363b469907ab7"
+    },
+    {
+      "identifier": "032",
+      "filename": "032_datastream_field_mappings.sql",
+      "sha256": "dde4d88eb928f28c92bff30da36cfbf4837d608e9016d2e874fa2a443906d055"
+    },
+    {
+      "identifier": "033",
+      "filename": "033_projection_governance_prefs.sql",
+      "sha256": "0598bb3317870b65ff8f16b2f8b07c37ce18ab2c72c90eb7a5de7a74b06acc64"
+    },
+    {
+      "identifier": "034",
+      "filename": "034_query_adherence.sql",
+      "sha256": "11a70d42734949d8ffb3a2be7ceed6113396e12c9467d89f20ef89f3788d8d76"
+    },
+    {
+      "identifier": "035",
+      "filename": "035_organizations.sql",
+      "sha256": "59c4edee83d3a9d5c972f7cd0229a44245ddb1ded369f9b8b262fed9f84263bd"
+    },
+    {
+      "identifier": "036",
+      "filename": "036_org_branding_user_profiles.sql",
+      "sha256": "48d8ac7770719c4b8420fe660ab3bd82cea272ffe9362a1d7d60e9cb1c8dcb06"
+    },
+    {
+      "identifier": "037",
+      "filename": "037_credential_ownership_grants.sql",
+      "sha256": "872b863a077e71c9fb802c9e09edf349f5bb646480abf66704de422e794c3237"
+    },
+    {
+      "identifier": "038",
+      "filename": "038_flux_org_scope_project_many_to_many.sql",
+      "sha256": "46c7bdc444a36c785927f281e1edaf01fd9216386723186263227eab3d803518"
+    },
+    {
+      "identifier": "039",
+      "filename": "039_resource_grants.sql",
+      "sha256": "6f5586822c3f598a401fc907cd1fb3ee21895487cd363d2a53ee21bbce8fb371"
+    },
+    {
+      "identifier": "040",
+      "filename": "040_media_plans.sql",
+      "sha256": "b71e898868f6d8d54897ba110c55a246941339936083b6073986bcb603369f34"
+    },
+    {
+      "identifier": "041",
+      "filename": "041_media_plan_mappings.sql",
+      "sha256": "a84f724a49de174ae516d93031be3c69e86b5b7dbab22b2eace19b9ee3ab3471"
+    },
+    {
+      "identifier": "042",
+      "filename": "042_datastream_candidate_registry.sql",
+      "sha256": "8f163c6460bc100d07b3e7c3ffcd1fa37dc629d908ba850e00beec814fc2aac5"
+    },
+    {
+      "identifier": "043",
+      "filename": "043_gsc_full_coverage.sql",
+      "sha256": "bca7703397cf2941c6bca8eb02608f42ac1cd6242eef6ffb27b7291a83d655ba"
+    },
+    {
+      "identifier": "044",
+      "filename": "044_mediaplan_alert_prefs.sql",
+      "sha256": "4c0b121e4cc4185fa07ad7d446213a8c083153ed7571cd1f8874cce2a7be3d27"
+    },
+    {
+      "identifier": "045",
+      "filename": "045_media_plan_import_contracts.sql",
+      "sha256": "d582d2b11b88c78fa61917452f57952faff52c7e4c29426db9c5011de62bc5e1"
+    },
+    {
+      "identifier": "046",
+      "filename": "046_account_topology.sql",
+      "sha256": "99af58b6b8e88c0cf16f24548040c6245ebc64d4a0952e6607fde30db15b5407"
+    },
+    {
+      "identifier": "047",
+      "filename": "047_dataset_access_grants.sql",
+      "sha256": "0d9e66b27981476a5c6b5407c4fae41e5c87e0212cd16dd6d972da1e99816a80"
+    },
+    {
+      "identifier": "048",
+      "filename": "048_async_report_refs.sql",
+      "sha256": "c95a731ceb3fba4683cce91b4ef9de03f8b9f254ba0d87b3cb81598b5f3d3b5b"
+    },
+    {
+      "identifier": "049",
+      "filename": "049_metric_semantics.sql",
+      "sha256": "5e1bc2cd4dbab96d3d35b2da50750ee07824227abf96b561543a55930adc51da"
+    },
+    {
+      "identifier": "050",
+      "filename": "050_target_fields_governance.sql",
+      "sha256": "2c7bbe4d96d2ea9e360093132c517609a7128a31cb220594cbcf52e503d86072"
+    },
+    {
+      "identifier": "051",
+      "filename": "051_render_snapshots.sql",
+      "sha256": "2e4e6d2147a8a3ab9d5153d6fcc700dd5e551d9d7b916605f8cec0f7bbe035ab"
+    },
+    {
+      "identifier": "052",
+      "filename": "052_dimension_conformance.sql",
+      "sha256": "c85fe36e224f0a2a2081e4d42ce5a0fd08a73c632452c8b78c0d5b67b32eb7a5"
+    },
+    {
+      "identifier": "053",
+      "filename": "053_fx_conflict_resolutions.sql",
+      "sha256": "e31488aa57aea6e40baf78450a7fac80c78cce580eb7f7f2b7381e2011b9ef9a"
+    },
+    {
+      "identifier": "054",
+      "filename": "054_render_snapshot_shares.sql",
+      "sha256": "8cfbe4a441d09e35ee937bde86d46b762dd5390e0f79268a23a4431d0f0ec810"
+    },
+    {
+      "identifier": "055",
+      "filename": "055_context_events_mmm_cols.sql",
+      "sha256": "0005d9c21720250030b953710ffd0ee5918e45ac726aed612417068e8c929f36"
+    },
+    {
+      "identifier": "056",
+      "filename": "056_org_plan_entitlements.sql",
+      "sha256": "854d74236b86f72c76b1baad107e4e3fcfacfd9a6233873af00ba0b670ef28e0"
+    },
+    {
+      "identifier": "057",
+      "filename": "057_geographic_reporting_preferences.sql",
+      "sha256": "430c3174683cb6e78aae7f851bbda63cc6accc3fc733bf079849477286035c67"
+    },
+    {
+      "identifier": "058",
+      "filename": "058_geographic_change_previews.sql",
+      "sha256": "71f4435c13a2c938f2a44cb75fb537fe88e66724dd0d68c380bb5c4e4b8e59ee"
+    },
+    {
+      "identifier": "059",
+      "filename": "059_provider_account_exposure_gate.sql",
+      "sha256": "84a029c7f688fc0c9cbbe08cae93836d0d4ed86e24a474410489c72653b642a3"
+    },
+    {
+      "identifier": "060",
+      "filename": "060_operation_audit_outbox.sql",
+      "sha256": "5b9df0b20ef210862ff906133ac9a834b2ac343fbeae57cb5a1f8a7037c81cc7"
+    },
+    {
+      "identifier": "061",
+      "filename": "061_daily_insights.sql",
+      "sha256": "a4b8565e0454a74b6205c0bab18ca652c6ad216d1bf133a45ee1397a5e4a1227"
+    },
+    {
+      "identifier": "062",
+      "filename": "062_scoped_invitations.sql",
+      "sha256": "9e5c8d16bda43844b8cc9bace1e6f42595743c27548c689eae8399f695eb6e2a"
+    },
+    {
+      "identifier": "063",
+      "filename": "063_invitation_acceptance.sql",
+      "sha256": "d23b1c206ebddc06be9d300d8cff6fd2f40f23ec79aa2ac4b1474c8bbe30ea52"
+    },
+    {
+      "identifier": "064",
+      "filename": "064_invitation_lifecycle.sql",
+      "sha256": "f5470b05441cf2eeced0941e6828b7d917b0c3445ceb181ca17b17e30820133c"
+    },
+    {
+      "identifier": "065",
+      "filename": "065_setup_responsibilities.sql",
+      "sha256": "7e9c57fea347aaf1ef0e16964b73dcb51baec3c86fe1de70ad3880621cf1e027"
+    },
+    {
+      "identifier": "066",
+      "filename": "066_epic36_invitation_binding_hardening.sql",
+      "sha256": "bd4794d1a1a0f075e4da5d554da5dc42fd77c1dc73cca5d76a43da69f5ae81b8"
+    },
+    {
+      "identifier": "067",
+      "filename": "067_capability_catalogs.sql",
+      "sha256": "2f7b853b151cd5cb7a977ed1b36e7c97f22529678e91fff0cfd6d670690e3ff8"
+    },
+    {
+      "identifier": "068",
+      "filename": "068_delegated_source_authorization.sql",
+      "sha256": "a1acdb8a8f5e9df26765b602df6931103be210e858cd54aa26401ffcf0f1d3f7"
+    },
+    {
+      "identifier": "069",
+      "filename": "069_first_report_draft.sql",
+      "sha256": "d5151a373955b987c2b33d9d9ac3ce2ed61ea2a2f83679f812644bc846697cf4"
+    },
+    {
+      "identifier": "070",
+      "filename": "070_operations_recovery.sql",
+      "sha256": "f9c14b3a2a7b1e0c9f271f548c0b80f1b714179c97e2867e1bfa8dfe5d94f4e9"
+    },
+    {
+      "identifier": "071",
+      "filename": "071_mapping_proposals.sql",
+      "sha256": "aee8b878735bdbdc849559ea3c13d84724191fef20b65d41e4b7d8bffc305fbc"
+    },
+    {
+      "identifier": "072",
+      "filename": "072_recent_first_coverage.sql",
+      "sha256": "ca26f30f1a6a0e2a772caceac79365281f8ae89125be4fdd67c5c003a2c5b707"
+    },
+    {
+      "identifier": "073",
+      "filename": "073_governed_publication.sql",
+      "sha256": "bf09949d44aff289d5ae49a1acb4c28cb7670fe63b1ab7b92e61866704c537c4"
+    },
+    {
+      "identifier": "074",
+      "filename": "074_first_value_funnel.sql",
+      "sha256": "b48a0da7f41ea76bb8412a7f5e8c0ed2330063a2b4d3fe8e0e985e71ac01ec26"
+    },
+    {
+      "identifier": "075",
+      "filename": "075_host_preflight.sql",
+      "sha256": "e0a6e62eb36ad5faa6f70d81022419eacf9bee97141e290ecbff008f68576e88"
+    },
+    {
+      "identifier": "076",
+      "filename": "076_external_bq_readonly.sql",
+      "sha256": "538880a396a0ca956823ad00318a45aed5a8b360e56b3851712be25c1d779f34"
+    },
+    {
+      "identifier": "077",
+      "filename": "077_managed_feed_import_ledger.sql",
+      "sha256": "d1ff86ff3bfe6e1713a0f28ddfd4e8f29baa48f8a4d784e2136a966c1cfde20a"
+    },
+    {
+      "identifier": "078",
+      "filename": "078_csv_excel_import_contract.sql",
+      "sha256": "061fbf9fcac5d222b64909fe4d047332a083dfe7218c38d5466b2305457ca739"
+    },
+    {
+      "identifier": "079",
+      "filename": "079_google_sheets_sync.sql",
+      "sha256": "401e2e7015f823cd7b8faaf45e0c3703b565eba968bfdfd5d7dc6f4c79168c7d"
+    },
+    {
+      "identifier": "080",
+      "filename": "080_bounded_recovery.sql",
+      "sha256": "8796ad9acb599bc5842d0a9ca5bc6658d5f726ef277c701b0cacc2a6d2b89ea3"
+    },
+    {
+      "identifier": "081",
+      "filename": "081_dataset_rollback.sql",
+      "sha256": "c608049d4994cf1bc46e6d401cc84b3f9520c02ae10d3d81b8970b92d6a074e1"
+    },
+    {
+      "identifier": "082",
+      "filename": "082_connector_installation_state.sql",
+      "sha256": "6772aa350aedf40bf8b46f2d39b3a08bb8039ed93ec6d7ac2d78fc2bde8c043f"
+    },
+    {
+      "identifier": "083",
+      "filename": "083_metric_definitions_monetary.sql",
+      "sha256": "a7ce9a896a2e2778ca9b8d93df3a172f0aeba634f7fd652e67469aff0ddfe6ee"
+    },
+    {
+      "identifier": "084",
+      "filename": "084_connector_domain_config.sql",
+      "sha256": "99d27a3fe17467fcda79d4fb141d1cda3cd68e538e6ab39fa8fae416e57a7b17"
+    },
+    {
+      "identifier": "085",
+      "filename": "085_connector_verification_runs.sql",
+      "sha256": "2bd69f9070def49ec29173a6ec5633475804d646b7c9ec41790f3726f381b28d"
+    },
+    {
+      "identifier": "086",
+      "filename": "086_tracked_entity_registry.sql",
+      "sha256": "ff1b300cc6cbe203951e58025cb8f1f5b24235e9291121fc5fda4a22cbaea290"
+    },
+    {
+      "identifier": "087",
+      "filename": "087_connector_activations.sql",
+      "sha256": "0072719af5dbd9f974ccd11243fee64005ea8c97843d2f860dc5b434c19c2ba2"
+    },
+    {
+      "identifier": "088",
+      "filename": "088_import_templates.sql",
+      "sha256": "35b5380e494ae11a81c964f0de17464da3f1cacf0cf42b37f1f32ee59b61d2ce"
+    },
+    {
+      "identifier": "089",
+      "filename": "089_entity_source_bindings.sql",
+      "sha256": "8c690871c8543da5a45434fb4b57e0fae55ea3f927089c56c029c5d9fe8b2c79"
+    },
+    {
+      "identifier": "090",
+      "filename": "090_inbound_brand_matching.sql",
+      "sha256": "ec0a6a99b3bdb8fcc867658f1f04f76c5c78791930bc25bbbccae1b539f8b0b9"
+    },
+    {
+      "identifier": "091",
+      "filename": "091_datastream_inbound_credentials.sql",
+      "sha256": "32ec97903801dbe631c1b1bd9ba60e7184e4f4aeb052eca1c385a590d05425b1"
+    },
+    {
+      "identifier": "092",
+      "filename": "092_entity_scope_change_previews.sql",
+      "sha256": "5589c263a146d33a380c233a58535cb90440d5ca4b1dbba59e8901b030fffa0b"
+    },
+    {
+      "identifier": "093",
+      "filename": "093_datastream_data_role.sql",
+      "sha256": "2137e5f1436070b7823cc4914cc41b1421bcc70d3e53300ff60f187f1f55c8b4"
+    },
+    {
+      "identifier": "094",
+      "filename": "094_inbound_receipts.sql",
+      "sha256": "e078830f92aed9614339e29ae05522fdc058ef313b0c7a1c6a8d586011475ad0"
+    },
+    {
+      "identifier": "095",
+      "filename": "095_knowledge_and_procedures.sql",
+      "sha256": "5cdb3402120e8a23b194ef84fe6957a73832a058841359383af42a98f6109fc6"
+    },
+    {
+      "identifier": "096",
+      "filename": "096_eval_golden_questions_runs.sql",
+      "sha256": "ae6e40204dc7b720a6f515259b95ab1f6243162859d4a1e2746a627246840d4c"
+    },
+    {
+      "identifier": "097",
+      "filename": "097_file_source_templates.sql",
+      "sha256": "714c21416d0d857514da23f9567f681804291bfaf3d834cd500bd8f7b3e3c7a0"
+    },
+    {
+      "identifier": "098",
+      "filename": "098_rgpd_org_erasure_hatch.sql",
+      "sha256": "4ea9d1b804ad3e5da5a789b41db744821106071ac0d55e714e63341122eb5714"
+    },
+    {
+      "identifier": "099",
+      "filename": "099_rgpd_erasure_trigger_guards.sql",
+      "sha256": "19aa8dd56a7e25d2217cd8e261d699f14087d94c4dc6ecf75402a348c3108952"
+    },
+    {
+      "identifier": "100",
+      "filename": "100_org_chain_not_null.sql",
+      "sha256": "bfbfd160b59fdf8a03fa643f2687c13d054f2cc2e46cc53e8988ca649ba0b90f"
+    },
+    {
+      "identifier": "101",
+      "filename": "101_credential_owner_org_or_person.sql",
+      "sha256": "eda0ee81a153e389a9b65a693ac6221e4633b57aa88d566fd68ebe9b267153c6"
+    },
+    {
+      "identifier": "102",
+      "filename": "102_local_markets_as_country_groups.sql",
+      "sha256": "f48a9617f8f5b9336c5953b7d524a3781fdb81df4f397363a4ef18f8904434f6"
+    },
+    {
+      "identifier": "103",
+      "filename": "103_fix_external_dispatch_null_source_kind.sql",
+      "sha256": "a51a8014a91ee12472cb0c8dfc023be69faff2a010fa64780a9a8431ed35ff65"
+    },
+    {
+      "identifier": "104",
+      "filename": "104_market_bindings.sql",
+      "sha256": "acdefa4ee96e79d8d0cfec6403a56d78cab18ea55446c36e763f965cce311684"
+    },
+    {
+      "identifier": "105",
+      "filename": "105_language_dimension_family.sql",
+      "sha256": "c9e3b05625c29744d4798abe193eedd3e4fbf60359ccb031a180ad75977c5659"
+    },
+    {
+      "identifier": "106",
+      "filename": "106_dimension_labels.sql",
+      "sha256": "84c32e5bfb03517c252679153ec1660233a7bfe422253985f9c02006f3457053"
+    },
+    {
+      "identifier": "107",
+      "filename": "107_target_fields_versions.sql",
+      "sha256": "c195fa876dc9f8a3a860dc28b3e61a53de755a417bc47cb1fd9bf7556c446b3d"
+    },
+    {
+      "identifier": "108",
+      "filename": "108_knowledge_entries_to_context_topics.sql",
+      "sha256": "b56513945ee59fba926adde3a7748a9e8d66c6f96d1e2d06e949031583abead0"
+    },
+    {
+      "identifier": "109",
+      "filename": "109_entry_invitation_without_org.sql",
+      "sha256": "c46edc8dcb2a281445a76b5b6b7b13c8028a6ed746059a5caa2568876cabf1ae"
+    },
+    {
+      "identifier": "110",
+      "filename": "110_datastream_hourly_schedule.sql",
+      "sha256": "fbaf60724884c1bfb3092de4d26ce31e8256cb8557766a78bacabc813fc2f305"
+    },
+    {
+      "identifier": "111",
+      "filename": "111_canonical_identity.sql",
+      "sha256": "024f2173cbfc4d9fed9defff73fe24971e6088cffcb170037398f9f265a2a1df"
+    },
+    {
+      "identifier": "112",
+      "filename": "112_invitation_canonical_person.sql",
+      "sha256": "4e04a65af6b3a889ae73555dd0edc70c15f52022fed2fdce2feae98b160152f1"
+    },
+    {
+      "identifier": "113",
+      "filename": "113_context_topics_platform_title_unique.sql",
+      "sha256": "c6d3fd0acd8c3ecdec3d8038c9b74398cbd00e4f2d2e346d0bec5d4f27a5d148"
+    },
+    {
+      "identifier": "114",
+      "filename": "114_self_hosted_instance_claim.sql",
+      "sha256": "f56988aecc6f9304daa683bd3c2f591ce01c940e7fcb8e217446065384c95b19"
+    },
+    {
+      "identifier": "115",
+      "filename": "115_hosted_entry_scope.sql",
+      "sha256": "3084e62e75825a4e12f1da8190d1ec80ad5af49f30881f52cc21fa0e122ea487"
+    },
+    {
+      "identifier": "116",
+      "filename": "116_entry_confirmations.sql",
+      "sha256": "08ce6cff1fd9102f1b699d58ddcbc231234f0baea4d1d5ef8050c7382b5f9015"
+    },
+    {
+      "identifier": "117",
+      "filename": "117_context_graph_target_field_nodes.sql",
+      "sha256": "3e909cd5f8166758ab8beb8c00e7b5dcbd46f2134e65bb8dff69c638e461aed3"
+    },
+    {
+      "identifier": "118",
+      "filename": "118_context_owner_column.sql",
+      "sha256": "64f8beec3058b0daeef94e4ee629083dc355708a4e2e28f49cacde87ccdd118e"
+    }
+  ]
+}

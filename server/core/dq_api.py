@@ -63,6 +63,11 @@ _DQ_TYPES = (
     "dq_duplication",
     "dq_schema",
     "dq_date_format",
+    # Story 37.9: la geographie non resolue devient un moniteur DQ de plein droit.
+    # Sans cela, un agent interroge sur la fiabilite des donnees ne voit pas le trou
+    # geographique -- l'evidence country_value_unmapped ne vivait que dans la liste
+    # d'alertes de l'enveloppe de rapport.
+    "dq_geography",
 )
 
 # French display labels for each monitor.
@@ -74,6 +79,7 @@ _MONITOR_LABELS: dict[str, str] = {
     "dq_duplication": "Doublons",
     "dq_schema": "Coherence de schema",
     "dq_date_format": "Lignes rejetees",
+    "dq_geography": "Geographie non resolue",
 }
 
 # ---------------------------------------------------------------------------

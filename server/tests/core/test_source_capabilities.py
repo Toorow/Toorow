@@ -358,3 +358,48 @@ def test_exact_bundle_and_subset_are_preserved_without_inference():
     assert normalize_capabilities(
         manifest, project_id="p", connection_ref_id="c"
     )["reports"][0]["selection_mode"] == "subset"
+
+
+def test_project_connection_state_uses_canonical_exact_account_grant_authority() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from core.source_capabilities import get_project_connection_state
+
+    cursor = MagicMock()
+    cursor.__enter__.return_value = cursor
+    cursor.__exit__.return_value = False
+    cursor.fetchone.return_value = (
+        "meta_ads",
+        "active",
+        True,
+        "ok",
+        "account-42",
+        "org-viewer",
+    )
+    conn = MagicMock()
+    conn.cursor.return_value = cursor
+
+    with patch(
+        "core.project_access.resolve_provider_account_access",
+        return_value=SimpleNamespace(allowed=True),
+    ) as resolve:
+        state = get_project_connection_state(
+            project_id="proj-viewer",
+            connection_ref_id="cref-owner",
+            identity="member@example.com",
+            conn=conn,
+        )
+
+    assert state == ("meta_ads", "active", True, "ok")
+    sql, params = cursor.execute.call_args.args
+    assert "connection_account_scope" in sql
+    assert params == ("proj-viewer", "cref-owner")
+    resolve.assert_called_once_with(
+        "member@example.com",
+        conn,
+        credential_id="cref-owner",
+        external_account_id="account-42",
+        beneficiary_org_id="org-viewer",
+        project_id="proj-viewer",
+    )

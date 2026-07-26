@@ -468,7 +468,7 @@ def test_create_share_endpoint_ok():
 
     with (
         patch("core.db.get_connection", return_value=mock_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch(
             "core.snapshot_shares.create_share",
             return_value=("rss_test", "tok_abc123"),
@@ -497,7 +497,7 @@ def test_create_share_endpoint_not_found():
 
     with (
         patch("core.db.get_connection", return_value=mock_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch("core.snapshot_shares.create_share", return_value=None),
     ):
         resp = client.post(
@@ -518,7 +518,7 @@ def test_create_share_endpoint_ad5_denied():
 
     with (
         patch("core.db.get_connection", return_value=mock_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=False),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=False),
     ):
         resp = client.post(
             "/api/rendus/snapshots/rsn_projet_a/share?project_id=proj_b"
@@ -549,7 +549,7 @@ def test_list_shares_endpoint_ok():
 
     with (
         patch("core.db.get_connection", return_value=mock_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch("core.snapshot_shares.list_shares", return_value=fake_shares),
     ):
         resp = client.get(
@@ -576,7 +576,7 @@ def test_revoke_share_endpoint_ok():
 
     with (
         patch("core.db.get_connection", return_value=mock_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch("core.snapshot_shares.revoke_share", return_value=True),
         patch("core.audit.write_audit_row"),
     ):
@@ -598,7 +598,7 @@ def test_revoke_share_endpoint_not_found():
 
     with (
         patch("core.db.get_connection", return_value=mock_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch("core.snapshot_shares.revoke_share", return_value=False),
     ):
         resp = client.delete(
@@ -619,7 +619,7 @@ def test_revoke_share_endpoint_ad5_denied():
 
     with (
         patch("core.db.get_connection", return_value=mock_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=False),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=False),
     ):
         resp = client.delete(
             "/api/rendus/shares/rss_projet_a?project_id=proj_b"
@@ -910,7 +910,7 @@ def test_create_share_endpoint_audit_called_with_correct_signature():
 
     with (
         patch("core.db.get_connection", return_value=mock_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch(
             "core.snapshot_shares.create_share",
             return_value=("rss_audit", "tok_audit_abc"),
@@ -953,7 +953,7 @@ def test_revoke_share_endpoint_audit_called_with_correct_signature():
 
     with (
         patch("core.db.get_connection", return_value=mock_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch("core.snapshot_shares.revoke_share", return_value=True),
         patch("core.audit.write_audit_row", autospec=True) as mock_audit,
     ):

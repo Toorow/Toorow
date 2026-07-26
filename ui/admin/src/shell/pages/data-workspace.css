@@ -20,3 +20,56 @@
  * CSS variables only (--rose/--ink/--line/--muted/--success/--warning/--error/
  * --info/--page/--surface); numbers use the Geist tabular .number class.
  */
+
+/* --- Load / empty states -------------------------------------------------- */
+/* The page used to render a literal fleet and a literal "Trusted / 4 connected
+   sources" summary for BOTH a failed load and an empty project. These two
+   states now read as what they are. */
+.dw-status {
+  margin: 0;
+  padding: 28px 20px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: center;
+}
+.dw-load-error {
+  margin: 18px 20px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--surface));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--error) 7%, var(--surface));
+}
+.dw-load-error p {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* Datastream name + "Connected sources" card are real controls (they navigate),
+   so they are <button>s rather than href="#" anchors; reset the UA chrome and
+   keep the shell's visual treatment. */
+.fleet .name-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+button.summary-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Published-data verdict: colored by the derived signal, never a constant. */
+.dw-trust-success { color: var(--success); }
+.dw-trust-warning { color: var(--warning); }
+.dw-trust-info { color: var(--muted); }

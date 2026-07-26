@@ -128,6 +128,14 @@ def _extend_golden_duckdb_for_gsc(
     }:
         return
 
+    # Being autouse, requesting module_path below forces EVERY test in this
+    # directory through the fixture's "no --module-path -> skip" branch, even
+    # tests that need no module at all (Story 37.7's country-vocabulary data
+    # tests). Those then never run in a normal suite pass, so they gate nothing.
+    # With no --module-path there is also nothing to patch: return first.
+    if not request.config.getoption("--module-path"):
+        return
+
     module_path = request.getfixturevalue("module_path")
     if module_path.name != "gsc":
         return
@@ -177,6 +185,19 @@ def _extend_golden_duckdb_for_gsc(
                             ), 0)
                             ELSE AVG(CASE WHEN metric = 'average_position' THEN value END)
                         END AS average_position,
+                        -- Colonnes de preuve (AD-4): la couche semantique
+                        -- geographique re-agrege les lignes pays apres regroupement
+                        -- par marche a partir du poids, jamais en moyennant un
+                        -- ratio deja calcule. warehouse.py les exige via
+                        -- _SEMANTIC_EVIDENCE_BY_METRIC -- sans elles la vue de
+                        -- fixture divergeait du modele dbt et la requete cassait
+                        -- sur "semantic_weight not found".
+                        SUM(
+                            CASE WHEN metric = 'impressions' THEN value ELSE 0 END
+                        ) AS impressions_weight,
+                        SUM(
+                            CASE WHEN metric = 'impressions' THEN value ELSE 0 END
+                        ) AS semantic_weight,
                         MAX(pull_id) AS pull_id,
                         MAX(loaded_at) AS loaded_at
                     FROM main_marts.fact_daily_kpi

@@ -72,16 +72,38 @@ CREATE INDEX IF NOT EXISTS projects_status ON app.projects (status);
 -- 2. Seed parent rows BEFORE adding FK constraints (migration-safety).
 --    id='default' matches all existing project_id='default' values.
 -- ---------------------------------------------------------------------------
-INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
-VALUES ('default', 'Default', 'default', 'active', 'EUR', 'Europe/Paris', 'system')
-ON CONFLICT DO NOTHING;
+-- Ces deux seeds datent d'AVANT la couche organisation (035) : ils creent des
+-- projets sans org_id. Depuis la migration 100, `projects.org_id` est NOT NULL --
+-- tout projet appartient a une organisation, sans exception -- et rejouer ce
+-- fichier sur une base moderne (ce que font les fixtures de test qui reconstruisent
+-- une chaine de migrations) echouait donc sur une NotNullViolation.
+--
+-- Le seed reste indispensable sur une base d'epoque : les FK ajoutees plus bas
+-- referencent ces lignes. Il est donc conditionne au schema reel plutot que
+-- supprime -- et sur une base qui connait deja les organisations, il ne peut plus
+-- fabriquer l'orphelin que la chaine interdit.
+DO $seed_legacy_projects$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'app' AND table_name = 'projects' AND column_name = 'org_id'
+    ) THEN
+        RAISE NOTICE '018: schema org-aware -- seeds legacy sans org_id ignores';
+        RETURN;
+    END IF;
 
--- Seed the integration-test project value discovered in the live connection_ref.
--- Without this, the connection_ref FK below would reject the existing row.
-INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
-VALUES ('integ-test-project', 'Integration Test Project', 'integ-test-project',
-        'active', 'EUR', 'Europe/Paris', 'system')
-ON CONFLICT DO NOTHING;
+    INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
+    VALUES ('default', 'Default', 'default', 'active', 'EUR', 'Europe/Paris', 'system')
+    ON CONFLICT DO NOTHING;
+
+    -- Seed the integration-test project value discovered in the live connection_ref.
+    -- Without this, the connection_ref FK below would reject the existing row.
+    INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
+    VALUES ('integ-test-project', 'Integration Test Project', 'integ-test-project',
+            'active', 'EUR', 'Europe/Paris', 'system')
+    ON CONFLICT DO NOTHING;
+END
+$seed_legacy_projects$;
 
 -- ---------------------------------------------------------------------------
 -- 3. connection_ref revocation columns (AC4).

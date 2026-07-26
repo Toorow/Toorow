@@ -7,10 +7,11 @@
 -- Epic 37 geographic_change machinery, keyed on the added entity/binding instead of a
 -- geographic posture.
 --
--- Migration number: 086 (40.1 tracked_entity_registry), 087 (two collided:
--- 087_connector_activations + 087_datastream_hourly_schedule), 088 (import_templates),
--- 089 (entity_source_bindings, 40.2), 090 (inbound_brand_matching, 40.3), 091
+-- Migration number: 086 (40.1 tracked_entity_registry), 087
+-- (connector_activations), 088 (import_templates), 089 (entity_source_bindings,
+-- 40.2), 090 (inbound_brand_matching, 40.3), 091
 -- (datastream_inbound_credentials) are all TAKEN; 092 is the next free number.
+-- The former duplicate hourly migration was repaired as 110.
 --
 -- SOFT dependencies (documented, not enforced here beyond app.projects):
 --   * entity_id references the 40.1 tracked-entity master (app.tracked_entities, 086). It

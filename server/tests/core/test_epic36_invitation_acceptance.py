@@ -48,6 +48,20 @@ def _conn(*rows):
     return conn, cur
 
 
+def _exchange_result(invitations):
+    return invitations.InvitationExchangeResult(
+        "session-secret",
+        600,
+        invitations.InvitationExchangePreview(
+            organization_id="org-1",
+            organization_label="Acme",
+            role_derived="member",
+            explicit_grants=(),
+            expires_at=datetime(2030, 1, 2, tzinfo=timezone.utc),
+        ),
+    )
+
+
 def test_exchange_requires_exact_identity_and_persists_only_hashes(monkeypatch):
     from core import invitations
 
@@ -65,11 +79,18 @@ def test_exchange_requires_exact_identity_and_persists_only_hashes(monkeypatch):
             bearer_hash,
             None,
             "policy-v1",
+            "org-1",
+            "member",
+            [{"scope_type": "project", "scope_id": "proj-1", "capability": "view"}],
+            "Acme",
         )
     )
 
     result = invitations.exchange_invitation(
-        conn, bearer=bearer, verified_identity="User@example.com"
+        conn,
+        bearer=bearer,
+        verified_identity="User@example.com",
+        person_id="person-1",
     )
 
     assert result.session_value
@@ -79,6 +100,7 @@ def test_exchange_requires_exact_identity_and_persists_only_hashes(monkeypatch):
     assert "FOR UPDATE" in sql
     assert "bearer_consumed_at" in sql
     assert "INSERT INTO app.invitation_exchange_sessions" in sql
+    assert cur.execute.call_args_list[-1].args[1][-1] == "person-1"
     conn.commit.assert_not_called()
 
 
@@ -161,7 +183,7 @@ def test_acceptance_materializes_exact_role_and_grants_atomically(monkeypatch):
 
     assert result.role == "member"
     assert result.explicit_none is False
-    assert result.next_url == "/onboarding/responsibilities"
+    assert result.next_url == "/p/proj-1/overview/getting-started"
     sql = " ".join(call.args[0] for call in cur.execute.call_args_list)
     assert "INSERT INTO app.org_members" in sql
     assert sql.count("INSERT INTO app.resource_grants") == 2
@@ -192,7 +214,7 @@ def test_exchange_api_sets_only_strict_http_only_cookie(monkeypatch):
     monkeypatch.setattr(
         invitations,
         "exchange_invitation",
-        lambda *_a, **_k: invitations.InvitationExchangeResult("session-secret", 600),
+        lambda *_a, **_k: _exchange_result(invitations),
     )
 
     response = asyncio.run(
@@ -202,7 +224,10 @@ def test_exchange_api_sets_only_strict_http_only_cookie(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert json.loads(response.body) == {"ready_to_accept": True}
+    payload = json.loads(response.body)
+    assert payload["ready_to_accept"] is True
+    assert payload["preview"]["organization_label"] == "Acme"
+    assert payload["preview"]["authority"]["explicit_none"] is True
     cookie = response.headers["set-cookie"].lower()
     assert "httponly" in cookie
     assert "secure" in cookie
@@ -362,3 +387,152 @@ def test_consumed_acceptance_returns_resolved_state_without_replaying_effects(mo
     sql = " ".join(call.args[0] for call in cur.execute.call_args_list)
     assert "INSERT INTO app.org_members" not in sql
     assert "INSERT INTO app.resource_grants" not in sql
+
+
+def test_canonical_acceptance_materializes_authority_for_bound_person(monkeypatch):
+    from core import invitations, operations, setup_responsibilities
+
+    monkeypatch.setenv("TOOROW_INVITATION_PEPPER", "p" * 32)
+    monkeypatch.setattr(
+        setup_responsibilities,
+        "bootstrap_journey_from_acceptance",
+        lambda *_a, **_k: "setup-1",
+    )
+    identity_hash = invitations.prepare_identity_binding("user@example.com").identity_hash
+    conn, cur = _conn(
+        (
+            "ixs-1",
+            "invite-1",
+            identity_hash,
+            datetime.now(timezone.utc) + timedelta(minutes=5),
+            None,
+            None,
+            "org-1",
+            "member",
+            [],
+            "pending",
+            datetime.now(timezone.utc) + timedelta(hours=1),
+            None,
+            "policy-v1",
+            None,
+            "issuer-1",
+            "person-1",
+        ),
+        (0,),
+        None,
+        ("proj-canonical",),
+    )
+    captured = {}
+
+    def execute(operation_conn, spec, *, mutation):
+        captured["spec"] = spec
+        changed = mutation(operation_conn, "op-accept")
+        return operations.OperationResult(
+            "op-accept", "succeeded", changed.result, "audit-1", "outbox-1", False
+        )
+
+    monkeypatch.setattr(invitations, "execute_operation", execute)
+
+    result = invitations.accept_invitation(
+        conn,
+        session_value="s" * 48,
+        verified_identity="user@example.com",
+        person_id="person-1",
+        confirmed=True,
+        idempotency_key="accept-canonical-1",
+        host_context={"host": "rest"},
+        trace_id=None,
+    )
+
+    assert result.role == "member"
+    assert result.next_url == "/p/proj-canonical/overview/getting-started"
+    assert captured["spec"].actor == "person-1"
+    mutation_params = repr(
+        [call.args[1] for call in cur.execute.call_args_list if len(call.args) > 1]
+    )
+    assert "person-1" in mutation_params
+    assert "user@example.com" not in mutation_params
+
+
+def test_canonical_acceptance_rejects_a_different_or_legacy_person(monkeypatch):
+    from core import invitations
+
+    monkeypatch.setenv("TOOROW_INVITATION_PEPPER", "p" * 32)
+    identity_hash = invitations.prepare_identity_binding("user@example.com").identity_hash
+    base_row = (
+        "ixs-1",
+        "invite-1",
+        identity_hash,
+        datetime.now(timezone.utc) + timedelta(minutes=5),
+        None,
+        None,
+        "org-1",
+        "member",
+        [],
+        "pending",
+        datetime.now(timezone.utc) + timedelta(hours=1),
+        None,
+        "policy-v1",
+        None,
+        "issuer-1",
+    )
+
+    for bound_person in ("person-1", None):
+        conn, cur = _conn((*base_row, bound_person))
+        with pytest.raises(invitations.InvitationExchangeError, match="unavailable"):
+            invitations.accept_invitation(
+                conn,
+                session_value="s" * 48,
+                verified_identity="user@example.com",
+                person_id="person-2",
+                confirmed=True,
+                idempotency_key="accept-canonical-mismatch",
+                host_context={"host": "rest"},
+                trace_id=None,
+            )
+        assert len(cur.execute.call_args_list) == 1
+
+
+def test_exchange_api_binds_session_to_canonical_person(monkeypatch):
+    from core import admin_api, db, invitations, project_access
+    from core.api_auth import ResolvedPrincipal
+
+    conn, _ = _conn()
+
+    @contextmanager
+    def get_connection():
+        yield conn
+
+    principal = ResolvedPrincipal(
+        person_id="person-1",
+        issuer="issuer-1",
+        subject="subject-1",
+        verified_email="user@example.com",
+        display_name="User",
+    )
+    captured = {}
+
+    def exchange(*_args, **kwargs):
+        captured.update(kwargs)
+        return _exchange_result(invitations)
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "static")
+    monkeypatch.setenv("TOOROW_CANONICAL_IDENTITY_ENABLED", "1")
+    monkeypatch.setattr(db, "get_connection", get_connection)
+    monkeypatch.setattr(
+        admin_api,
+        "_check_canonical_principal",
+        AsyncMock(return_value=(True, principal)),
+    )
+    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
+    monkeypatch.setattr(invitations, "exchange_invitation", exchange)
+
+    response = asyncio.run(
+        admin_api._exchange_invitation(
+            _request("/api/invitations/exchange", {"bearer": "raw-secret"})
+        )
+    )
+
+    assert response.status_code == 200
+    assert captured["verified_identity"] == "user@example.com"
+    assert captured["person_id"] == "person-1"

@@ -545,7 +545,7 @@ def test_pull_catalog_daily_dotted_path_projected(connector, tmp_path, monkeypat
     }
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-key"):
-        result = connector.pull_catalog_daily(
+        connector.pull_catalog_daily(
             connection_id="conn_dot", date_from="2026-07-01", date_to="2026-07-01",
             project_id="proj_dot", pull_id="pull_cd_dot",
             selection=selection,

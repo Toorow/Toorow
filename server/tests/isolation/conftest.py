@@ -38,9 +38,7 @@ os.environ.setdefault("SCHEDULER_ENABLED", "false")
 _DSN = os.environ.get("TEST_POSTGRES_DSN")
 
 # Every module in this package requires TEST_POSTGRES_DSN.
-pytestmark = pytest.mark.skipif(
-    not _DSN, reason="Requires TEST_POSTGRES_DSN"
-)
+pytestmark = pytest.mark.skipif(not _DSN, reason="Requires TEST_POSTGRES_DSN")
 
 ALPHA_ID = "proj_alpha"
 BETA_ID = "proj_beta"
@@ -78,15 +76,38 @@ def _seed_duckdb_mart(path: str) -> None:
             )
             """
         )
-        con.execute("DELETE FROM main_marts.fact_daily_kpi WHERE project_id IN (?, ?)",
-                    [ALPHA_ID, BETA_ID])
+        con.execute(
+            "DELETE FROM main_marts.fact_daily_kpi WHERE project_id IN (?, ?)", [ALPHA_ID, BETA_ID]
+        )
         rows = []
         for d in range(1, 11):
             day = date(2026, 7, d)
-            rows.append((ALPHA_ID, day, "google-analytics", "sessions",
-                         "device", "desktop", 1000.0 + d, "pull_alpha", datetime(2026, 7, 11)))
-            rows.append((BETA_ID, day, "gsc", "average_position",
-                         "query", "brand", 3.0 + d, "pull_beta", datetime(2026, 7, 11)))
+            rows.append(
+                (
+                    ALPHA_ID,
+                    day,
+                    "google-analytics",
+                    "sessions",
+                    "device",
+                    "desktop",
+                    1000.0 + d,
+                    "pull_alpha",
+                    datetime(2026, 7, 11),
+                )
+            )
+            rows.append(
+                (
+                    BETA_ID,
+                    day,
+                    "gsc",
+                    "average_position",
+                    "query",
+                    "brand",
+                    3.0 + d,
+                    "pull_beta",
+                    datetime(2026, 7, 11),
+                )
+            )
         con.executemany(
             "INSERT INTO main_marts.fact_daily_kpi VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
@@ -103,8 +124,8 @@ def _seed_duckdb_mart(path: str) -> None:
 def _seed_project(cur, pid: str, slug: str, name: str) -> None:
     cur.execute(
         """
-        INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
-        VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'isolation-test')
+        INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by, org_id)
+        VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'isolation-test', 'org_test_fixture')
         ON CONFLICT (id) DO NOTHING
         """,
         (pid, name, slug),
@@ -115,8 +136,9 @@ def _seed_connection(cur, conn_id: str, pid: str, provider: str) -> None:
     cur.execute(
         """
         INSERT INTO app.connection_ref
-            (id, provider, nango_connection_id, project_id, status, enabled)
-        VALUES (%s, %s, %s, %s, 'active', TRUE)
+            (id, provider, nango_connection_id, project_id, status, enabled, owner_org_id,
+                owner_identity)
+        VALUES (%s, %s, %s, %s, 'active', TRUE, 'org_test_fixture', 'tester@example.com')
         ON CONFLICT (id) DO NOTHING
         """,
         (conn_id, provider, f"nango_{conn_id}", pid),
@@ -251,18 +273,30 @@ def two_projects(tmp_path_factory):
     _seed_duckdb_mart(duckdb_path)
 
     alpha = {
-        "id": ALPHA_ID, "name": "Alpha", "slug": "alpha",
-        "connection_id": "conn_alpha", "notebook_id": "nb_alpha",
-        "notebook_run_id": "nbrun_alpha", "firing_id": "fire_alpha",
-        "briefing_id": "brief_alpha", "duckdb_path": duckdb_path,
-        "metric": "sessions", "module": "google-analytics",
+        "id": ALPHA_ID,
+        "name": "Alpha",
+        "slug": "alpha",
+        "connection_id": "conn_alpha",
+        "notebook_id": "nb_alpha",
+        "notebook_run_id": "nbrun_alpha",
+        "firing_id": "fire_alpha",
+        "briefing_id": "brief_alpha",
+        "duckdb_path": duckdb_path,
+        "metric": "sessions",
+        "module": "google-analytics",
     }
     beta = {
-        "id": BETA_ID, "name": "Beta", "slug": "beta",
-        "connection_id": "conn_beta", "notebook_id": "nb_beta",
-        "notebook_run_id": "nbrun_beta", "firing_id": "fire_beta",
-        "briefing_id": "brief_beta", "duckdb_path": duckdb_path,
-        "metric": "average_position", "module": "gsc",
+        "id": BETA_ID,
+        "name": "Beta",
+        "slug": "beta",
+        "connection_id": "conn_beta",
+        "notebook_id": "nb_beta",
+        "notebook_run_id": "nbrun_beta",
+        "firing_id": "fire_beta",
+        "briefing_id": "brief_beta",
+        "duckdb_path": duckdb_path,
+        "metric": "average_position",
+        "module": "gsc",
     }
 
     conn = psycopg.connect(_DSN)

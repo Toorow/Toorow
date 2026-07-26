@@ -725,6 +725,73 @@ class TestConfirmBoundedRecovery:
         assert resp.json()["operation_id"] == "op_1"
 
 
+def test_bounded_prepare_resolves_shared_project_flux_owner_scope():
+    conn, fake_get = _fake_conn()
+    result = {"preparation_id": "prep_shared", "kind": "reload", "interval": {}}
+    with (
+        _auth_ok(),
+        _role(True),
+        patch("core.db.get_connection", new=fake_get),
+        patch(
+            "core.admin_api._resolve_datastream_route_scope",
+            return_value="proj_owner",
+        ) as resolve_scope,
+        patch("core.admin_api._load_datastream_org_id", return_value="org_1") as load_org,
+        patch(
+            "core.bounded_recovery.prepare_bounded_recovery", return_value=result
+        ) as prepare,
+    ):
+        client = _build_client()
+        resp = client.post(
+            "/api/datastreams/ds_1/bounded/prepare",
+            headers=_HDR,
+            json={"project_id": "proj_shared", "kind": "reload"},
+        )
+    assert resp.status_code == 200
+    resolve_scope.assert_called_once_with(conn, "ds_1", "proj_shared")
+    load_org.assert_called_once_with(conn, "ds_1", "proj_owner")
+    assert prepare.call_args.kwargs["org_id"] == "org_1"
+
+
+def test_bounded_confirm_pins_shared_project_flux_owner_and_server_trace():
+    conn, fake_get = _fake_conn()
+    result = {
+        "preparation_id": "prep_shared",
+        "operation_id": "op_1",
+        "trace_id": "a" * 32,
+        "outcome": "succeeded",
+        "replayed": False,
+    }
+    with (
+        _auth_ok(),
+        _role(True),
+        patch("core.db.get_connection", new=fake_get),
+        patch(
+            "core.admin_api._resolve_datastream_route_scope",
+            return_value="proj_owner",
+        ),
+        patch("core.admin_api._load_datastream_org_id", return_value="org_1"),
+        patch("core.admin_api.os.urandom", return_value=b"a" * 16),
+        patch("core.bounded_recovery.confirm_bounded_recovery", return_value=result) as confirm,
+    ):
+        client = _build_client()
+        resp = client.post(
+            "/api/datastreams/ds_1/bounded/confirm",
+            headers=_HDR,
+            json={
+                "project_id": "proj_shared",
+                "preparation_id": "prep_shared",
+                "trace_id": "client-controlled",
+            },
+        )
+    assert resp.status_code == 200
+    assert confirm.call_args.kwargs["expected_org_id"] == "org_1"
+    assert confirm.call_args.kwargs["expected_project_id"] == "proj_owner"
+    assert confirm.call_args.kwargs["expected_datastream_id"] == "ds_1"
+    assert confirm.call_args.kwargs["actor"] == "test-user"
+    assert confirm.call_args.kwargs["trace_id"] != "client-controlled"
+
+
 # ---------------------------------------------------------------------------
 # 12.12 -- safe replace / append / rollback
 # ---------------------------------------------------------------------------
@@ -1050,6 +1117,7 @@ class TestDatastreamReadModel:
             _auth_ok(),
             _role(True),
             patch("core.db.get_connection", new=fake_get),
+            patch("core.admin_api._resolve_datastream_route_scope", return_value="proj_alpha"),
             patch("core.datastreams.get_datastream", return_value=None),
         ):
             client = _build_client()
@@ -1064,6 +1132,7 @@ class TestDatastreamReadModel:
             _auth_ok(),
             _role(True),
             patch("core.db.get_connection", new=fake_get),
+            patch("core.admin_api._resolve_datastream_route_scope", return_value="proj_alpha"),
             patch("core.datastreams.get_datastream", return_value={"id": "ds_1"}),
             patch(
                 "core.datastream_intents.list_intent_versions",
@@ -1086,6 +1155,10 @@ class TestDatastreamReadModel:
                 return_value={"id": "dse_cand", "state": "validating"},
             ),
             patch(
+                "core.admin_api._read_latest_execution",
+                return_value={"id": "dse_failed", "state": "failed"},
+            ),
+            patch(
                 "core.datastream_publication.get_publication_log",
                 return_value=[{"id": "dplog_1", "published_by": "u1", "prior_execution_id": None}],
             ),
@@ -1101,6 +1174,8 @@ class TestDatastreamReadModel:
         assert data["mapping_versions"][0]["id"] == "dmap_1"
         assert data["current_published_execution_id"] == "dse_pub"
         assert data["published_execution"]["row_count"] == 42
+        assert data["datastream"]["id"] == "ds_1"
         assert data["current_candidate"]["state"] == "validating"
+        assert data["latest_execution"]["state"] == "failed"
         assert data["publication_log"][0]["published_by"] == "u1"
         assert data["recent_imports"][0]["id"] == "mfl_1"

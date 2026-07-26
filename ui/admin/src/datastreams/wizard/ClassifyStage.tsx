@@ -31,14 +31,14 @@ interface Props {
 }
 
 function sensitiveLabel(state?: string): string {
-  if (state === "detected") return "Sensible : détecté";
-  if (state === "masked") return "Sensible : masqué";
-  return "Non sensible";
+  if (state === "detected") return "Sensitive: detected";
+  if (state === "masked") return "Sensitive: masked";
+  return "Not sensitive";
 }
 
 function confidenceLabel(confidence?: number | null): string {
   // Null = the server has not scored this binding yet (no fabricated percentage).
-  if (confidence == null) return "à confirmer";
+  if (confidence == null) return "not yet confirmed";
   return `${Math.round(confidence * 100)} %`;
 }
 
@@ -46,7 +46,7 @@ export default function ClassifyStage({ fields, loading }: Props) {
   if (loading) {
     return (
       <Typography color="text.secondary" role="status" data-testid="classify-loading">
-        Classification des champs en cours…
+        Classifying fields...
       </Typography>
     );
   }
@@ -54,8 +54,8 @@ export default function ClassifyStage({ fields, loading }: Props) {
   if (fields.length === 0) {
     return (
       <Typography color="text.secondary" data-testid="classify-empty">
-        Aucun champ à classer pour l’instant. Complétez l’étape Configurer (source,
-        rapport ou fichier) puis revenez ici.
+        No fields are available to classify yet. Complete Configure (source,
+        report, or file), then return here.
       </Typography>
     );
   }
@@ -63,29 +63,29 @@ export default function ClassifyStage({ fields, loading }: Props) {
   return (
     <Stack spacing={2} data-testid="stage-classify">
       <Typography color="text.secondary" variant="body2">
-        Rôles sémantiques suggérés, liaison MDM et confiance, état des données
-        sensibles. Vérifiez chaque champ avant l’aperçu.
+        Suggested semantic roles, MDM binding and confidence, and sensitive-data
+        state. Review every field before preview.
       </Typography>
 
       {/* M1 — honest disclosure: this classification is a LOCAL estimate. */}
       <Alert severity="info" data-testid="classify-local-estimate">
-        Estimation locale : rôles, liaison MDM et détection des données sensibles
-        sont une pré-estimation calculée dans le navigateur à partir du catalogue.
-        La classification et la qualité serveur (Stories 12.3 / 12.4) seront
-        appliquées à la validation puis à l’activation ; la confiance MDM reste
-        « à confirmer » tant que le serveur ne l’a pas calculée.
+        Local estimate: roles, MDM binding, and sensitive-data detection
+        are browser-derived estimates from the catalog.
+        Server classification and quality (Stories 12.3 / 12.4) will be
+        applied during validation and activation; MDM confidence remains
+        not yet confirmed until the server calculates it.
       </Alert>
 
       <Box sx={{ overflowX: "auto" }}>
-        <Table size="small" aria-label="Classification des champs">
+        <Table size="small" aria-label="Field classification">
           <TableHead>
             <TableRow>
-              <TableCell scope="col">Champ</TableCell>
-              <TableCell scope="col">Rôle sémantique</TableCell>
-              <TableCell scope="col">Liaison MDM</TableCell>
-              <TableCell scope="col">Confiance</TableCell>
-              <TableCell scope="col">Données sensibles</TableCell>
-              <TableCell scope="col">Échantillon</TableCell>
+              <TableCell scope="col">Field</TableCell>
+              <TableCell scope="col">Semantic role</TableCell>
+              <TableCell scope="col">MDM binding</TableCell>
+              <TableCell scope="col">Confidence</TableCell>
+              <TableCell scope="col">Sensitive data</TableCell>
+              <TableCell scope="col">Sample</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -107,7 +107,7 @@ export default function ClassifyStage({ fields, loading }: Props) {
                     <Chip size="small" variant="outlined" label={f.mdm_binding} />
                   ) : (
                     <Typography variant="body2" color="text.secondary">
-                      Non liée
+                      Not bound
                     </Typography>
                   )}
                 </TableCell>

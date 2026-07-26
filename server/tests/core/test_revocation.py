@@ -61,8 +61,9 @@ def _insert_project(project_id: str, conn) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
-            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'test')
+            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by,
+                org_id)
+            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'test', 'org_test_fixture')
             ON CONFLICT DO NOTHING
             """,
             (project_id, f"Test {project_id}", project_id),
@@ -75,8 +76,9 @@ def _insert_connection(
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.connection_ref (id, provider, nango_connection_id, project_id)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO app.connection_ref (id, provider, nango_connection_id, project_id,
+                owner_org_id, owner_identity)
+            VALUES (%s, %s, %s, %s, 'org_test_fixture', 'tester@example.com')
             ON CONFLICT DO NOTHING
             """,
             (conn_id, provider, nango_conn_id, project_id),

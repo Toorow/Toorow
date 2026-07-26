@@ -49,15 +49,20 @@ CREATE TABLE IF NOT EXISTS raw_ga4_standard_daily (
     conversions     INTEGER,
     pull_id         VARCHAR,
     loaded_at       VARCHAR, -- ISO-8601 UTC string; lexicographic sort == chronological (F-06)
-    project_id      VARCHAR  -- project binding; 'default' for seeded data (AC6 Story 2.7)
+    project_id      VARCHAR, -- project binding; 'default' for seeded data (AC6 Story 2.7)
+    -- Story 39.7: provenance immuable de la zone de reporting, miroir du
+    -- _RAW_CREATE_DDL du connecteur. Le seed n'a pas de metadonnees de propriete
+    -- GA4, donc la zone est indeterminee et la colonne reste NULL -- fail-closed
+    -- vers un TIMEZONE_GAP a la lecture, jamais un 'UTC' silencieux (E39-AD2).
+    report_timezone VARCHAR
 )
 """
 
 _INSERT_SQL = """
 INSERT INTO raw_ga4_standard_daily
     (date, device_category, country, sessions, active_users, conversions,
-     pull_id, loaded_at, project_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     pull_id, loaded_at, project_id, report_timezone)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -91,6 +96,11 @@ def load_duckdb(
         "ALTER TABLE raw_ga4_standard_daily ADD COLUMN IF NOT EXISTS "
         "project_id VARCHAR DEFAULT 'default'"
     )
+    # Story 39.7 : meme garde additive que le connecteur, pour les entrepots
+    # seedes avant l'ajout de la colonne.
+    con.execute(
+        "ALTER TABLE raw_ga4_standard_daily ADD COLUMN IF NOT EXISTS report_timezone VARCHAR"
+    )
 
     values = [
         (
@@ -103,6 +113,7 @@ def load_duckdb(
             pull_id,
             loaded_at,
             project_id,
+            r.get("report_timezone"),
         )
         for r in rows
     ]

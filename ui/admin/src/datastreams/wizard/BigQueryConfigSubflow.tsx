@@ -23,27 +23,27 @@ export default function BigQueryConfigSubflow({ bigqueryTable, onTableChange }: 
   return (
     <Stack spacing={2} data-testid="bigquery-config">
       <Typography color="text.secondary" variant="body2">
-        Déclarez la table BigQuery à lire en lecture seule. toorow n’en devient
-        jamais propriétaire et ne l’écrit jamais.
+        Declare the BigQuery table to read. toorow never becomes its
+        owner and never writes to it.
       </Typography>
 
       <TextField
-        label="Référence de table (projet.dataset.table)"
+        label="Table reference (project.dataset.table)"
         value={bigqueryTable ?? ""}
         onChange={(e) => onTableChange(e.target.value)}
         data-testid="bigquery-table"
         fullWidth
-        placeholder="mon-projet.mon_dataset.ma_table"
-        helperText="Format BigQuery entièrement qualifié."
+        placeholder="my-project.my_dataset.my_table"
+        helperText="Fully qualified BigQuery format."
         sx={{ maxWidth: 520 }}
       />
 
       <Alert severity="info" data-testid="bigquery-phaseb">
-        La validation en direct de la table (accès, schéma, rétention) sera
-        disponible à l’enregistrement de la source externe. Vous pouvez dès à
-        présent déclarer la référence et enregistrer un brouillon ; la
-        classification et l’aperçu s’appuieront sur le schéma déclaré une fois la
-        source externe enregistrée.
+        Live table validation (access, schema, retention) will be
+        available when the external source is registered. You can already
+        declare the reference and save a draft; classification and
+        preview will use the declared schema once the
+        external source is registered.
       </Alert>
     </Stack>
   );

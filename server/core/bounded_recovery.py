@@ -67,6 +67,7 @@ wires those into the hot shared files (see the story's INTEGRATION SPEC).
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -484,6 +485,70 @@ class BoundedProposal:
         }
 
 
+def _server_estimated_points(
+    conn,
+    *,
+    datastream_id: str,
+    project_id: str | None,
+    kind: str,
+    interval: dict | None,
+) -> int:
+    """Derive provider quota points from the immutable current plan.
+
+    A client estimate is never authoritative. Reprocess is provider-free and
+    therefore has an exact zero cost. Provider-calling verbs require a persisted
+    capability quota in the plan snapshot; missing or malformed evidence blocks
+    preparation instead of silently accepting zero.
+    """
+    if kind == KIND_REPROCESS:
+        return 0
+    if not project_id:
+        raise BoundedRecoveryError(
+            "quota_estimate_unavailable",
+            "Projet du flux introuvable : estimation de quota impossible.",
+        )
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT normalized_payload
+            FROM app.datastream_plan_versions
+            WHERE id = (
+                SELECT current_plan_version_id FROM app.datastreams
+                WHERE id = %s AND project_id = %s
+            )
+              AND datastream_id = %s AND project_id = %s
+            """,
+            (datastream_id, project_id, datastream_id, project_id),
+        )
+        row = cur.fetchone()
+    payload = row[0] if row else None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError):
+            payload = None
+    quota_cost = (
+        (((payload or {}).get("geographic") or {}).get("impact") or {}).get("quota_cost")
+        if isinstance(payload, dict)
+        else None
+    )
+    read_points = quota_cost.get("read_points") if isinstance(quota_cost, dict) else None
+    if isinstance(read_points, bool) or not isinstance(read_points, int) or read_points < 0:
+        raise BoundedRecoveryError(
+            "quota_estimate_unavailable",
+            "Le plan courant ne contient pas d'estimation de quota fiable.",
+        )
+    multiplier = 1
+    if kind == KIND_RELOAD:
+        windows = (interval or {}).get("windows")
+        if not isinstance(windows, list) or not windows:
+            raise BoundedRecoveryError(
+                "quota_estimate_unavailable",
+                "Les fenetres du rechargement ne permettent pas d'estimer le quota.",
+            )
+        multiplier = len(windows)
+    return read_points * multiplier
+
 def assemble_proposal(
     conn,
     *,
@@ -496,7 +561,6 @@ def assemble_proposal(
     date_to_exclusive: str | None,
     partition: str | None,
     chosen_mapping_version_id: str | None,
-    estimated_points: int,
     today: date | None = None,
 ) -> BoundedProposal:
     """Assemble ONE bounded-recovery proposal for a named verb (composes seams).
@@ -582,6 +646,13 @@ def assemble_proposal(
             "calls_provider": False,
         }
 
+    estimated_points = _server_estimated_points(
+        conn,
+        datastream_id=datastream_id,
+        project_id=target.get("project_id"),
+        kind=kind,
+        interval=interval,
+    )
     target_versions = {
         "plan_version_id": live_plan,
         "mapping_version_id": pinned_mapping,
@@ -591,6 +662,8 @@ def assemble_proposal(
     impact = build_impact(
         kind, interval=interval, reload_scope=reload_scope, reprocess=reprocess_check
     )
+    impact["reason"] = reason or None
+
 
     return BoundedProposal(
         org_id=org_id,
@@ -636,7 +709,6 @@ def prepare_bounded_recovery(
     date_to_exclusive: str | None = None,
     partition: str | None = None,
     chosen_mapping_version_id: str | None = None,
-    estimated_points: int = 0,
     today: date | None = None,
 ) -> dict:
     """Prepare an IMMUTABLE bounded-recovery proposal (AD-27 prepare).
@@ -649,8 +721,8 @@ def prepare_bounded_recovery(
     versions + impact + quota + rollback pointer + idempotency ttl). The caller
     (MCP tool / admin_api route) owns the guard + commit boundary.
 
-    ``reason`` (the operator's stated reason) is threaded onto the durable
-    operation at confirm time (audited); it is NOT a proposal-immutability field.
+    ``reason`` is frozen into the proposal impact and then copied to the durable
+    operation at confirm time; confirmation cannot replace that audited reason.
     """
     from core import operations_mcp  # noqa: PLC0415
 
@@ -665,13 +737,15 @@ def prepare_bounded_recovery(
         date_to_exclusive=date_to_exclusive,
         partition=partition,
         chosen_mapping_version_id=chosen_mapping_version_id,
-        estimated_points=estimated_points,
         today=today,
     )
 
     fingerprint = operations_mcp._proposal_fingerprint(
         {
+            "org_id": proposal.org_id,
+            "project_id": proposal.project_id,
             "datastream_id": proposal.datastream_id,
+            "actor": proposal.actor,
             "kind": proposal.kind,
             "interval": proposal.interval,
             "target_versions": proposal.target_versions,
@@ -706,91 +780,96 @@ def confirm_bounded_recovery(
     conn,
     *,
     preparation_id: str,
+    expected_org_id: str,
+    expected_project_id: str,
+    expected_datastream_id: str,
     actor: str,
     reason: str | None = None,
-    trace_id: str | None = None,
+    trace_id: str,
 ) -> dict:
-    """Confirm a bounded proposal and route EXACTLY ONE durable operation (commit).
-
-    RE-VALIDATES every precondition against the live target (stale plan/mapping
-    versions, changed policy, forbidden reload interval, missing account exposure,
-    quota violation, lock conflict for a re-pull verb) -- any breach REFUSES
-    dispatch (no operation). On success, routes EXACTLY ONE
-    ``operations.execute_operation`` (migration 060: state + audit + outbox,
-    idempotent replay). The idempotency key is rebuilt from the SAME immutable
-    proposal fingerprint so a duplicate confirm / timeout / retry replays the
-    ORIGINAL operation (never a duplicate). The durable operation records actor /
-    reason / idempotency key / trace / source version / target candidate (AC1).
-
-    Reuses ``operations_mcp._load_preparation`` / ``_mark_preparation_confirmed``
-    and ``operations.execute_operation`` -- NO bespoke transaction engine. NEVER
-    calls ``commit_publication`` / mutates ``current_published_execution_id``: an
-    invalid candidate stays UNPUBLISHED, the current version stays authoritative
-    (AC4). Raises ``BoundedRecoveryError`` on a refusal; ``ValueError`` shape via
-    the operations layer on a malformed spec.
-    """
+    """Confirm or durably replay one exact scoped bounded recovery proposal."""
     from core import operations_mcp  # noqa: PLC0415
     from core.operations import OperationSpec, _sha256, execute_operation  # noqa: PLC0415
 
     prep = operations_mcp._load_preparation(conn, preparation_id)
-    if prep is None:
+    if prep is None or prep.get("org_id") is None:
         raise BoundedRecoveryError("not_found", "Proposition introuvable.")
-    if prep["org_id"] is None:
+    exact_scope = (
+        prep.get("org_id") == expected_org_id
+        and prep.get("project_id") == expected_project_id
+        and prep.get("datastream_id") == expected_datastream_id
+        and prep.get("actor") == actor
+    )
+    if not exact_scope:
         raise BoundedRecoveryError("not_found", "Proposition introuvable.")
     if prep["kind"] not in BOUNDED_KINDS:
-        # This confirm path only handles the Story 12.11 verbs; the Operations
-        # verbs {retry, refetch, reconcile} keep their own confirm seam.
         raise BoundedRecoveryError("wrong_verb", "Verbe hors du perimetre borne 12.11.")
-    if prep["state"] != "prepared" or prep["expired"]:
+    if prep["state"] not in {"prepared", "confirmed"}:
         raise BoundedRecoveryError("stale_preparation", "Proposition perimee ou deja traitee.")
+    confirmed_replay = prep["state"] == "confirmed"
+    if not confirmed_replay and prep["expired"]:
+        raise BoundedRecoveryError("stale_preparation", "Proposition perimee ou deja traitee.")
+    if confirmed_replay and not prep.get("operation_id"):
+        raise BoundedRecoveryError(
+            "outcome_unknown", "La proposition est confirmee sans operation durable liee."
+        )
 
     target = operations_mcp._load_target(conn, prep["datastream_id"])
-    if target is None:
+    if target is None or any(
+        (
+            target.get("org_id") != expected_org_id,
+            target.get("project_id") != expected_project_id,
+            target.get("datastream_id") != expected_datastream_id,
+        )
+    ):
         raise BoundedRecoveryError("not_found", "Flux introuvable.")
 
-    # (a) stale plan/mapping versions -> refuse. For reprocess the pinned mapping
-    # is the CHOSEN version (may differ from live) -- we only require the PLAN to
-    # be current and the chosen mapping to still exist (checked at prepare); a
-    # live-mapping advance does not invalidate a reprocess of retained data.
-    if prep["kind"] in {KIND_SYNCHRONIZE, KIND_RELOAD}:
-        if not operations_mcp._versions_match(prep["target_versions"], target):
-            raise BoundedRecoveryError("stale_versions", "Versions plan/mapping perimees.")
-    else:  # reprocess: only the plan pin must still match the live plan.
-        if prep["target_versions"].get("plan_version_id") != target.get("plan_version_id"):
+    prepared_reason = (prep.get("impact") or {}).get("reason")
+    if reason is not None and reason != prepared_reason:
+        raise BoundedRecoveryError("stale_preparation", "Motif different de la proposition.")
+
+    if not confirmed_replay:
+        if prep["kind"] in {KIND_SYNCHRONIZE, KIND_RELOAD}:
+            if not operations_mcp._versions_match(prep["target_versions"], target):
+                raise BoundedRecoveryError("stale_versions", "Versions plan/mapping perimees.")
+        elif prep["target_versions"].get("plan_version_id") != target.get("plan_version_id"):
             raise BoundedRecoveryError("stale_versions", "Version de plan perimee.")
 
-    # (b) changed policy -> refuse.
-    if prep["target_versions"].get("policy_version") != operations_mcp._current_policy_version():
-        raise BoundedRecoveryError("policy_changed", "Politique modifiee depuis la preparation.")
+        if (
+            prep["target_versions"].get("policy_version")
+            != operations_mcp._current_policy_version()
+        ):
+            raise BoundedRecoveryError(
+                "policy_changed", "Politique modifiee depuis la preparation."
+            )
+        if prep["kind"] == KIND_RELOAD:
+            _revalidate_reload_interval(prep.get("interval") or {})
+        if prep["kind"] in {KIND_SYNCHRONIZE, KIND_RELOAD} and not target.get("platform"):
+            raise BoundedRecoveryError("missing_exposure", "Exposition de compte manquante.")
+        if prep["kind"] in {KIND_SYNCHRONIZE, KIND_RELOAD}:
+            estimated_points = (prep.get("quota") or {}).get("estimated_points")
+            if (
+                isinstance(estimated_points, bool)
+                or not isinstance(estimated_points, int)
+                or estimated_points < 0
+            ):
+                raise BoundedRecoveryError(
+                    "quota_estimate_unavailable", "Estimation de quota absente ou invalide."
+                )
+            quota_now = operations_mcp._quota_estimate(
+                target.get("platform"), estimated_points
+            )
+            if not quota_now.get("can_proceed"):
+                raise BoundedRecoveryError("quota_violation", "Budget quota insuffisant.")
+        if target.get("active_execution_id"):
+            raise BoundedRecoveryError("lock_conflict", "Une execution est deja active.")
 
-    # (c) forbidden reload interval -> revalidate the bounded half-open range.
-    if prep["kind"] == KIND_RELOAD:
-        _revalidate_reload_interval(prep.get("interval") or {})
-
-    # (d) missing account exposure -> refuse (a re-pull verb needs a live source).
-    #     Reprocess is provider-free, so it does NOT require live exposure.
-    if prep["kind"] in {KIND_SYNCHRONIZE, KIND_RELOAD} and not target.get("platform"):
-        raise BoundedRecoveryError("missing_exposure", "Exposition de compte manquante.")
-
-    # (e) quota violation -> refuse. Reprocess consumes no provider quota (it
-    #     never calls the provider) so it skips the quota gate.
-    if prep["kind"] in {KIND_SYNCHRONIZE, KIND_RELOAD}:
-        quota_now = operations_mcp._quota_estimate(
-            target.get("platform"),
-            int((prep.get("quota") or {}).get("estimated_points", 0)),
-        )
-        if not quota_now.get("can_proceed"):
-            raise BoundedRecoveryError("quota_violation", "Budget quota insuffisant.")
-
-    # (f) lock conflict -> refuse. A re-pull verb needs a free lock; a reprocess
-    #     also creates a candidate execution and must not race an active one.
-    if target.get("active_execution_id"):
-        raise BoundedRecoveryError("lock_conflict", "Une execution est deja active.")
-
-    # Rebuild the idempotency key from the SAME immutable proposal fingerprint.
     fingerprint = operations_mcp._proposal_fingerprint(
         {
+            "org_id": prep["org_id"],
+            "project_id": prep["project_id"],
             "datastream_id": prep["datastream_id"],
+            "actor": prep["actor"],
             "kind": prep["kind"],
             "interval": prep["interval"],
             "target_versions": prep["target_versions"],
@@ -809,19 +888,24 @@ def confirm_bounded_recovery(
         effective_org_id=prep["org_id"],
         resource_path=(
             f"organization:{prep['org_id']}",
+            f"project:{prep['project_id']}",
             f"flux:{prep['datastream_id']}",
         ),
         idempotency_key=idempotency_key,
         host_context={},
         versions={
             "policy": policy_version,
-            "catalog": operations_mcp._current_policy_version(),
+            "catalog": policy_version,
             "tool": "confirm_bounded_recovery",
         },
         request_payload={
+            "org_id": prep["org_id"],
+            "project_id": prep["project_id"],
+            "datastream_id": prep["datastream_id"],
+            "actor": prep["actor"],
             "kind": prep["kind"],
             "interval": prep["interval"],
-            "reason": (reason or None),
+            "reason": prepared_reason,
             "plan_version_id": prep["target_versions"].get("plan_version_id"),
             "mapping_version_id": prep["target_versions"].get("mapping_version_id"),
         },
@@ -836,13 +920,26 @@ def confirm_bounded_recovery(
         spec,
         mutation=lambda c, op_id: _dispatch_bounded_recovery(c, op_id, prep, target),
     )
-    operations_mcp._mark_preparation_confirmed(conn, preparation_id, op_result.operation_id)
+    if confirmed_replay and op_result.operation_id != prep["operation_id"]:
+        raise BoundedRecoveryError(
+            "outcome_unknown", "Le rejeu ne correspond pas a l'operation confirmee."
+        )
+    if not confirmed_replay:
+        operations_mcp._mark_preparation_confirmed(
+            conn, preparation_id, op_result.operation_id
+        )
+    durable_trace_id = operations_mcp._load_operation_trace(conn, op_result.operation_id)
+    if not durable_trace_id:
+        raise BoundedRecoveryError(
+            "outcome_unknown", "L'operation durable ne porte aucune trace serveur."
+        )
 
     return {
         "preparation_id": preparation_id,
         "operation_id": op_result.operation_id,
+        "trace_id": durable_trace_id,
         "outcome": op_result.outcome,
-        "replayed": op_result.replayed,
+        "replayed": op_result.replayed or confirmed_replay,
         "result": op_result.result,
     }
 

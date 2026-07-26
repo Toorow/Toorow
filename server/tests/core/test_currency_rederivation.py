@@ -38,6 +38,7 @@ FX_RATES_CSV = REPO_ROOT / "dbt" / "seeds" / "fx_rates.csv"
 # ---------------------------------------------------------------------------
 try:
     import dbt.cli.main  # noqa: F401
+
     _DBT_AVAILABLE = True
 except ImportError:
     _DBT_AVAILABLE = False
@@ -52,6 +53,7 @@ pytestmark = pytest.mark.skipif(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _import_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
@@ -62,16 +64,18 @@ def _import_module(name: str, path: Path):
 def _dbt_run(profiles_dir: Path, *extra_args: str) -> None:
     """Run a dbt command against the test DuckDB profile."""
     cmd = [
-        sys.executable, "-m", "dbt.cli.main",
+        sys.executable,
+        "-m",
+        "dbt.cli.main",
         *extra_args,
-        "--project-dir", str(DBT_DIR),
-        "--profiles-dir", str(profiles_dir),
+        "--project-dir",
+        str(DBT_DIR),
+        "--profiles-dir",
+        str(profiles_dir),
     ]
     result = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"dbt {' '.join(extra_args)} failed:\n{result.stdout}\n{result.stderr}"
-        )
+        raise RuntimeError(f"dbt {' '.join(extra_args)} failed:\n{result.stdout}\n{result.stderr}")
 
 
 def _write_fx_rates(path: Path, usd_rate: float) -> None:
@@ -80,13 +84,25 @@ def _write_fx_rates(path: Path, usd_rate: float) -> None:
         writer = csv.writer(fh)
         writer.writerow(
             [
-                "from_currency", "to_currency", "rate", "rate_date", "rate_policy",
-                "valid_from", "valid_to",
+                "from_currency",
+                "to_currency",
+                "rate",
+                "rate_date",
+                "rate_policy",
+                "valid_from",
+                "valid_to",
             ]
         )
         writer.writerow(
-            ["USD", "EUR", str(usd_rate), "2026-07-01", "static_dev_rate",
-             "2020-01-01", "2099-12-31"]
+            [
+                "USD",
+                "EUR",
+                str(usd_rate),
+                "2026-07-01",
+                "static_dev_rate",
+                "2020-01-01",
+                "2099-12-31",
+            ]
         )
         writer.writerow(
             ["EUR", "EUR", "1.00", "2026-07-01", "identity", "2020-01-01", "2099-12-31"]
@@ -100,9 +116,12 @@ def _query_cost(duckdb_path: str) -> list[float]:
     The read-converted cost is cost * COALESCE(fx_rate, 1.0).
     """
     import duckdb  # noqa: PLC0415
+
     con = duckdb.connect(duckdb_path)
     try:
-        query = "SELECT cost * COALESCE(fx_rate, 1.0) FROM main_staging.stg_meta_ads_daily ORDER BY 1"
+        query = (
+            "SELECT cost * COALESCE(fx_rate, 1.0) FROM main_staging.stg_meta_ads_daily ORDER BY 1"
+        )
         rows = con.execute(query).fetchall()
         return [row[0] for row in rows]
     finally:
@@ -127,6 +146,7 @@ def _write_profiles_yml(profiles_dir: Path, duckdb_path: str) -> None:
 # Test: re-derivation proof
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module", autouse=False)
 def restore_fx_rates():
     """Restore fx_rates.csv to the original 0.92 rate after re-derivation tests."""
@@ -149,9 +169,7 @@ def rederivation_db(tmp_path_factory, restore_fx_rates):
     duckdb_path = str(tmp_path / "test.duckdb")
     profiles_dir = tmp_path / "profiles"
 
-    meta_loader_mod = _import_module(
-        "load_meta_seed", META_SEEDS_DIR / "load_meta_seed.py"
-    )
+    meta_loader_mod = _import_module("load_meta_seed", META_SEEDS_DIR / "load_meta_seed.py")
 
     rows = [
         {
@@ -264,7 +282,8 @@ def test_scenario_b_rate_085(rederivation_db):
 
 
 def test_source_values_unchanged_between_scenarios(rederivation_db):
-    """Verify cost_source_value and staging cost are unchanged across scenario A→B (only READ value changes).
+    """Verify cost_source_value and staging cost are unchanged across scenario
+    A→B (only READ value changes).
 
     This is the AD-6 / Story 39.10 proof: staging holds immutable source amounts (spend=100.0);
     only the read-time conversion re-derives.
@@ -275,7 +294,8 @@ def test_source_values_unchanged_between_scenarios(rederivation_db):
     con = duckdb.connect(duckdb_path)
     try:
         rows = con.execute(
-            "SELECT cost_source_value, cost_source_currency, cost FROM main_staging.stg_meta_ads_daily"
+            "SELECT cost_source_value, cost_source_currency, cost "
+            "FROM main_staging.stg_meta_ads_daily"
         ).fetchall()
     finally:
         con.close()

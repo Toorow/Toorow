@@ -125,11 +125,42 @@ describe("ScopeProvider states", () => {
     expect(screen.queryByText(FORBIDDEN_ORG_NAME)).toBeNull();
   });
 
-  it("reports empty when organizations exist but none has a project", async () => {
-    // compose() only keeps navigable orgs; the result must stay empty, not seeded.
+  it("does not expose inert migration seed scopes as a user workspace", async () => {
+    stubFetch(
+      200,
+      {
+        organizations: [
+          { id: "org_default", name: "Default organization" },
+          { id: "org_integ-test-project", name: "Integration fixture" },
+        ],
+      },
+      200,
+      {
+        projects: [
+          { id: "default", name: "Default", org_id: "org_default" },
+          {
+            id: "integ-test-project",
+            name: "Integration Test Project",
+            org_id: "org_integ-test-project",
+          },
+        ],
+      },
+    );
+    renderScope();
+
+    await waitFor(() => expect(screen.getByTestId("state")).toHaveTextContent("empty"));
+    expect(screen.getByTestId("orgs")).toHaveTextContent("0");
+    expect(screen.getByTestId("project")).toHaveTextContent("—");
+  });
+
+  it("requires a real project while preserving an existing zero-project organization", async () => {
     stubFetch(200, ONE_ORG, 200, { projects: [] });
     renderScope();
-    await waitFor(() => expect(screen.getByTestId("state")).toHaveTextContent("empty"));
+    await waitFor(() =>
+      expect(screen.getByTestId("state")).toHaveTextContent("project_required")
+    );
+    expect(screen.getByTestId("org")).toHaveTextContent("Acme Media");
+    expect(screen.getByTestId("project")).toHaveTextContent("—");
     expect(screen.queryByText(FORBIDDEN_ORG_NAME)).toBeNull();
   });
 

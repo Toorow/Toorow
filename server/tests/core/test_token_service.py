@@ -118,14 +118,16 @@ def test_routing_google_direct_calls_google_service():
     """auth_path='google_direct' -> get_fresh_google_token (source resolue asseree)."""
     from core import nango_client
 
-    with patch(
-        "core.token_service.resolve_connection_by_nango_id",
-        return_value=_resolved(auth_path="google_direct"),
-    ), patch(
-        "core.token_service.get_fresh_google_token", return_value=_FAKE_ACCESS
-    ) as mock_google, patch(
-        "core.nango_client._run_coro"
-    ) as mock_nango:
+    with (
+        patch(
+            "core.token_service.resolve_connection_by_nango_id",
+            return_value=_resolved(auth_path="google_direct"),
+        ),
+        patch(
+            "core.token_service.get_fresh_google_token", return_value=_FAKE_ACCESS
+        ) as mock_google,
+        patch("core.nango_client._run_coro") as mock_nango,
+    ):
         tok = nango_client.get_fresh_token("nango_conn_abc", provider="google-analytics")
 
     assert tok == _FAKE_ACCESS
@@ -140,14 +142,14 @@ def test_routing_nango_when_auth_path_nango():
     """auth_path='nango' -> chemin Nango inchange (non-regression)."""
     from core import nango_client
 
-    with patch(
-        "core.token_service.resolve_connection_by_nango_id",
-        return_value=_resolved(auth_path="nango"),
-    ), patch(
-        "core.token_service.get_fresh_google_token"
-    ) as mock_google, patch(
-        "core.nango_client._run_coro", return_value=_FAKE_ACCESS
-    ) as mock_nango:
+    with (
+        patch(
+            "core.token_service.resolve_connection_by_nango_id",
+            return_value=_resolved(auth_path="nango"),
+        ),
+        patch("core.token_service.get_fresh_google_token") as mock_google,
+        patch("core.nango_client._run_coro", return_value=_FAKE_ACCESS) as mock_nango,
+    ):
         tok = nango_client.get_fresh_token("nango_conn_abc", provider="meta-ads")
 
     assert tok == _FAKE_ACCESS
@@ -159,13 +161,11 @@ def test_routing_no_row_defaults_to_nango():
     """Aucune ligne connection_ref (ou DB pre-029) -> Nango (backward compat)."""
     from core import nango_client
 
-    with patch(
-        "core.token_service.resolve_connection_by_nango_id", return_value=None
-    ), patch(
-        "core.token_service.get_fresh_google_token"
-    ) as mock_google, patch(
-        "core.nango_client._run_coro", return_value=_FAKE_ACCESS
-    ) as mock_nango:
+    with (
+        patch("core.token_service.resolve_connection_by_nango_id", return_value=None),
+        patch("core.token_service.get_fresh_google_token") as mock_google,
+        patch("core.nango_client._run_coro", return_value=_FAKE_ACCESS) as mock_nango,
+    ):
         tok = nango_client.get_fresh_token("unknown_conn", provider="shopify")
 
     assert tok == _FAKE_ACCESS
@@ -183,12 +183,14 @@ def test_valid_token_is_returned_without_refresh():
     from core import token_service
 
     future = datetime.now(tz=timezone.utc) + timedelta(hours=1)
-    with patch(
-        "core.google_token_store.load_google_token",
-        return_value=_google_token(expiry=future),
-    ), patch("core.google_token_store.store_google_token") as mock_store, patch(
-        "core.token_service._refresh_google_access_token"
-    ) as mock_refresh:
+    with (
+        patch(
+            "core.google_token_store.load_google_token",
+            return_value=_google_token(expiry=future),
+        ),
+        patch("core.google_token_store.store_google_token") as mock_store,
+        patch("core.token_service._refresh_google_access_token") as mock_refresh,
+    ):
         tok = token_service.get_fresh_google_token(_resolved(expiry=future))
 
     assert tok == _FAKE_ACCESS
@@ -217,14 +219,14 @@ def test_expired_token_triggers_refresh_and_persist(oauth_env):
                 },
             )
         )
-        with patch(
-            "core.google_token_store.load_google_token",
-            return_value=_google_token(expiry=past),
-        ), patch(
-            "core.google_token_store.store_google_token"
-        ) as mock_store, patch(
-            "core.token_service._audit_refresh"
-        ) as mock_audit:
+        with (
+            patch(
+                "core.google_token_store.load_google_token",
+                return_value=_google_token(expiry=past),
+            ),
+            patch("core.google_token_store.store_google_token") as mock_store,
+            patch("core.token_service._audit_refresh") as mock_audit,
+        ):
             tok = token_service.get_fresh_google_token(_resolved(expiry=past))
 
     assert route.called
@@ -256,10 +258,13 @@ def test_invalid_grant_raises_auth_expired(oauth_env):
         respx.post(GOOGLE_TOKEN_ENDPOINT).mock(
             return_value=Response(400, json={"error": "invalid_grant"})
         )
-        with patch(
-            "core.google_token_store.load_google_token",
-            return_value=_google_token(expiry=past),
-        ), patch("core.google_token_store.store_google_token") as mock_store:
+        with (
+            patch(
+                "core.google_token_store.load_google_token",
+                return_value=_google_token(expiry=past),
+            ),
+            patch("core.google_token_store.store_google_token") as mock_store,
+        ):
             with pytest.raises(token_service.GoogleAuthExpired) as exc_info:
                 token_service.get_fresh_google_token(_resolved(expiry=past))
 
@@ -296,11 +301,13 @@ def test_no_token_leak_in_logs_on_refresh(oauth_env, caplog):
                     200, json={"access_token": _FAKE_ACCESS_2, "expires_in": 3600}
                 )
             )
-            with patch(
-                "core.google_token_store.load_google_token",
-                return_value=_google_token(expiry=past),
-            ), patch("core.google_token_store.store_google_token"), patch(
-                "core.token_service._audit_refresh"
+            with (
+                patch(
+                    "core.google_token_store.load_google_token",
+                    return_value=_google_token(expiry=past),
+                ),
+                patch("core.google_token_store.store_google_token"),
+                patch("core.token_service._audit_refresh"),
             ):
                 token_service.get_fresh_google_token(_resolved(expiry=past))
 
@@ -344,13 +351,17 @@ def test_refresh_reduced_scopes_persists_intersection(oauth_env):
                 },
             )
         )
-        with patch(
-            "core.google_token_store.load_google_token",
-            return_value=_google_token(expiry=past, scopes=stored_scopes),
-        ), patch(
-            "core.google_token_store.store_google_token",
-            side_effect=_capture_store,
-        ), patch("core.token_service._audit_refresh"):
+        with (
+            patch(
+                "core.google_token_store.load_google_token",
+                return_value=_google_token(expiry=past, scopes=stored_scopes),
+            ),
+            patch(
+                "core.google_token_store.store_google_token",
+                side_effect=_capture_store,
+            ),
+            patch("core.token_service._audit_refresh"),
+        ):
             token_service.get_fresh_google_token(_resolved(expiry=past))
 
     assert len(persisted_scopes_captured) == 1
@@ -397,13 +408,17 @@ def test_refresh_empty_scopes_preserves_stored_scopes(oauth_env):
                 },
             )
         )
-        with patch(
-            "core.google_token_store.load_google_token",
-            return_value=_google_token(expiry=past, scopes=stored_scopes),
-        ), patch(
-            "core.google_token_store.store_google_token",
-            side_effect=_capture_store,
-        ), patch("core.token_service._audit_refresh"):
+        with (
+            patch(
+                "core.google_token_store.load_google_token",
+                return_value=_google_token(expiry=past, scopes=stored_scopes),
+            ),
+            patch(
+                "core.google_token_store.store_google_token",
+                side_effect=_capture_store,
+            ),
+            patch("core.token_service._audit_refresh"),
+        ):
             token_service.get_fresh_google_token(_resolved(expiry=past))
 
     assert len(persisted_scopes_captured) == 1
@@ -475,10 +490,13 @@ def test_poll_connection_health_routes_google_direct():
     from core import nango_client
 
     now = datetime.now(tz=timezone.utc)
-    with patch(
-        "core.token_service.resolve_connection_by_nango_id",
-        return_value=_resolved(expiry=now + timedelta(hours=1)),
-    ), patch("core.nango_client._run_coro") as mock_nango:
+    with (
+        patch(
+            "core.token_service.resolve_connection_by_nango_id",
+            return_value=_resolved(expiry=now + timedelta(hours=1)),
+        ),
+        patch("core.nango_client._run_coro") as mock_nango,
+    ):
         health = nango_client.poll_connection_health("nango_conn_abc", provider="gsc")
 
     assert health.status == "ok"
@@ -490,13 +508,16 @@ def test_poll_connection_health_nango_unchanged():
     from core import nango_client
     from core.nango_client import ConnectionHealth
 
-    with patch(
-        "core.token_service.resolve_connection_by_nango_id",
-        return_value=_resolved(auth_path="nango"),
-    ), patch(
-        "core.nango_client._run_coro",
-        return_value=ConnectionHealth(status="ok", last_fetched_at=None),
-    ) as mock_nango:
+    with (
+        patch(
+            "core.token_service.resolve_connection_by_nango_id",
+            return_value=_resolved(auth_path="nango"),
+        ),
+        patch(
+            "core.nango_client._run_coro",
+            return_value=ConnectionHealth(status="ok", last_fetched_at=None),
+        ) as mock_nango,
+    ):
         health = nango_client.poll_connection_health("nango_conn_abc", provider="meta-ads")
 
     assert health.status == "ok"
@@ -515,15 +536,11 @@ def test_nango_path_unchanged_end_to_end():
     from httpx import Response
 
     base = "http://nango-test.local"
-    with patch.dict(
-        os.environ, {"NANGO_BASE_URL": base, "NANGO_SECRET_KEY": "test-secret"}
-    ):
+    with patch.dict(os.environ, {"NANGO_BASE_URL": base, "NANGO_SECRET_KEY": "test-secret"}):
         with respx.mock:
             # La resolution renvoie une ligne nango -> chemin Nango.
             respx.get(f"{base}/connection/nango_conn_xyz").mock(
-                return_value=Response(
-                    200, json={"credentials": {"access_token": _FAKE_ACCESS}}
-                )
+                return_value=Response(200, json={"credentials": {"access_token": _FAKE_ACCESS}})
             )
             with patch(
                 "core.token_service.resolve_connection_by_nango_id",
@@ -587,8 +604,8 @@ def _seed(dsn, project_id, conn_id, nango_id, auth_path):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO app.projects (id, name, slug, status, created_by)
-                VALUES (%s, %s, %s, 'active', 'test')
+                INSERT INTO app.projects (id, name, slug, status, created_by, org_id)
+                VALUES (%s, %s, %s, 'active', 'test', 'org_test_fixture')
                 ON CONFLICT (id) DO NOTHING
                 """,
                 (project_id, f"ts-{project_id}", f"slug-{uuid.uuid4().hex[:8]}"),
@@ -596,8 +613,10 @@ def _seed(dsn, project_id, conn_id, nango_id, auth_path):
             cur.execute(
                 """
                 INSERT INTO app.connection_ref
-                    (id, provider, nango_connection_id, project_id, auth_path)
-                VALUES (%s, 'google-analytics', %s, %s, %s)
+                    (id, provider, nango_connection_id, project_id, auth_path, owner_org_id,
+                        owner_identity)
+                VALUES (%s, 'google-analytics', %s, %s, %s, 'org_test_fixture',
+                    'tester@example.com')
                 """,
                 (conn_id, nango_id, project_id, auth_path),
             )
@@ -695,9 +714,7 @@ def test_live_full_refresh_path(monkeypatch, tmp_path, oauth_env):
                 raw = bytes(blob)
                 assert _FAKE_ACCESS_2.encode() not in raw  # opaque
                 assert _FAKE_REFRESH.encode() not in raw
-                cur.execute(
-                    "SELECT action FROM app.audit_log WHERE connection_ref = %s", (cid,)
-                )
+                cur.execute("SELECT action FROM app.audit_log WHERE connection_ref = %s", (cid,))
                 actions = [r[0] for r in cur.fetchall()]
                 assert "connection.created" in actions  # audit de refresh (emission)
     finally:
@@ -718,7 +735,9 @@ def test_no_realistic_token_plaintext_in_delivered_files():
         repo_root / "server" / "core" / "token_service.py",
         repo_root / "server" / "core" / "nango_client.py",
         repo_root / "server" / "tests" / "core" / "test_token_service.py",
-        repo_root / "_bmad-output" / "implementation-artifacts"
+        repo_root
+        / "_bmad-output"
+        / "implementation-artifacts"
         / "18-3-provider-aware-token-service.md",
     ]
     forbidden = [

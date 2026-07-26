@@ -7,14 +7,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MODULES_DIR = REPO_ROOT / "server" / "modules"
 if str(MODULES_DIR) not in sys.path:
     sys.path.insert(0, str(MODULES_DIR))
 
-from strava import connector
+from strava import connector  # noqa: E402 -- apres l ajout de MODULES_DIR au sys.path
 
 
 def test_strava_transform_canonical_field_mapping():
@@ -85,7 +84,9 @@ def test_strava_insert_raw_rows_and_duckdb_landing(tmp_path, monkeypatch):
     import duckdb
 
     con = duckdb.connect(db_path)
-    res = con.execute("SELECT club_id, club_name, member_count FROM raw_strava_club_daily").fetchall()
+    res = con.execute(
+        "SELECT club_id, club_name, member_count FROM raw_strava_club_daily"
+    ).fetchall()
     con.close()
 
     assert len(res) == 1
@@ -115,8 +116,9 @@ def test_strava_pull_competitor_snapshot_404_unreachable_skipped(tmp_path, monke
             return httpx.Response(404, json={"message": "Not Found"})
         return httpx.Response(404)
 
-    with patch("core.nango_client.get_fresh_token", return_value="fake_token"), patch(
-        "httpx.Client.get", side_effect=mock_get
+    with (
+        patch("core.nango_client.get_fresh_token", return_value="fake_token"),
+        patch("httpx.Client.get", side_effect=mock_get),
     ):
         res = connector.pull_competitor_snapshot(
             connection_id="conn_strava",
@@ -155,7 +157,8 @@ def test_strava_get_report_mcp_tool(tmp_path, monkeypatch):
     con.execute(
         """
         INSERT INTO main_marts.fact_strava_club_snapshot VALUES
-        ('default', '2026-07-01', '12345', 'Paris Runners', true, 150, 12, 'pull_001', '2026-07-01T00:00:00Z')
+        ('default', '2026-07-01', '12345', 'Paris Runners', true, 150, 12,
+         'pull_001', '2026-07-01T00:00:00Z')
         """
     )
     con.close()

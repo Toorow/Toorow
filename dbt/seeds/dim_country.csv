@@ -1,33 +1,251 @@
 iso_code,display_name,aliases
-FR,France,France|FRANCE|french|FR
-DE,Germany,Germany|GERMANY|german|DE
-GB,United Kingdom,United Kingdom|UNITED KINGDOM|Great Britain|GREAT BRITAIN|GB
-US,United States,United States|UNITED STATES|United States of America|USA|US
-ES,Spain,Spain|SPAIN|spanish|ES
-IT,Italy,Italy|ITALY|italian|IT
-NL,Netherlands,Netherlands|NETHERLANDS|Holland|NL
-BE,Belgium,Belgium|BELGIUM|belgian|BE
-PT,Portugal,Portugal|PORTUGAL|portuguese|PT
-PL,Poland,Poland|POLAND|polish|PL
-SE,Sweden,Sweden|SWEDEN|swedish|SE
-NO,Norway,Norway|NORWAY|norwegian|NO
-DK,Denmark,Denmark|DENMARK|danish|DK
-FI,Finland,Finland|FINLAND|finnish|FI
-CH,Switzerland,Switzerland|SWITZERLAND|swiss|CH
-AT,Austria,Austria|AUSTRIA|austrian|AT
-IE,Ireland,Ireland|IRELAND|irish|IE
-CZ,Czech Republic,Czech Republic|CZECH REPUBLIC|Czechia|CZ
-RO,Romania,Romania|ROMANIA|romanian|RO
-HU,Hungary,Hungary|HUNGARY|hungarian|HU
-CA,Canada,Canada|CANADA|canadian|CA
-AU,Australia,Australia|AUSTRALIA|australian|AU
-NZ,New Zealand,New Zealand|NEW ZEALAND|NZ
-JP,Japan,Japan|JAPAN|japanese|JP
-KR,South Korea,South Korea|SOUTH KOREA|Korea|KR
-CN,China,China|CHINA|chinese|CN
-IN,India,India|INDIA|indian|IN
-BR,Brazil,Brazil|BRAZIL|brazilian|BR
-MX,Mexico,Mexico|MEXICO|mexican|MX
+AD,Andorra,Andorra|ANDORRA|AD
+AE,United Arab Emirates,United Arab Emirates|UNITED ARAB EMIRATES|UAE|AE
+AF,Afghanistan,Afghanistan|AFGHANISTAN|AF
+AG,Antigua and Barbuda,Antigua and Barbuda|ANTIGUA AND BARBUDA|Antigua & Barbuda|AG
+AI,Anguilla,Anguilla|ANGUILLA|AI
+AL,Albania,Albania|ALBANIA|AL
+AM,Armenia,Armenia|ARMENIA|AM
+AO,Angola,Angola|ANGOLA|AO
+AQ,Antarctica,Antarctica|ANTARCTICA|AQ
 AR,Argentina,Argentina|ARGENTINA|argentinian|AR
-ZA,South Africa,South Africa|SOUTH AFRICA|ZA
+AS,American Samoa,American Samoa|AMERICAN SAMOA|AS
+AT,Austria,Austria|AUSTRIA|austrian|AT
+AU,Australia,Australia|AUSTRALIA|australian|AU
+AW,Aruba,Aruba|ARUBA|AW
+AX,Åland Islands,Åland Islands|ÅLAND ISLANDS|Aland Islands|ALAND ISLANDS|Åland|Aland|AX
+AZ,Azerbaijan,Azerbaijan|AZERBAIJAN|AZ
+BA,Bosnia and Herzegovina,Bosnia and Herzegovina|BOSNIA AND HERZEGOVINA|Bosnia & Herzegovina|Bosnia|BA
+BB,Barbados,Barbados|BARBADOS|BB
+BD,Bangladesh,Bangladesh|BANGLADESH|BD
+BE,Belgium,Belgium|BELGIUM|belgian|BE
+BF,Burkina Faso,Burkina Faso|BURKINA FASO|BF
+BG,Bulgaria,Bulgaria|BULGARIA|BG
+BH,Bahrain,Bahrain|BAHRAIN|BH
+BI,Burundi,Burundi|BURUNDI|BI
+BJ,Benin,Benin|BENIN|BJ
+BL,Saint Barthélemy,Saint Barthélemy|SAINT BARTHÉLEMY|Saint Barthelemy|SAINT BARTHELEMY|St. Barthélemy|St. Barthelemy|BL
+BM,Bermuda,Bermuda|BERMUDA|BM
+BN,Brunei,Brunei|BRUNEI|Brunei Darussalam|BN
+BO,Bolivia,Bolivia|BOLIVIA|Plurinational State of Bolivia|BO
+BQ,Caribbean Netherlands,Caribbean Netherlands|CARIBBEAN NETHERLANDS|Bonaire Sint Eustatius and Saba|Bonaire|BQ
+BR,Brazil,Brazil|BRAZIL|brazilian|BR
+BS,Bahamas,Bahamas|BAHAMAS|The Bahamas|BS
+BT,Bhutan,Bhutan|BHUTAN|BT
+BV,Bouvet Island,Bouvet Island|BOUVET ISLAND|BV
+BW,Botswana,Botswana|BOTSWANA|BW
+BY,Belarus,Belarus|BELARUS|BY
+BZ,Belize,Belize|BELIZE|BZ
+CA,Canada,Canada|CANADA|canadian|CA
+CC,Cocos (Keeling) Islands,Cocos (Keeling) Islands|COCOS (KEELING) ISLANDS|Cocos Islands|Keeling Islands|CC
+CD,DR Congo,DR Congo|DR CONGO|Democratic Republic of the Congo|DEMOCRATIC REPUBLIC OF THE CONGO|Congo - Kinshasa|Congo-Kinshasa|Congo (DRC)|DRC|CD
+CF,Central African Republic,Central African Republic|CENTRAL AFRICAN REPUBLIC|CF
+CG,Republic of the Congo,Republic of the Congo|REPUBLIC OF THE CONGO|Congo - Brazzaville|Congo-Brazzaville|CG
+CH,Switzerland,Switzerland|SWITZERLAND|swiss|CH
+CI,Côte d'Ivoire,Côte d'Ivoire|CÔTE D'IVOIRE|Cote d'Ivoire|COTE D'IVOIRE|Ivory Coast|IVORY COAST|CI
+CK,Cook Islands,Cook Islands|COOK ISLANDS|CK
+CL,Chile,Chile|CHILE|CL
+CM,Cameroon,Cameroon|CAMEROON|CM
+CN,China,China|CHINA|chinese|CN
+CO,Colombia,Colombia|COLOMBIA|CO
+CR,Costa Rica,Costa Rica|COSTA RICA|CR
+CU,Cuba,Cuba|CUBA|CU
+CV,Cabo Verde,Cabo Verde|CABO VERDE|Cape Verde|CAPE VERDE|CV
+CW,Curaçao,Curaçao|CURAÇAO|Curacao|CURACAO|CW
+CX,Christmas Island,Christmas Island|CHRISTMAS ISLAND|CX
+CY,Cyprus,Cyprus|CYPRUS|CY
+CZ,Czech Republic,Czech Republic|CZECH REPUBLIC|Czechia|CZECHIA|CZ
+DE,Germany,Germany|GERMANY|german|DE
+DJ,Djibouti,Djibouti|DJIBOUTI|DJ
+DK,Denmark,Denmark|DENMARK|danish|DK
+DM,Dominica,Dominica|DOMINICA|DM
+DO,Dominican Republic,Dominican Republic|DOMINICAN REPUBLIC|DO
+DZ,Algeria,Algeria|ALGERIA|DZ
+EC,Ecuador,Ecuador|ECUADOR|EC
+EE,Estonia,Estonia|ESTONIA|EE
+EG,Egypt,Egypt|EGYPT|EG
+EH,Western Sahara,Western Sahara|WESTERN SAHARA|EH
+ER,Eritrea,Eritrea|ERITREA|ER
+ES,Spain,Spain|SPAIN|spanish|ES
+ET,Ethiopia,Ethiopia|ETHIOPIA|ET
+FI,Finland,Finland|FINLAND|finnish|FI
+FJ,Fiji,Fiji|FIJI|FJ
+FK,Falkland Islands,Falkland Islands|FALKLAND ISLANDS|Falkland Islands (Islas Malvinas)|Islas Malvinas|FK
+FM,Micronesia,Micronesia|MICRONESIA|Federated States of Micronesia|FM
+FO,Faroe Islands,Faroe Islands|FAROE ISLANDS|FO
+FR,France,France|FRANCE|french|FR
+GA,Gabon,Gabon|GABON|GA
+GB,United Kingdom,United Kingdom|UNITED KINGDOM|Great Britain|GREAT BRITAIN|Britain|UK|GB
+GD,Grenada,Grenada|GRENADA|GD
+GE,Georgia,Georgia|GEORGIA|GE
+GF,French Guiana,French Guiana|FRENCH GUIANA|Guyane|GUYANE|Guyane française|Guyane francaise|GF
+GG,Guernsey,Guernsey|GUERNSEY|GG
+GH,Ghana,Ghana|GHANA|GH
+GI,Gibraltar,Gibraltar|GIBRALTAR|GI
+GL,Greenland,Greenland|GREENLAND|GL
+GM,Gambia,Gambia|GAMBIA|The Gambia|GM
+GN,Guinea,Guinea|GUINEA|GN
+GP,Guadeloupe,Guadeloupe|GUADELOUPE|GP
+GQ,Equatorial Guinea,Equatorial Guinea|EQUATORIAL GUINEA|GQ
+GR,Greece,Greece|GREECE|GR
+GS,South Georgia and the South Sandwich Islands,South Georgia and the South Sandwich Islands|SOUTH GEORGIA AND THE SOUTH SANDWICH ISLANDS|South Georgia & South Sandwich Islands|South Georgia|GS
+GT,Guatemala,Guatemala|GUATEMALA|GT
+GU,Guam,Guam|GUAM|GU
+GW,Guinea-Bissau,Guinea-Bissau|GUINEA-BISSAU|GW
+GY,Guyana,Guyana|GUYANA|GY
+HK,Hong Kong,Hong Kong|HONG KONG|Hong Kong SAR China|Hong Kong SAR|HK
+HM,Heard Island and McDonald Islands,Heard Island and McDonald Islands|HEARD ISLAND AND MCDONALD ISLANDS|Heard & McDonald Islands|HM
+HN,Honduras,Honduras|HONDURAS|HN
+HR,Croatia,Croatia|CROATIA|HR
+HT,Haiti,Haiti|HAITI|HT
+HU,Hungary,Hungary|HUNGARY|hungarian|HU
+ID,Indonesia,Indonesia|INDONESIA|ID
+IE,Ireland,Ireland|IRELAND|irish|Republic of Ireland|IE
+IL,Israel,Israel|ISRAEL|IL
+IM,Isle of Man,Isle of Man|ISLE OF MAN|IM
+IN,India,India|INDIA|indian|IN
+IO,British Indian Ocean Territory,British Indian Ocean Territory|BRITISH INDIAN OCEAN TERRITORY|IO
+IQ,Iraq,Iraq|IRAQ|IQ
+IR,Iran,Iran|IRAN|Islamic Republic of Iran|IR
+IS,Iceland,Iceland|ICELAND|IS
+IT,Italy,Italy|ITALY|italian|IT
+JE,Jersey,Jersey|JERSEY|JE
+JM,Jamaica,Jamaica|JAMAICA|JM
+JO,Jordan,Jordan|JORDAN|JO
+JP,Japan,Japan|JAPAN|japanese|JP
+KE,Kenya,Kenya|KENYA|KE
+KG,Kyrgyzstan,Kyrgyzstan|KYRGYZSTAN|KG
+KH,Cambodia,Cambodia|CAMBODIA|KH
+KI,Kiribati,Kiribati|KIRIBATI|KI
+KM,Comoros,Comoros|COMOROS|KM
+KN,Saint Kitts and Nevis,Saint Kitts and Nevis|SAINT KITTS AND NEVIS|St. Kitts & Nevis|St. Kitts and Nevis|KN
+KP,North Korea,North Korea|NORTH KOREA|Korea (North)|Democratic People's Republic of Korea|DPRK|KP
+KR,South Korea,South Korea|SOUTH KOREA|Korea|Korea (South)|Republic of Korea|KR
+KW,Kuwait,Kuwait|KUWAIT|KW
+KY,Cayman Islands,Cayman Islands|CAYMAN ISLANDS|KY
+KZ,Kazakhstan,Kazakhstan|KAZAKHSTAN|KZ
+LA,Laos,Laos|LAOS|Lao PDR|Lao People's Democratic Republic|LA
+LB,Lebanon,Lebanon|LEBANON|LB
+LC,Saint Lucia,Saint Lucia|SAINT LUCIA|St. Lucia|LC
+LI,Liechtenstein,Liechtenstein|LIECHTENSTEIN|LI
+LK,Sri Lanka,Sri Lanka|SRI LANKA|LK
+LR,Liberia,Liberia|LIBERIA|LR
+LS,Lesotho,Lesotho|LESOTHO|LS
+LT,Lithuania,Lithuania|LITHUANIA|LT
+LU,Luxembourg,Luxembourg|LUXEMBOURG|LU
+LV,Latvia,Latvia|LATVIA|LV
+LY,Libya,Libya|LIBYA|LY
+MA,Morocco,Morocco|MOROCCO|MA
+MC,Monaco,Monaco|MONACO|MC
+MD,Moldova,Moldova|MOLDOVA|Republic of Moldova|MD
+ME,Montenegro,Montenegro|MONTENEGRO|ME
+MF,Saint Martin,Saint Martin|SAINT MARTIN|St. Martin|Saint-Martin|MF
+MG,Madagascar,Madagascar|MADAGASCAR|MG
+MH,Marshall Islands,Marshall Islands|MARSHALL ISLANDS|MH
+MK,North Macedonia,North Macedonia|NORTH MACEDONIA|Macedonia|MACEDONIA|MK
+ML,Mali,Mali|MALI|ML
+MM,Myanmar,Myanmar|MYANMAR|Myanmar (Burma)|Burma|BURMA|MM
+MN,Mongolia,Mongolia|MONGOLIA|MN
+MO,Macao,Macao|MACAO|Macau|MACAU|Macao SAR China|Macao SAR|MO
+MP,Northern Mariana Islands,Northern Mariana Islands|NORTHERN MARIANA ISLANDS|MP
+MQ,Martinique,Martinique|MARTINIQUE|MQ
+MR,Mauritania,Mauritania|MAURITANIA|MR
+MS,Montserrat,Montserrat|MONTSERRAT|MS
+MT,Malta,Malta|MALTA|MT
+MU,Mauritius,Mauritius|MAURITIUS|MU
+MV,Maldives,Maldives|MALDIVES|MV
+MW,Malawi,Malawi|MALAWI|MW
+MX,Mexico,Mexico|MEXICO|mexican|MX
+MY,Malaysia,Malaysia|MALAYSIA|MY
+MZ,Mozambique,Mozambique|MOZAMBIQUE|MZ
+NA,Namibia,Namibia|NAMIBIA|NA
+NC,New Caledonia,New Caledonia|NEW CALEDONIA|NC
+NE,Niger,Niger|NIGER|NE
+NF,Norfolk Island,Norfolk Island|NORFOLK ISLAND|NF
 NG,Nigeria,Nigeria|NIGERIA|nigerian|NG
+NI,Nicaragua,Nicaragua|NICARAGUA|NI
+NL,Netherlands,Netherlands|NETHERLANDS|Holland|The Netherlands|NL
+NO,Norway,Norway|NORWAY|norwegian|NO
+NP,Nepal,Nepal|NEPAL|NP
+NR,Nauru,Nauru|NAURU|NR
+NU,Niue,Niue|NIUE|NU
+NZ,New Zealand,New Zealand|NEW ZEALAND|NZ
+OM,Oman,Oman|OMAN|OM
+PA,Panama,Panama|PANAMA|PA
+PE,Peru,Peru|PERU|PE
+PF,French Polynesia,French Polynesia|FRENCH POLYNESIA|Polynésie française|PF
+PG,Papua New Guinea,Papua New Guinea|PAPUA NEW GUINEA|PG
+PH,Philippines,Philippines|PHILIPPINES|The Philippines|PH
+PK,Pakistan,Pakistan|PAKISTAN|PK
+PL,Poland,Poland|POLAND|polish|PL
+PM,Saint Pierre and Miquelon,Saint Pierre and Miquelon|SAINT PIERRE AND MIQUELON|St. Pierre & Miquelon|Saint-Pierre-et-Miquelon|PM
+PN,Pitcairn Islands,Pitcairn Islands|PITCAIRN ISLANDS|Pitcairn|PN
+PR,Puerto Rico,Puerto Rico|PUERTO RICO|PR
+PS,Palestine,Palestine|PALESTINE|Palestinian Territories|State of Palestine|PS
+PT,Portugal,Portugal|PORTUGAL|portuguese|PT
+PW,Palau,Palau|PALAU|PW
+PY,Paraguay,Paraguay|PARAGUAY|PY
+QA,Qatar,Qatar|QATAR|QA
+RE,Réunion,Réunion|RÉUNION|Reunion|REUNION|La Réunion|RE
+RO,Romania,Romania|ROMANIA|romanian|RO
+RS,Serbia,Serbia|SERBIA|RS
+RU,Russia,Russia|RUSSIA|Russian Federation|RUSSIAN FEDERATION|RU
+RW,Rwanda,Rwanda|RWANDA|RW
+SA,Saudi Arabia,Saudi Arabia|SAUDI ARABIA|SA
+SB,Solomon Islands,Solomon Islands|SOLOMON ISLANDS|SB
+SC,Seychelles,Seychelles|SEYCHELLES|SC
+SD,Sudan,Sudan|SUDAN|SD
+SE,Sweden,Sweden|SWEDEN|swedish|SE
+SG,Singapore,Singapore|SINGAPORE|SG
+SH,Saint Helena,Saint Helena|SAINT HELENA|St. Helena|Saint Helena Ascension and Tristan da Cunha|SH
+SI,Slovenia,Slovenia|SLOVENIA|SI
+SJ,Svalbard and Jan Mayen,Svalbard and Jan Mayen|SVALBARD AND JAN MAYEN|Svalbard & Jan Mayen|Svalbard|SJ
+SK,Slovakia,Slovakia|SLOVAKIA|SK
+SL,Sierra Leone,Sierra Leone|SIERRA LEONE|SL
+SM,San Marino,San Marino|SAN MARINO|SM
+SN,Senegal,Senegal|SENEGAL|SN
+SO,Somalia,Somalia|SOMALIA|SO
+SR,Suriname,Suriname|SURINAME|SR
+SS,South Sudan,South Sudan|SOUTH SUDAN|SS
+ST,São Tomé and Príncipe,São Tomé and Príncipe|SÃO TOMÉ AND PRÍNCIPE|Sao Tome and Principe|SAO TOME AND PRINCIPE|São Tomé & Príncipe|Sao Tome & Principe|ST
+SV,El Salvador,El Salvador|EL SALVADOR|SV
+SX,Sint Maarten,Sint Maarten|SINT MAARTEN|SX
+SY,Syria,Syria|SYRIA|Syrian Arab Republic|SY
+SZ,Eswatini,Eswatini|ESWATINI|Swaziland|SWAZILAND|SZ
+TC,Turks and Caicos Islands,Turks and Caicos Islands|TURKS AND CAICOS ISLANDS|Turks & Caicos Islands|TC
+TD,Chad,Chad|CHAD|TD
+TF,French Southern Territories,French Southern Territories|FRENCH SOUTHERN TERRITORIES|French Southern and Antarctic Lands|TF
+TG,Togo,Togo|TOGO|TG
+TH,Thailand,Thailand|THAILAND|TH
+TJ,Tajikistan,Tajikistan|TAJIKISTAN|TJ
+TK,Tokelau,Tokelau|TOKELAU|TK
+TL,Timor-Leste,Timor-Leste|TIMOR-LESTE|East Timor|EAST TIMOR|TL
+TM,Turkmenistan,Turkmenistan|TURKMENISTAN|TM
+TN,Tunisia,Tunisia|TUNISIA|TN
+TO,Tonga,Tonga|TONGA|TO
+TR,Türkiye,Türkiye|TÜRKIYE|Turkiye|TURKIYE|Turkey|TURKEY|TR
+TT,Trinidad and Tobago,Trinidad and Tobago|TRINIDAD AND TOBAGO|Trinidad & Tobago|TT
+TV,Tuvalu,Tuvalu|TUVALU|TV
+TW,Taiwan,Taiwan|TAIWAN|TW
+TZ,Tanzania,Tanzania|TANZANIA|United Republic of Tanzania|TZ
+UA,Ukraine,Ukraine|UKRAINE|UA
+UG,Uganda,Uganda|UGANDA|UG
+UM,United States Minor Outlying Islands,United States Minor Outlying Islands|UNITED STATES MINOR OUTLYING ISLANDS|U.S. Outlying Islands|UM
+US,United States,United States|UNITED STATES|United States of America|UNITED STATES OF AMERICA|USA|U.S.|U.S.A.|US
+UY,Uruguay,Uruguay|URUGUAY|UY
+UZ,Uzbekistan,Uzbekistan|UZBEKISTAN|UZ
+VA,Vatican City,Vatican City|VATICAN CITY|Vatican|VATICAN|Holy See|VA
+VC,Saint Vincent and the Grenadines,Saint Vincent and the Grenadines|SAINT VINCENT AND THE GRENADINES|St. Vincent & Grenadines|Saint Vincent|VC
+VE,Venezuela,Venezuela|VENEZUELA|Bolivarian Republic of Venezuela|VE
+VG,British Virgin Islands,British Virgin Islands|BRITISH VIRGIN ISLANDS|Virgin Islands (British)|VG
+VI,U.S. Virgin Islands,U.S. Virgin Islands|U.S. VIRGIN ISLANDS|US Virgin Islands|United States Virgin Islands|Virgin Islands (U.S.)|VI
+VN,Vietnam,Vietnam|VIETNAM|Viet Nam|VIET NAM|VN
+VU,Vanuatu,Vanuatu|VANUATU|VU
+WF,Wallis and Futuna,Wallis and Futuna|WALLIS AND FUTUNA|Wallis & Futuna|WF
+WS,Samoa,Samoa|SAMOA|WS
+XK,Kosovo,Kosovo|KOSOVO|Republic of Kosovo|XK
+YE,Yemen,Yemen|YEMEN|YE
+YT,Mayotte,Mayotte|MAYOTTE|YT
+ZA,South Africa,South Africa|SOUTH AFRICA|ZA
+ZM,Zambia,Zambia|ZAMBIA|ZM
+ZW,Zimbabwe,Zimbabwe|ZIMBABWE|ZW

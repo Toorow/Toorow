@@ -11,7 +11,7 @@ export PORT
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev install-server install-ui test lint build-widget bundle-check smoke tf-validate check-non-additive-guard check-narrative-no-raw audit-public publish-public
+.PHONY: help dev install-server install-ui test lint check-migration-catalog apply-migrations build-widget bundle-check smoke tf-validate check-non-additive-guard check-narrative-no-raw audit-public publish-public retention-apply retention-check
 
 help: ## Show this help
 	@echo "toorow targets:"
@@ -20,12 +20,16 @@ help: ## Show this help
 	@echo "  make install-ui     Install UI deps via pnpm"
 	@echo "  make test           Run server pytest suite"
 	@echo "  make lint           Run ruff on server/"
+	@echo "  make check-migration-catalog  Validate migration names and order"
+	@echo "  make apply-migrations  Apply pending migrations with the ledger runner"
 	@echo "  make build-widget   Build the sample single-file widget"
 	@echo "  make bundle-check    Run the AD-11 bundle gate on the built widget"
 	@echo "  make smoke          Build widget + bundle gate + server import check"
 	@echo "  make tf-validate    terraform validate (no apply)"
 	@echo "  make audit-public   Audit the public application allow-list (no write)"
 	@echo "  make publish-public Sync the public projection into ../toorow-public (no push)"
+	@echo "  make retention-check Show image/build-artefact retention (read-only)"
+	@echo "  make retention-apply Apply retention so deploy artefacts stop billing"
 
 install-server: ## Resolve + install Python deps into a uv-managed env
 	uv sync
@@ -41,6 +45,12 @@ test: ## Run the server test suite
 
 lint: ## Lint the server package
 	uv run ruff check server
+
+check-migration-catalog: ## Validate migration names, unique IDs, and continuity
+	uv run python scripts/check_migration_catalog.py
+
+apply-migrations: ## Apply pending migrations with PLATFORM_DB_URL
+	uv run python scripts/apply_migrations.py
 
 build-widget: ## Build the sample widget to a single self-contained HTML file
 	pnpm -C ui --filter @toorow/widget-sample build
@@ -59,6 +69,12 @@ audit-public: ## Audit the public application allow-list projection (read-only)
 
 publish-public: ## Sync the projection into ../toorow-public and show the diff (never pushes; add --push manually)
 	python scripts/publish_public_app.py
+
+retention-check: ## Show current image / build-artefact retention (read-only)
+	bash infra/scripts/apply_retention.sh --dry-run
+
+retention-apply: ## Apply retention so deploy artefacts stop billing forever
+	bash infra/scripts/apply_retention.sh
 
 check-non-additive-guard: ## AD-4 guard: fail if SUM(average_position) appears in mart SQL (non-comment lines)
 	@echo "Checking for naive SUM(average_position) in mart SQL (non-comment lines)..."

@@ -105,6 +105,11 @@ def test_local_markets_adds_canonical_country_joint_grain_and_snapshot():
     assert compiled["geographic"] == {
         "mode": "local_markets",
         "country_codes": ["DE", "FR"],
+        # Flat codes read as the equivalent single-country markets (Story 37.8).
+        "markets": [
+            {"id": "DE", "label": "DE", "country_codes": ["DE"]},
+            {"id": "FR", "label": "FR", "country_codes": ["FR"]},
+        ],
         "posture_fingerprint": compiled["geographic"]["posture_fingerprint"],
         "compilation_status": "country_complete",
         "effective_country_field": "geo_country",
@@ -113,6 +118,7 @@ def test_local_markets_adds_canonical_country_joint_grain_and_snapshot():
             "grain_after": ["campaign_id", "date", "geo_country"],
             "added_dimensions": ["geo_country"],
             "tracked_country_count": 2,
+            "tracked_market_count": 2,
             "quota_cost": {"read_points": 3, "unit": "request"},
             "cardinality_estimate": "provider_country_cardinality",
         },

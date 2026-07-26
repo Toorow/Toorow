@@ -70,17 +70,17 @@ _DEFAULT_TABLES = [
     "context_events",
     "project_preferences",
     "connection_ref_dim",
-    "alert_definitions",   # Story 5.3: added with zero code change (HG-8)
-    "context_topics",      # Story 11.3: knowledge warehouse mirror (AD-8, DuckDB-first)
-    "procedures",          # Story 11.3: knowledge warehouse mirror (AD-8, DuckDB-first)
-    "context_graph",       # Story 11.3: knowledge warehouse mirror (AD-8, DuckDB-first)
-    "schema_context",      # Story 11.3: knowledge warehouse mirror (AD-8, DuckDB-first)
-    "media_plans",         # Story 22.1: media plan mirror (AD-8) -- FR38/CAP-26
-    "media_plan_versions", # Story 22.1: includes is_active so 22.4 filters the active version
-    "media_plan_lines",    # Story 22.1: version-scoped plan lines (line_key stable identity)
+    "alert_definitions",  # Story 5.3: added with zero code change (HG-8)
+    "context_topics",  # Story 11.3: knowledge warehouse mirror (AD-8, DuckDB-first)
+    "procedures",  # Story 11.3: knowledge warehouse mirror (AD-8, DuckDB-first)
+    "context_graph",  # Story 11.3: knowledge warehouse mirror (AD-8, DuckDB-first)
+    "schema_context",  # Story 11.3: knowledge warehouse mirror (AD-8, DuckDB-first)
+    "media_plans",  # Story 22.1: media plan mirror (AD-8) -- FR38/CAP-26
+    "media_plan_versions",  # Story 22.1: includes is_active so 22.4 filters the active version
+    "media_plan_lines",  # Story 22.1: version-scoped plan lines (line_key stable identity)
     "plan_allocation_daily",  # Story 22.1: materialised daily spread for the plan-vs-actual join
     "plan_line_mappings",  # Story 22.3: N:M line<->campaign mapping + splits (22.4 ventilation)
-    "fx_conflict_resolutions",  # Story 13.2: CURRENCY_CONFLICT resolutions (AD-6, consumed by dbt staging)
+    "fx_conflict_resolutions",  # Story 13.2: CURRENCY_CONFLICT resolutions (AD-6, dbt staging)
 ]
 
 # ---------------------------------------------------------------------------
@@ -204,9 +204,7 @@ def _write_to_duckdb(table: str, col_names: list[str], rows: list[dict], db_path
             _do_write()
         except duckdb.IOException as exc:
             # Retry once: a concurrent reader in another process may hold the file.
-            logger.warning(
-                "mirror_sync: duckdb_io_error table=%s -- retrying once: %s", table, exc
-            )
+            logger.warning("mirror_sync: duckdb_io_error table=%s -- retrying once: %s", table, exc)
             time.sleep(0.5)
             _do_write()  # raises if it fails a second time
 
@@ -263,18 +261,14 @@ def sync_tables(
 
         if backend == "duckdb":
             if not db_path:
-                logger.warning(
-                    "mirror_sync: TOOROW_DUCKDB_PATH not set -- skipping DuckDB write"
-                )
+                logger.warning("mirror_sync: TOOROW_DUCKDB_PATH not set -- skipping DuckDB write")
                 synced[table] = len(rows)
                 continue
             try:
                 _write_to_duckdb(table, col_names, rows, db_path)
                 synced[table] = len(rows)
             except Exception as exc:
-                logger.warning(
-                    "mirror_sync: duckdb_write_error table=%s: %s", table, exc
-                )
+                logger.warning("mirror_sync: duckdb_write_error table=%s: %s", table, exc)
                 result = {"error": str(exc), "synced": synced, "lag_seconds": 0.0}
                 _last_sync_result = result
                 return result
@@ -283,9 +277,7 @@ def sync_tables(
             # BigQuery write path — deferred to Phase B.
             # Same pattern: create or replace mirror_* dataset table.
             # Not implemented at P4-dev (local only).
-            logger.info(
-                "mirror_sync: bigquery target -- write for %s deferred (Phase B)", table
-            )
+            logger.info("mirror_sync: bigquery target -- write for %s deferred (Phase B)", table)
             synced[table] = len(rows)
 
         else:

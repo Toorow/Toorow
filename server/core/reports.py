@@ -630,10 +630,43 @@ def render_report(
         from core.geographic_semantics import group_market_reporting_rows  # noqa: PLC0415
 
         if getattr(geographic_posture, "mode", None) == LOCAL_MARKETS:
-            _geo_result = group_market_reporting_rows(_current_rows, geographic_posture)
-            _prior_geo_result = group_market_reporting_rows(_prior_rows, geographic_posture)
+            # Story 37.9: resolution reads the client's CONFIRMED conformance
+            # mappings on top of the shared seed, so a spelling repaired once is
+            # applied at the NEXT READ with no fact rewrite. Fail-soft: an
+            # unavailable MDM layer degrades to seed-only (more Unknown, never a
+            # guess and never a failed report).
+            _country_resolver = None
+            try:
+                from core.geographic_conformance import make_country_resolver  # noqa: PLC0415
+
+                _country_resolver = make_country_resolver(project_id=project_id)
+            except Exception:  # noqa: BLE001
+                _country_resolver = None
+            _geo_result = group_market_reporting_rows(
+                _current_rows, geographic_posture, resolver=_country_resolver
+            )
+            _prior_geo_result = group_market_reporting_rows(
+                _prior_rows, geographic_posture, resolver=_country_resolver
+            )
             _current_rows = list(_geo_result.rows)
             _prior_rows = list(_prior_geo_result.rows)
+            # The dead end closes here: unresolved spellings become governed
+            # 'proposed' suggestions and a dq_geography firing visible to the
+            # Epic 13 monitors and get_data_quality_report.
+            if _geo_result.data_quality:
+                try:
+                    from core.geographic_conformance import (  # noqa: PLC0415
+                        record_unmapped_country_evidence,
+                    )
+
+                    record_unmapped_country_evidence(
+                        project_id,
+                        _geo_result.data_quality,
+                        window_date=str(end),
+                        emit_firing=False,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
 
     # rows = current-window rows (for post-processors, ordering, top_n, envelope data.rows)
     rows = _current_rows
@@ -711,6 +744,9 @@ def render_report(
     if _geo_result is not None:
         from core.geographic_semantics import market_bucket_descriptors  # noqa: PLC0415
 
+        # Story 37.8: the split is expressed as client-defined MARKETS -- stable
+        # id, operator label and member country codes -- not as raw ISO codes.
+        _geo_buckets = market_bucket_descriptors(geographic_posture)
         envelope["data"]["geography"] = {
             "mode": getattr(geographic_posture, "mode"),
             "country_partition": _geo_result.country_partition,
@@ -725,7 +761,19 @@ def render_report(
                     {"status": "unavailable", "datastreams": []},
                 )
             ),
-            "buckets": market_bucket_descriptors(geographic_posture),
+            "buckets": _geo_buckets,
+            "markets": [
+                {
+                    "id": bucket["id"],
+                    "label": bucket["label"],
+                    "country_codes": bucket["country_codes"],
+                }
+                for bucket in _geo_buckets
+                if bucket["kind"] == "tracked"
+            ],
+            "bindable_market_ids": [
+                bucket["id"] for bucket in _geo_buckets if bucket["bindable"]
+            ],
         }
         envelope["meta"]["alerts"].extend(_geo_result.data_quality)
     # Override connectors in data envelope when multi-connector.

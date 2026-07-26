@@ -136,7 +136,10 @@ docker compose -f infra/nango/docker-compose.yml down -v
 - Fully inspectable and version-controllable
 - Revisit in Story 2.6 when `audit_log` table adds complexity
 
-Migration files live in `infra/nango/migrations/`. Apply in numeric order.
+Migration files live in `infra/nango/migrations/`. Validate them with
+`python scripts/check_migration_catalog.py`, then apply pending migrations with
+`PLATFORM_DB_URL=... python scripts/apply_migrations.py`. The runner serializes
+execution and records checksums in `toorow_meta.schema_migrations`.
 
 ## Port allocation
 

@@ -39,21 +39,23 @@ def test_multi_day_window_with_connection_ref_returns_real_status():
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO app.projects (id, name, slug, created_by) "
-                "VALUES (%s,%s,%s,'test') ON CONFLICT DO NOTHING",
+                "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
+                "VALUES (%s,%s,%s,'test', 'org_test_fixture') ON CONFLICT DO NOTHING",
                 (project_id, project_id, project_id),
             )
             cur.execute(
                 "INSERT INTO app.connection_ref "
-                "(id, nango_connection_id, provider, project_id, status) "
-                "VALUES (%s,%s,'google-analytics',%s,'active')",
+                "(id, nango_connection_id, provider, project_id, status, owner_org_id, "
+                "owner_identity) "
+                "VALUES (%s,%s,'google-analytics',%s,'active', 'org_test_fixture', "
+                "'tester@example.com')",
                 (conn_ref_id, f"nango-{conn_ref_id[-8:]}", project_id),
             )
             cur.execute(
                 "INSERT INTO app.datastreams "
                 "(id, project_id, name, module_name, connection_ref_id, "
-                " report_profile_id, enabled) "
-                "VALUES (%s,%s,%s,'google-analytics',%s,'standard_daily',TRUE)",
+                " report_profile_id, enabled, org_id) "
+                "VALUES (%s,%s,%s,'google-analytics',%s,'standard_daily',TRUE, 'org_test_fixture')",
                 (ds_id, project_id, f"stream-{ds_id[-6:]}", conn_ref_id),
             )
             # A narrow 3-day pull that OVERLAPS (does not contain) the 30-day window.

@@ -14,6 +14,7 @@ Coverage:
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
@@ -459,7 +460,10 @@ class TestCreateTargetField:
         cur.__exit__ = MagicMock(return_value=False)
         conn.cursor.return_value.__enter__ = lambda s: cur
         conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        cur.fetchone.return_value = created_row
+        # Story 44.7: create_target_field also does a MAX(version_number)
+        # lookup (finding #1) -- fetchone() is called twice: INSERT...RETURNING,
+        # then SELECT COALESCE(MAX(version_number), 0).
+        cur.fetchone.side_effect = [created_row, (0,)]
         cur.description = _TF_COLS
 
         result = create_target_field(
@@ -563,7 +567,10 @@ class TestCreateTargetField:
         cur.__exit__ = MagicMock(return_value=False)
         conn.cursor.return_value.__enter__ = lambda s: cur
         conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        cur.fetchone.return_value = created_row
+        # Story 44.7: create_target_field also does a MAX(version_number)
+        # lookup (finding #1) -- fetchone() is called twice: INSERT...RETURNING,
+        # then SELECT COALESCE(MAX(version_number), 0).
+        cur.fetchone.side_effect = [created_row, (0,)]
         cur.description = _TF_COLS
 
         result = create_target_field(
@@ -666,6 +673,75 @@ class TestUpdateTargetField:
         # UPDATE should NOT have been called (empty patch)
         sql_calls = [str(c) for c in cur.execute.call_args_list]
         assert not any("UPDATE" in s for s in sql_calls)
+
+    def test_restore_of_identical_snapshot_appends_exactly_one_restored_version(self):
+        """Story 44.8 finding #3: restoring a snapshot whose values already match
+        the current row must NOT be a silent no-op -- it still appends exactly
+        one change_kind='restored' version row (diff falls back to
+        {'_restored_from': <version>} alone, since there is no real field diff).
+        """
+        from core.datamodel import update_target_field
+
+        # Before and after are IDENTICAL -- the restore target equals the
+        # current row's values (e.g. restoring the current version).
+        row = ("clicks", "Clics", "integer", "metric", "sum", None, "system",
+               True, _NOW, "approved", None, None, _NOW)
+
+        cur1 = MagicMock()  # SELECT before state
+        cur1.__enter__ = MagicMock(return_value=cur1)
+        cur1.__exit__ = MagicMock(return_value=False)
+        cur1.fetchone.return_value = row
+        cur1.description = _TF_GOVERNANCE_COLS
+
+        cur2 = MagicMock()  # UPDATE ... RETURNING (same values)
+        cur2.__enter__ = MagicMock(return_value=cur2)
+        cur2.__exit__ = MagicMock(return_value=False)
+        cur2.fetchone.return_value = row
+        cur2.description = _TF_GOVERNANCE_COLS
+
+        cur3 = MagicMock()  # SELECT MAX(version_number)
+        cur3.__enter__ = MagicMock(return_value=cur3)
+        cur3.__exit__ = MagicMock(return_value=False)
+        cur3.fetchone.return_value = (2,)
+
+        insert_calls: list[tuple] = []
+
+        cur4 = MagicMock()  # INSERT into target_fields_versions
+
+        def _capture_insert(sql, params=None):
+            insert_calls.append((sql, params))
+
+        cur4.__enter__ = MagicMock(return_value=cur4)
+        cur4.__exit__ = MagicMock(return_value=False)
+        cur4.execute.side_effect = _capture_insert
+
+        conn = MagicMock()
+        conn.cursor.side_effect = [
+            _make_ctx(cur1), _make_ctx(cur2), _make_ctx(cur3), _make_ctx(cur4),
+        ]
+
+        import unittest.mock as um
+        with um.patch("core.audit.write_audit_row"):
+            result = update_target_field(
+                "clicks",
+                {
+                    "display_name": "Clics",
+                    "measure": "sum",
+                    "description": None,
+                    "restored_from": 1,
+                },
+                conn,
+                identity="alice@toorow.io",
+            )
+
+        assert result is not None
+        # Exactly one version row appended, change_kind='restored'.
+        assert len(insert_calls) == 1
+        insert_sql, insert_params = insert_calls[0]
+        assert "target_fields_versions" in insert_sql
+        assert "restored" in insert_params
+        diff_json = insert_params[insert_params.index("restored") + 1]
+        assert json.loads(diff_json) == {"_restored_from": 1}
 
 
 # ---------------------------------------------------------------------------
@@ -782,8 +858,21 @@ class TestApproveTargetField:
         cur3.__enter__ = MagicMock(return_value=cur3)
         cur3.__exit__ = MagicMock(return_value=False)
 
+        # cur4: Story 44.7 -- SELECT MAX(version_number) for target_fields_versions
+        cur4 = MagicMock()
+        cur4.__enter__ = MagicMock(return_value=cur4)
+        cur4.__exit__ = MagicMock(return_value=False)
+        cur4.fetchone.return_value = (0,)
+
+        # cur5: Story 44.7 -- INSERT into target_fields_versions
+        cur5 = MagicMock()
+        cur5.__enter__ = MagicMock(return_value=cur5)
+        cur5.__exit__ = MagicMock(return_value=False)
+
         conn = MagicMock()
-        conn.cursor.side_effect = [_make_ctx(cur1), _make_ctx(cur2), _make_ctx(cur3)]
+        conn.cursor.side_effect = [
+            _make_ctx(cur1), _make_ctx(cur2), _make_ctx(cur3), _make_ctx(cur4), _make_ctx(cur5),
+        ]
 
         result = approve_target_field("my_field", "approver@test", conn)
 
@@ -838,8 +927,19 @@ class TestApproveTargetField:
 
         cur3.execute.side_effect = capture_insert
 
+        cur4 = MagicMock()
+        cur4.__enter__ = MagicMock(return_value=cur4)
+        cur4.__exit__ = MagicMock(return_value=False)
+        cur4.fetchone.return_value = (0,)
+
+        cur5 = MagicMock()
+        cur5.__enter__ = MagicMock(return_value=cur5)
+        cur5.__exit__ = MagicMock(return_value=False)
+
         conn = MagicMock()
-        conn.cursor.side_effect = [_make_ctx(cur1), _make_ctx(cur2), _make_ctx(cur3)]
+        conn.cursor.side_effect = [
+            _make_ctx(cur1), _make_ctx(cur2), _make_ctx(cur3), _make_ctx(cur4), _make_ctx(cur5),
+        ]
 
         approve_target_field("clicks", "admin@test", conn)
 
@@ -910,8 +1010,19 @@ class TestApproveTargetField:
         cur3.__enter__ = MagicMock(return_value=cur3)
         cur3.__exit__ = MagicMock(return_value=False)
 
+        cur4 = MagicMock()
+        cur4.__enter__ = MagicMock(return_value=cur4)
+        cur4.__exit__ = MagicMock(return_value=False)
+        cur4.fetchone.return_value = (0,)
+
+        cur5 = MagicMock()
+        cur5.__enter__ = MagicMock(return_value=cur5)
+        cur5.__exit__ = MagicMock(return_value=False)
+
         conn = MagicMock()
-        conn.cursor.side_effect = [_make_ctx(cur1), _make_ctx(cur2), _make_ctx(cur3)]
+        conn.cursor.side_effect = [
+            _make_ctx(cur1), _make_ctx(cur2), _make_ctx(cur3), _make_ctx(cur4), _make_ctx(cur5),
+        ]
 
         approve_target_field("cost", "cfo@test", conn)
 
@@ -932,25 +1043,55 @@ class TestApproveTargetField:
 
 
 class TestDeleteTargetField:
+    """Story 44.7: delete_target_field(name, identity, conn) -- soft delete.
+
+    Cursor sequence on a real soft-delete: cur1 (guard SELECT), cur2 (UPDATE
+    status='deleted' RETURNING), cur3 (MAX(version_number)), cur4 (INSERT
+    version row). Guard-failure paths (not found / default / in-use) only
+    ever touch cur1.
+    """
+
+    _AFTER_ROW = (
+        "orphan_field", "Orphan", "integer", "metric", "sum", None,
+        "user@test", False, _NOW, "deleted", None, None, _NOW,
+    )
+
     def test_delete_orphan_field_succeeds(self):
         """DELETE a field with zero mappings (and is_default=False) completes without error."""
         from core.datamodel import delete_target_field
 
-        # SELECT row: (name, is_default=False, used_by_count=0)
+        # SELECT row: (name, is_default=False, used_by_count=0, status='draft')
         cur1 = MagicMock()
         cur1.__enter__ = MagicMock(return_value=cur1)
         cur1.__exit__ = MagicMock(return_value=False)
-        cur1.fetchone.return_value = ("orphan_field", False, 0)
+        cur1.fetchone.return_value = ("orphan_field", False, 0, "draft")
 
-        # DELETE cursor (only deletes the field row; audit rows are preserved)
+        # cur2: UPDATE ... SET status='deleted' RETURNING (soft delete)
         cur2 = MagicMock()
         cur2.__enter__ = MagicMock(return_value=cur2)
         cur2.__exit__ = MagicMock(return_value=False)
+        cur2.fetchone.return_value = self._AFTER_ROW
+        cur2.description = _TF_GOVERNANCE_COLS
+
+        # cur3: Story 44.7 -- SELECT MAX(version_number)
+        cur3 = MagicMock()
+        cur3.__enter__ = MagicMock(return_value=cur3)
+        cur3.__exit__ = MagicMock(return_value=False)
+        cur3.fetchone.return_value = (0,)
+
+        # cur4: Story 44.7 -- INSERT into target_fields_versions
+        cur4 = MagicMock()
+        cur4.__enter__ = MagicMock(return_value=cur4)
+        cur4.__exit__ = MagicMock(return_value=False)
 
         conn = MagicMock()
-        conn.cursor.side_effect = [_make_ctx(cur1), _make_ctx(cur2)]
+        conn.cursor.side_effect = [
+            _make_ctx(cur1), _make_ctx(cur2), _make_ctx(cur3), _make_ctx(cur4),
+        ]
 
-        delete_target_field("orphan_field", conn)  # must not raise
+        import unittest.mock as um
+        with um.patch("core.audit.write_audit_row"):
+            delete_target_field("orphan_field", "jean@test", conn)  # must not raise
 
         conn.commit.assert_called_once()
 
@@ -958,38 +1099,59 @@ class TestDeleteTargetField:
         """DELETE a previously approved field (0 mappings) succeeds.
 
         Audit rows in target_field_approvals are NOT deleted -- they remain as
-        historical trace.  The DELETE cursor must NOT execute a DELETE on
+        historical trace. The UPDATE (soft delete) must NOT touch
         target_field_approvals.
         """
         from core.datamodel import delete_target_field
 
-        # SELECT row: (name, is_default=False, used_by_count=0)
         cur1 = MagicMock()
         cur1.__enter__ = MagicMock(return_value=cur1)
         cur1.__exit__ = MagicMock(return_value=False)
-        cur1.fetchone.return_value = ("old_kpi", False, 0)
+        cur1.fetchone.return_value = ("old_kpi", False, 0, "approved")
 
         executed_sqls: list[str] = []
 
         cur2 = MagicMock()
         cur2.__enter__ = MagicMock(return_value=cur2)
         cur2.__exit__ = MagicMock(return_value=False)
+        cur2.fetchone.return_value = self._AFTER_ROW
+        cur2.description = _TF_GOVERNANCE_COLS
 
         def capture(sql, params=None):
             executed_sqls.append(sql)
 
         cur2.execute.side_effect = capture
 
-        conn = MagicMock()
-        conn.cursor.side_effect = [_make_ctx(cur1), _make_ctx(cur2)]
+        cur3 = MagicMock()
+        cur3.__enter__ = MagicMock(return_value=cur3)
+        cur3.__exit__ = MagicMock(return_value=False)
+        cur3.fetchone.return_value = (0,)
 
-        delete_target_field("old_kpi", conn)  # must not raise
+        cur4 = MagicMock()
+        cur4.__enter__ = MagicMock(return_value=cur4)
+        cur4.__exit__ = MagicMock(return_value=False)
+
+        conn = MagicMock()
+        conn.cursor.side_effect = [
+            _make_ctx(cur1), _make_ctx(cur2), _make_ctx(cur3), _make_ctx(cur4),
+        ]
+
+        import unittest.mock as um
+        with um.patch("core.audit.write_audit_row"):
+            delete_target_field("old_kpi", "jean@test", conn)  # must not raise
 
         conn.commit.assert_called_once()
-        # Audit rows must NOT be deleted (historical preservation)
+        # Audit rows must NOT be deleted (historical preservation); and this
+        # must be a soft delete (UPDATE), never a hard DELETE.
         assert not any(
             "target_field_approvals" in s for s in executed_sqls
         ), "delete_target_field must NOT delete rows from target_field_approvals"
+        assert any("update" in s.lower() for s in executed_sqls), (
+            "delete_target_field must UPDATE (soft delete), not DELETE"
+        )
+        assert not any(
+            s.strip().lower().startswith("delete") for s in executed_sqls
+        ), "delete_target_field must never issue a hard DELETE on app.target_fields"
 
     def test_delete_default_field_raises(self):
         """DELETE a field with is_default=TRUE raises FieldInUseError (H2 guard)."""
@@ -999,13 +1161,13 @@ class TestDeleteTargetField:
         cur1.__enter__ = MagicMock(return_value=cur1)
         cur1.__exit__ = MagicMock(return_value=False)
         # is_default=True, used_by_count=0 (orphan but still default)
-        cur1.fetchone.return_value = ("clicks", True, 0)
+        cur1.fetchone.return_value = ("clicks", True, 0, "approved")
 
         conn = MagicMock()
         conn.cursor.side_effect = [_make_ctx(cur1)]
 
         with pytest.raises(FieldInUseError) as exc_info:
-            delete_target_field("clicks", conn)
+            delete_target_field("clicks", "jean@test", conn)
 
         msg = str(exc_info.value)
         # Message must mention the is_default restriction
@@ -1019,14 +1181,14 @@ class TestDeleteTargetField:
         cur1 = MagicMock()
         cur1.__enter__ = MagicMock(return_value=cur1)
         cur1.__exit__ = MagicMock(return_value=False)
-        # (name, is_default=False, used_by_count=3)
-        cur1.fetchone.return_value = ("clicks", False, 3)
+        # (name, is_default=False, used_by_count=3, status)
+        cur1.fetchone.return_value = ("clicks", False, 3, "approved")
 
         conn = MagicMock()
         conn.cursor.side_effect = [_make_ctx(cur1)]
 
         with pytest.raises(FieldInUseError) as exc_info:
-            delete_target_field("clicks", conn)
+            delete_target_field("clicks", "jean@test", conn)
 
         msg = str(exc_info.value)
         assert "clicks" in msg
@@ -1049,7 +1211,28 @@ class TestDeleteTargetField:
         conn.cursor.side_effect = [_make_ctx(cur1)]
 
         with pytest.raises(ValueError, match="introuvable"):
-            delete_target_field("no_such_field", conn)
+            delete_target_field("no_such_field", "jean@test", conn)
+
+    def test_delete_already_deleted_field_raises_value_error(self):
+        """A second DELETE on an already status='deleted' field is 'not found' (404).
+
+        History outlives visibility: the row still exists, but delete_target_field
+        must treat it as gone, exactly like list/get do.
+        """
+        from core.datamodel import delete_target_field
+
+        cur1 = MagicMock()
+        cur1.__enter__ = MagicMock(return_value=cur1)
+        cur1.__exit__ = MagicMock(return_value=False)
+        cur1.fetchone.return_value = ("gone", False, 0, "deleted")
+
+        conn = MagicMock()
+        conn.cursor.side_effect = [_make_ctx(cur1)]
+
+        with pytest.raises(ValueError, match="introuvable"):
+            delete_target_field("gone", "jean@test", conn)
+
+        conn.commit.assert_not_called()
 
     def test_delete_field_in_use_fr_message(self):
         """The FieldInUseError message is in French and mentions the used-by count."""
@@ -1058,19 +1241,116 @@ class TestDeleteTargetField:
         cur1 = MagicMock()
         cur1.__enter__ = MagicMock(return_value=cur1)
         cur1.__exit__ = MagicMock(return_value=False)
-        # (name, is_default=False, used_by_count=7)
-        cur1.fetchone.return_value = ("cost", False, 7)
+        # (name, is_default=False, used_by_count=7, status)
+        cur1.fetchone.return_value = ("cost", False, 7, "approved")
 
         conn = MagicMock()
         conn.cursor.side_effect = [_make_ctx(cur1)]
 
         with pytest.raises(FieldInUseError) as exc_info:
-            delete_target_field("cost", conn)
+            delete_target_field("cost", "jean@test", conn)
 
         msg = str(exc_info.value)
         assert "7" in msg  # count clearly visible
         # Message is in French (at least one accented word expected)
         assert any(ch in msg for ch in "éèàùîôêâûçÉÈÀÙÎÔÊÂÛÇ")
+
+    def test_delete_identity_is_persisted_in_version_and_audit(self):
+        """The real caller identity lands on the version row AND the audit call."""
+        from core.datamodel import delete_target_field
+
+        cur1 = MagicMock()
+        cur1.__enter__ = MagicMock(return_value=cur1)
+        cur1.__exit__ = MagicMock(return_value=False)
+        cur1.fetchone.return_value = ("orphan_field", False, 0, "draft")
+
+        cur2 = MagicMock()
+        cur2.__enter__ = MagicMock(return_value=cur2)
+        cur2.__exit__ = MagicMock(return_value=False)
+        cur2.fetchone.return_value = self._AFTER_ROW
+        cur2.description = _TF_GOVERNANCE_COLS
+
+        cur3 = MagicMock()
+        cur3.__enter__ = MagicMock(return_value=cur3)
+        cur3.__exit__ = MagicMock(return_value=False)
+        cur3.fetchone.return_value = (0,)
+
+        version_inserts: list[tuple] = []
+
+        cur4 = MagicMock()
+        cur4.__enter__ = MagicMock(return_value=cur4)
+        cur4.__exit__ = MagicMock(return_value=False)
+
+        def capture_version_insert(sql, params=None):
+            version_inserts.append(params)
+
+        cur4.execute.side_effect = capture_version_insert
+
+        conn = MagicMock()
+        conn.cursor.side_effect = [
+            _make_ctx(cur1), _make_ctx(cur2), _make_ctx(cur3), _make_ctx(cur4),
+        ]
+
+        import unittest.mock as um
+        with um.patch("core.audit.write_audit_row") as mock_audit:
+            delete_target_field("orphan_field", "jean@test", conn)
+
+        assert version_inserts, "no version row inserted"
+        # changed_by is the second-to-last positional param (before changed_at's now())
+        assert "jean@test" in version_inserts[0]
+        mock_audit.assert_called_once()
+        assert mock_audit.call_args.kwargs["identity"] == "jean@test"
+
+
+# ---------------------------------------------------------------------------
+# Story 44.8: list_field_versions (LIMIT) + target_field_exists
+# ---------------------------------------------------------------------------
+
+
+class TestListFieldVersions:
+    def test_query_is_capped_at_200(self):
+        """Story 44.8 finding #7: unbounded timeline read must be capped."""
+        from core.datamodel import list_field_versions
+
+        conn, cur = _make_conn(fetchall_rows=[])
+        cur.description = [
+            ("name",), ("version_number",), ("display_name",), ("data_type",),
+            ("field_kind",), ("measure",), ("description",), ("created_by",),
+            ("is_default",), ("created_at",), ("status",), ("approved_at",),
+            ("approved_by",), ("updated_at",), ("change_kind",), ("diff",),
+            ("changed_by",), ("changed_at",),
+        ]
+
+        list_field_versions("clicks", conn)
+
+        sql, params = cur.execute.call_args[0]
+        assert "LIMIT" in sql
+        assert 200 in params
+
+
+class TestTargetFieldExists:
+    def test_true_when_row_present(self):
+        from core.datamodel import target_field_exists
+
+        conn, cur = _make_conn(fetchone_rows=[(1,)])
+        assert target_field_exists("clicks", conn) is True
+
+    def test_false_when_no_row(self):
+        from core.datamodel import target_field_exists
+
+        conn, cur = _make_conn(fetchone_rows=[None])
+        assert target_field_exists("unknown", conn) is False
+
+    def test_no_status_filter_in_query(self):
+        """Finding #5: history (and its existence check) must be servable for
+        soft-deleted fields -- no `status` filter in the existence check."""
+        from core.datamodel import target_field_exists
+
+        conn, cur = _make_conn(fetchone_rows=[(1,)])
+        target_field_exists("clicks", conn)
+
+        sql = cur.execute.call_args[0][0]
+        assert "status" not in sql.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -1098,7 +1378,11 @@ class TestCreateTargetFieldStatus:
         cur.__exit__ = MagicMock(return_value=False)
         conn.cursor.return_value.__enter__ = lambda s: cur
         conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        cur.fetchone.return_value = created_row
+        # Story 44.7: create_target_field now goes through the
+        # MAX(version_number)+1 helper too (finding #1) -- fetchone() is
+        # called twice: once for the target_fields INSERT...RETURNING, once
+        # for the SELECT COALESCE(MAX(version_number), 0) lookup.
+        cur.fetchone.side_effect = [created_row, (0,)]
         cur.description = gov_cols
 
         result = create_target_field(
@@ -1116,9 +1400,15 @@ class TestCreateTargetFieldStatus:
         assert result["status"] == "draft"
         assert result["is_default"] is False
 
-        # The INSERT SQL must explicitly set status='draft'
-        sql_called = cur.execute.call_args[0][0]
-        assert "draft" in sql_called.lower()
+        # The INSERT SQL (into app.target_fields, not the version row inserted
+        # right after by Story 44.7) must explicitly set status='draft'.
+        insert_sqls = [
+            c[0][0] for c in cur.execute.call_args_list
+            if "insert into app.target_fields" in c[0][0].lower()
+            and "target_fields_versions" not in c[0][0].lower()
+        ]
+        assert insert_sqls, "no INSERT INTO app.target_fields captured"
+        assert "draft" in insert_sqls[0].lower()
 
 
 # ---------------------------------------------------------------------------

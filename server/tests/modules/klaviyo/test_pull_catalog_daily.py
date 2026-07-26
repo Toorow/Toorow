@@ -6,7 +6,8 @@ Covers:
   - Both campaign and flow paths execute when neither dimension set is exclusive
   - Campaign-only path when selection only has campaign dimensions
   - Flow-only path when selection only has flow dimensions
-  - AD-22: existing pull() / pull_campaign_daily() / pull_flow_daily() still callable (dispatch green)
+  - AD-22: existing pull() / pull_campaign_daily() / pull_flow_daily() still
+    callable (dispatch green)
   - AI-58: pull_catalog_daily is callable as a standalone dispatch target
   - 401 typed error re-raise propagates from pull_catalog_daily
 """
@@ -25,9 +26,7 @@ import respx
 
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 
-_CONNECTOR_PATH = (
-    Path(__file__).parents[4] / "server" / "modules" / "klaviyo" / "connector.py"
-)
+_CONNECTOR_PATH = Path(__file__).parents[4] / "server" / "modules" / "klaviyo" / "connector.py"
 
 _KLAVIYO_CAMPAIGN_URL = "https://a.klaviyo.com/api/campaign-values-reports/"
 _KLAVIYO_FLOW_URL = "https://a.klaviyo.com/api/flow-series-reports/"
@@ -104,11 +103,11 @@ def test_build_catalog_statistics_applies_drift_bridge(connector):
         "metrics": ["sends", "opens", "clicks", "attributed_conversions", "attributed_revenue"],
         "dimensions": ["date", "campaign_id"],
         "source_fields": {
-            "sends": "sends",                    # legacy; bridges to "recipients"
+            "sends": "sends",  # legacy; bridges to "recipients"
             "opens": "opens",
             "clicks": "clicks",
             "attributed_conversions": "conversions",
-            "attributed_revenue": "revenue",     # legacy; bridges to "conversion_value"
+            "attributed_revenue": "revenue",  # legacy; bridges to "conversion_value"
             "date": "date",
             "campaign_id": "campaign_id",
         },
@@ -116,9 +115,13 @@ def test_build_catalog_statistics_applies_drift_bridge(connector):
     stats = connector._build_catalog_statistics(selection)
     # Drift bridges applied:
     assert "recipients" in stats, "sends must bridge to recipients"
-    assert "sends" not in stats, "'sends' must not appear in the statistics list (not a Klaviyo stat)"
+    assert "sends" not in stats, (
+        "'sends' must not appear in the statistics list (not a Klaviyo stat)"
+    )
     assert "conversion_value" in stats, "revenue must bridge to conversion_value"
-    assert "revenue" not in stats, "'revenue' must not appear in the statistics list (not a Klaviyo stat)"
+    assert "revenue" not in stats, (
+        "'revenue' must not appear in the statistics list (not a Klaviyo stat)"
+    )
     # Pass-through stats:
     assert "opens" in stats
     assert "clicks" in stats
@@ -257,9 +260,7 @@ def test_parse_catalog_reporting_row_null_honest(connector):
             # "opens" intentionally absent
         },
     }
-    row = connector._parse_catalog_reporting_row(
-        result_item, "2026-07-01", "flow", ["opens"]
-    )
+    row = connector._parse_catalog_reporting_row(result_item, "2026-07-01", "flow", ["opens"])
     assert row.get("opens") is None
 
 
@@ -273,7 +274,8 @@ def test_pull_catalog_daily_both_paths_statistics_list(connector, tmp_path, monk
     """pull_catalog_daily calls BOTH endpoints with bridged statistics when no exclusive dims.
 
     Validates:
-      - campaign endpoint receives official statistics (recipients, conversion_value, not sends/revenue)
+      - campaign endpoint receives official statistics
+        (recipients, conversion_value, not sends/revenue)
       - flow endpoint receives the same official statistics
       - returns {"pull_id", "row_count", "date_from", "date_to"}
     """
@@ -421,15 +423,18 @@ def test_pull_catalog_daily_typed_error_propagates(connector, tmp_path, monkeypa
     monkeypatch.setenv("KLAVIYO_CONVERSION_METRIC_ID", "CONV_METRIC_001")
 
     _JSONAPI_401 = {
-        "errors": [{"id": "e1", "status": "401", "code": "not_authenticated",
-                    "title": "Unauthorized", "detail": "Bad key."}]
+        "errors": [
+            {
+                "id": "e1",
+                "status": "401",
+                "code": "not_authenticated",
+                "title": "Unauthorized",
+                "detail": "Bad key.",
+            }
+        ]
     }
-    respx.post(_KLAVIYO_CAMPAIGN_URL).mock(
-        return_value=httpx.Response(401, json=_JSONAPI_401)
-    )
-    respx.post(_KLAVIYO_FLOW_URL).mock(
-        return_value=httpx.Response(401, json=_JSONAPI_401)
-    )
+    respx.post(_KLAVIYO_CAMPAIGN_URL).mock(return_value=httpx.Response(401, json=_JSONAPI_401))
+    respx.post(_KLAVIYO_FLOW_URL).mock(return_value=httpx.Response(401, json=_JSONAPI_401))
 
     selection = {
         "metrics": ["sends"],
@@ -460,12 +465,6 @@ def test_pull_catalog_daily_missing_conversion_metric_raises(connector, tmp_path
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "kl_cat_nomid.duckdb"))
     monkeypatch.delenv("KLAVIYO_CONVERSION_METRIC_ID", raising=False)
 
-    selection = {
-        "metrics": ["sends"],
-        "dimensions": ["date"],
-        "source_fields": {"sends": "sends", "date": "date"},
-    }
-
     with patch("core.nango_client.get_fresh_token", return_value="fake-key"):
         with pytest.raises(ValueError, match="KLAVIYO_CONVERSION_METRIC_ID"):
             connector.pull_catalog_daily(
@@ -491,12 +490,8 @@ def test_ad22_pull_campaign_daily_still_callable(connector, tmp_path, monkeypatc
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "kl_ad22_camp.duckdb"))
     monkeypatch.setenv("KLAVIYO_CONVERSION_METRIC_ID", "CONV_METRIC_001")
 
-    respx.post(_KLAVIYO_CAMPAIGN_URL).mock(
-        return_value=httpx.Response(200, json=_CAMPAIGN_RESULT)
-    )
-    respx.post(_KLAVIYO_FLOW_URL).mock(
-        return_value=httpx.Response(200, json=_FLOW_RESULT)
-    )
+    respx.post(_KLAVIYO_CAMPAIGN_URL).mock(return_value=httpx.Response(200, json=_CAMPAIGN_RESULT))
+    respx.post(_KLAVIYO_FLOW_URL).mock(return_value=httpx.Response(200, json=_FLOW_RESULT))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-key"):
         result = connector.pull_campaign_daily(
@@ -518,12 +513,8 @@ def test_ad22_pull_flow_daily_still_callable(connector, tmp_path, monkeypatch):
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "kl_ad22_flow.duckdb"))
     monkeypatch.setenv("KLAVIYO_CONVERSION_METRIC_ID", "CONV_METRIC_001")
 
-    respx.post(_KLAVIYO_CAMPAIGN_URL).mock(
-        return_value=httpx.Response(200, json=_CAMPAIGN_RESULT)
-    )
-    respx.post(_KLAVIYO_FLOW_URL).mock(
-        return_value=httpx.Response(200, json=_FLOW_RESULT)
-    )
+    respx.post(_KLAVIYO_CAMPAIGN_URL).mock(return_value=httpx.Response(200, json=_CAMPAIGN_RESULT))
+    respx.post(_KLAVIYO_FLOW_URL).mock(return_value=httpx.Response(200, json=_FLOW_RESULT))
 
     with patch("core.nango_client.get_fresh_token", return_value="fake-key"):
         result = connector.pull_flow_daily(

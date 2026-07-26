@@ -51,8 +51,9 @@ def _seed_project(conn) -> str:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
-            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system')
+            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by,
+                org_id)
+            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system', 'org_test_fixture')
             """,
             (project_id, "MP Test", project_id),
         )
@@ -224,9 +225,7 @@ def test_published_version_immutable_and_allocations_frozen():
         # DELETE of the published version row -> trigger raises.
         with pytest.raises(psycopg.errors.RaiseException):
             with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM app.media_plan_versions WHERE id = %s", (version["id"],)
-                )
+                cur.execute("DELETE FROM app.media_plan_versions WHERE id = %s", (version["id"],))
         conn.rollback()
     finally:
         _drop_project(conn, project_id)
@@ -421,12 +420,8 @@ def test_concurrent_first_publish_leaves_exactly_one_active():
     conn_b = _connect()
     try:
         plan = create_plan(conn, project_id=project_id, name="Plan Race", created_by="tester")
-        v1 = create_version_with_lines(
-            conn, plan_id=plan["id"], lines=_LINES, created_by="tester"
-        )
-        v2 = create_version_with_lines(
-            conn, plan_id=plan["id"], lines=_LINES, created_by="tester"
-        )
+        v1 = create_version_with_lines(conn, plan_id=plan["id"], lines=_LINES, created_by="tester")
+        v2 = create_version_with_lines(conn, plan_id=plan["id"], lines=_LINES, created_by="tester")
         conn.commit()
 
         # A publishes but holds its transaction open (uncommitted active pointer).

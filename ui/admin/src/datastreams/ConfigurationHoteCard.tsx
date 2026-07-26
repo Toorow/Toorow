@@ -16,6 +16,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { apiFetch } from "../lib/apiFetch";
 
 // Story 36.14 / UX-DR31: host setup begins with a COMPATIBLE-HOST selector driven
 // by capability / plan / role preflight -- NEVER brand-first ordering (E36-NFR03).
@@ -100,7 +101,7 @@ export default function ConfigurationHoteCard({
   orgId,
   projectId = null,
   apiBase = "",
-  apiToken = import.meta.env.VITE_ADMIN_API_TOKEN ?? "",
+  apiToken = "",
 }: Props) {
   const [catalog, setCatalog] = useState<HostCatalogEntry[]>([]);
   const [selected, setSelected] = useState<string>("");
@@ -118,7 +119,7 @@ export default function ConfigurationHoteCard({
   }), [apiToken]);
 
   const loadCatalog = useCallback(async () => {
-    const response = await fetch(`${apiBase}/api/mcp-hosts/catalog`, {
+    const response = await apiFetch(`${apiBase}/api/mcp-hosts/catalog`, {
       method: "GET",
       headers: headers(),
       cache: "no-store",
@@ -158,7 +159,7 @@ export default function ConfigurationHoteCard({
     setAnnouncement("");
     setHandoff(null);
     try {
-      const response = await fetch(`${apiBase}/api/mcp-hosts/preflight`, {
+      const response = await apiFetch(`${apiBase}/api/mcp-hosts/preflight`, {
         method: "POST",
         headers: {
           ...headers(),
@@ -197,7 +198,7 @@ export default function ConfigurationHoteCard({
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${apiBase}/api/mcp-hosts/preflight/${encodeURIComponent(preflight.preflight_id)}/handoff`,
         {
           method: "POST",

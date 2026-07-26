@@ -1,0 +1,17 @@
+# Fichiers GENERES compares octet pour octet par un --check (CI et prebuild).
+# Sans cette regle, core.autocrlf=true convertit en CRLF au checkout sous
+# Windows alors que les generateurs ecrivent en LF : le --check echoue en
+# permanence ("Registry is stale") et regenerer ne repare rien, git recassant
+# le fichier au checkout suivant.
+web/src/generated/*.json text eol=lf
+ui/admin/src/generated/*.json text eol=lf
+
+# Logos de connecteurs : le registre fige un sha256 par asset et le miroir admin
+# est compare octet pour octet a la source canonique. Un .svg est du texte pour
+# git, donc autocrlf le reecrit au checkout et casse a la fois le checksum et le
+# miroir. Ce sont des binaires du point de vue du contrat.
+web/public/connectors/* binary
+ui/admin/public/connectors/* binary
+# Migration checksums are platform-independent and reviewed in manifest.json.
+infra/nango/migrations/*.sql text eol=lf
+infra/nango/migrations/manifest.json text eol=lf

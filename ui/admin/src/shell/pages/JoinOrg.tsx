@@ -28,14 +28,8 @@
  *     persisted); the shell strips the fragment before exchange.
  *
  * Backend (REAL, wired) — server/core/invitations.py via server/core/admin_api.py:
- *   POST /api/invitations/exchange
- *     request  : { bearer: string }                 (the fragment bearer)
- *     response : 200 { ready_to_accept: true }       (+ narrow httponly exchange
- *                cookie, path=/api/invitations, samesite=strict; NO scope detail is
- *                disclosed here — identity match is enforced server-side)
- *                401 unauthorized (must sign in with the invited identity)
- *                404 { code:"not_found" } for mismatched / expired / replayed /
- *                revoked / unavailable — a single NONDISCLOSING outcome by design.
+ *   POST /api/invitations/exchange returns an exact secret-free preview only after
+ *   verified subject matching, plus the narrow HttpOnly acceptance cookie.
  *   POST /api/invitations/accept
  *     headers  : Idempotency-Key: <uuid>             (required; 422 if missing)
  *     request  : { confirmed: true }                 (the single "accept once" gate)
@@ -50,14 +44,12 @@
  *   gate; accept is the single confirmed action that both reveals the effective
  *   grant and activates membership atomically. We do not invent an inspect route.)
  *
- * Fallback: with no backend reachable the screen still renders finished — it shows a
- * representative pending-invitation ScopeSummary (clearly marked example) so the
- * layout is complete; Accept surfaces a safe, nondisclosing error and never dead-ends.
+ * Network failure is explicit and never fabricates pending authority.
  *
  * Styling: application.css (global tokens/classes) + join-org.css for this page's
  * specifics. Colors come exclusively from the application.css CSS variables — no hex.
  */
-import { useEffect, useMemo, useState } from "react";
+import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
 import "../application.css";
 import "./join-org.css";
 import { apiFetch } from "../../lib/apiFetch";
@@ -77,12 +69,32 @@ interface AcceptedAuthority {
 }
 
 /** Shape of the accept response we consume (spec fields only). */
+/** Exact secret-free authority returned by POST /api/invitations/exchange. */
+interface InvitationPreview {
+  organization_id: string | null;
+  organization_label: string | null;
+  authority: AcceptedAuthority;
+  expires_at: string;
+}
+
 interface AcceptedInvitation {
   invitation_id: string;
-  organization_id: string;
+  /**
+   * NULL for an ENTRY invitation (migration 106): the person was invited to the
+   * platform, not to somebody's organization, so there is no membership and they
+   * create their own next. This was typed `string` while the server could only
+   * ever send one; it can now send null.
+   */
+  organization_id: string | null;
   authority: AcceptedAuthority;
   next_url: string;
   replayed: boolean;
+  /**
+   * Who this person is. `needs_name` is true when neither the identity token nor
+   * a previous visit gave us one — the console then asks, here, once. Optional so
+   * an older server (or a replayed cached response) simply does not ask.
+   */
+  profile?: { display_name: string | null; needs_name: boolean };
 }
 
 /**
@@ -94,22 +106,30 @@ type JoinState =
   | { status: "no_token" }
   | { status: "validating" }
   | { status: "signin_required" }
-  | { status: "ready" } // identity matched; exchange consumed; safe to accept once
-  | { status: "accepting" }
+  | { status: "ready"; preview: InvitationPreview }
+  | { status: "accepting"; preview: InvitationPreview }
   | { status: "unavailable" } // mismatched · expired · replayed · revoked
   | { status: "conflict" } // valid link, but existing access conflicts
-  | { status: "error"; message: string }
+  | { status: "error"; message: string; retry: "exchange" | "accept"; preview?: InvitationPreview }
   | { status: "accepted"; result: AcceptedInvitation };
+
+let invitationFragmentCapture: { locationKey: string; bearer: string } | null = null;
 
 /** Read the single-use bearer from the URL fragment (#invite=<bearer>), then strip
  *  it from history so it is never re-sent, bookmarked, or leaked via referrer. */
 function readBearerFromFragment(): string {
   if (typeof window === "undefined") return "";
   const hash = window.location.hash || "";
+  const locationKey = window.location.pathname + window.location.search;
   const bearer = hash.startsWith("#invite=") ? hash.slice("#invite=".length) : "";
   if (bearer) {
     // The bearer lives ONLY in the fragment; remove it immediately (spec).
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    invitationFragmentCapture = { locationKey, bearer };
+    return bearer;
+  }
+  if (invitationFragmentCapture?.locationKey === locationKey) {
+    return invitationFragmentCapture.bearer;
   }
   return bearer;
 }
@@ -169,19 +189,58 @@ function formatAbsoluteExpiry(iso: string | null): string {
 
 /** POST the fragment bearer for its matching verified subject. A 404 is the single
  *  nondisclosing outcome for mismatched/expired/replayed/revoked links. */
-async function exchangeBearer(
-  bearer: string,
-): Promise<"ready" | "signin_required" | "unavailable"> {
+type ExchangeOutcome =
+  | { kind: "ready"; preview: InvitationPreview }
+  | { kind: "signin_required" }
+  | { kind: "unavailable" }
+  | { kind: "error"; message: string };
+
+function isInvitationPreview(value: unknown): value is InvitationPreview {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.authority !== "object" || candidate.authority === null) return false;
+  const authority = candidate.authority as Record<string, unknown>;
+  const grants = Array.isArray(authority.explicit_grants) ? authority.explicit_grants : null;
+  const validGrants =
+    grants !== null &&
+    grants.every(
+      (grant) =>
+        typeof grant === "object" &&
+        grant !== null &&
+        ["project", "flux"].includes(String((grant as Record<string, unknown>).scope_type)) &&
+        typeof (grant as Record<string, unknown>).scope_id === "string" &&
+        ["view", "edit", "manage"].includes(
+          String((grant as Record<string, unknown>).capability),
+        ),
+    );
+  return (
+    (typeof candidate.organization_id === "string" || candidate.organization_id === null) &&
+    (typeof candidate.organization_label === "string" || candidate.organization_label === null) &&
+    typeof candidate.expires_at === "string" &&
+    typeof authority.role_derived === "string" &&
+    typeof authority.explicit_none === "boolean" &&
+    validGrants &&
+    grants !== null &&
+    authority.explicit_none === (grants.length === 0)
+  );
+}
+
+async function exchangeBearer(bearer: string): Promise<ExchangeOutcome> {
   const resp = await apiFetch("/api/invitations/exchange", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ bearer }),
   });
-  if (resp.ok) return "ready";
-  if (resp.status === 401) return "signin_required";
+  if (resp.ok) {
+    const body = (await resp.json().catch(() => null)) as { preview?: unknown } | null;
+    if (body && isInvitationPreview(body.preview)) return { kind: "ready", preview: body.preview };
+    return { kind: "unavailable" };
+  }
+  if (resp.status === 401) return { kind: "signin_required" };
+  if (resp.status >= 500) return { kind: "error", message: "The invitation service is unavailable." };
   // 404 (and any other non-2xx) → nondisclosing "unavailable". No detail is surfaced.
-  return "unavailable";
+  return { kind: "unavailable" };
 }
 
 type AcceptOutcome =
@@ -213,24 +272,20 @@ async function acceptOnce(idempotencyKey: string): Promise<AcceptOutcome> {
   return { kind: "error", message: "The invitation could not be accepted. Please try again." };
 }
 
-/** Representative pending grant used ONLY for the no-backend fallback, so the page
- *  renders finished. It is clearly labeled as an example and never treated as real. */
-const FALLBACK_GRANTS: ExplicitGrant[] = [
-  { scope_type: "project", scope_id: "proj_example_0001", capability: "edit" },
-  { scope_type: "flux", scope_id: "flux_example_0002", capability: "view" },
-];
 
 export interface JoinOrgProps {
   /** Bearer from the URL fragment. When omitted, the screen reads it itself. */
   token?: string;
   /** Called after a successful accept — the subject lands with membership active. */
-  onAccepted?: () => void;
+  onAccepted?: (nextUrl: string) => void;
 }
 
 export default function JoinOrg({ token, onAccepted }: JoinOrgProps) {
   const [bearer, setBearer] = useState<string | null>(token ?? null);
   const [state, setState] = useState<JoinState>({ status: "validating" });
   const [idempotencyKey] = useState<string>(newIdempotencyKey);
+  const [exchangeAttempt, setExchangeAttempt] = useState(0);
+  const exchangeRequest = useRef<{ attempt: number; bearer: string; promise: Promise<ExchangeOutcome> } | null>(null);
 
   // Resolve the bearer from the fragment once (if not supplied via props).
   useEffect(() => {
@@ -250,31 +305,45 @@ export default function JoinOrg({ token, onAccepted }: JoinOrgProps) {
       setState({ status: "no_token" });
       return;
     }
+    let request = exchangeRequest.current;
+    if (!request || request.attempt !== exchangeAttempt || request.bearer !== bearer) {
+      if (invitationFragmentCapture?.bearer === bearer) {
+        invitationFragmentCapture = null;
+      }
+      request = { attempt: exchangeAttempt, bearer, promise: exchangeBearer(bearer) };
+      exchangeRequest.current = request;
+    }
     let cancelled = false;
     setState({ status: "validating" });
-    exchangeBearer(bearer)
+    request.promise
       .then((outcome) => {
         if (cancelled) return;
-        if (outcome === "ready") setState({ status: "ready" });
-        else if (outcome === "signin_required") setState({ status: "signin_required" });
-        else setState({ status: "unavailable" });
+        if (outcome.kind === "ready") setState({ status: "ready", preview: outcome.preview });
+        else if (outcome.kind === "signin_required") setState({ status: "signin_required" });
+        else if (outcome.kind === "error") {
+          setState({ status: "error", message: outcome.message, retry: "exchange" });
+        } else setState({ status: "unavailable" });
       })
       .catch(() => {
-        // No backend reachable → render finished with a representative pending grant.
-        if (!cancelled) setState({ status: "ready" });
+        if (!cancelled) setState({ status: "error", message: "The invitation service is unavailable.", retry: "exchange" });
       });
     return () => {
       cancelled = true;
     };
-  }, [bearer]);
+  }, [bearer, exchangeAttempt]);
 
-  async function handleAccept() {
-    setState({ status: "accepting" });
+  async function handleAccept(retryPreview?: InvitationPreview) {
+    const preview = retryPreview ?? (state.status === "ready" ? state.preview : undefined);
+    if (!preview) return;
+    setState({ status: "accepting", preview });
     try {
       const outcome = await acceptOnce(idempotencyKey);
       if (outcome.kind === "accepted") {
         setState({ status: "accepted", result: outcome.result });
-        onAccepted?.();
+        // Notify the parent NOW only when there is nothing left to ask. When a
+        // name is still needed the parent must not route away yet, or the
+        // question would be asked on a screen nobody ever sees — AcceptedView
+        // calls onAccepted itself once the name is saved.
       } else if (outcome.kind === "conflict") {
         setState({ status: "conflict" });
       } else if (outcome.kind === "signin_required") {
@@ -282,18 +351,23 @@ export default function JoinOrg({ token, onAccepted }: JoinOrgProps) {
       } else if (outcome.kind === "unavailable") {
         setState({ status: "unavailable" });
       } else {
-        setState({ status: "error", message: outcome.message });
+        setState({ status: "error", message: outcome.message, retry: "accept", preview });
       }
     } catch {
-      // No backend reachable in the finished-fallback: show a safe, nondisclosing
       // error rather than fabricating a membership.
       setState({
         status: "error",
         message: "The invitation service is unavailable. Please try again shortly.",
+        retry: "accept",
+        preview,
       });
     }
   }
 
+
+  function retryExchange() {
+    setExchangeAttempt((attempt) => attempt + 1);
+  }
   return (
     <div className="joinorg-stage">
       <div className="joinorg-scrim">
@@ -303,7 +377,7 @@ export default function JoinOrg({ token, onAccepted }: JoinOrgProps) {
           aria-modal="true"
           aria-labelledby="joinorg-title"
         >
-          {renderBody(state, handleAccept, onAccepted)}
+          {renderBody(state, handleAccept, retryExchange, onAccepted)}
         </section>
       </div>
     </div>
@@ -314,9 +388,10 @@ export default function JoinOrg({ token, onAccepted }: JoinOrgProps) {
  *  components) so each state is a flat, reviewable block against the spec. */
 function renderBody(
   state: JoinState,
-  onAccept: () => void,
-  onAccepted?: () => void,
-): JSX.Element {
+  onAccept: (preview?: InvitationPreview) => void,
+  onRetryExchange: () => void,
+  onAccepted?: (nextUrl: string) => void,
+): ReactElement {
   switch (state.status) {
     case "validating":
       return <ValidatingView />;
@@ -329,10 +404,19 @@ function renderBody(
     case "conflict":
       return <ConflictView />;
     case "error":
-      return <ErrorView message={state.message} onRetry={onAccept} />;
+      return (
+        <ErrorView
+          message={state.message}
+          onRetry={
+            state.retry === "accept" && state.preview
+              ? () => onAccept(state.preview)
+              : onRetryExchange
+          }
+        />
+      );
     case "ready":
     case "accepting":
-      return <ReviewAndAcceptView accepting={state.status === "accepting"} onAccept={onAccept} />;
+      return <ReviewAndAcceptView preview={state.preview} accepting={state.status === "accepting"} onAccept={() => onAccept()} />;
     case "accepted":
       return <AcceptedView result={state.result} onAccepted={onAccepted} />;
     default:
@@ -511,19 +595,16 @@ function ErrorView({ message, onRetry }: { message: string; onRetry: () => void 
  * --------------------------------------------------------------------------- */
 
 function ReviewAndAcceptView({
+  preview,
   accepting,
   onAccept,
 }: {
+  preview: InvitationPreview;
   accepting: boolean;
   onAccept: () => void;
 }) {
-  // The exchange endpoint discloses no scope detail (identity gate only). Until the
-  // subject accepts once, we present the effective grant as the representative
-  // pending binding the invitation carries. On real backends the exact bindings are
-  // returned by the accept response and re-surfaced in AcceptedView; here we show a
-  // clearly-labeled example so the finished layout is complete without a backend.
-  const grants = FALLBACK_GRANTS;
-  const explicitNone = grants.length === 0;
+  const grants = preview.authority.explicit_grants;
+  const explicitNone = preview.authority.explicit_none;
 
   return (
     <>
@@ -538,12 +619,11 @@ function ReviewAndAcceptView({
         </p>
 
         <ScopeSummary
-          example
-          organizationLabel="Your invited organization"
-          roleDerived="member"
+          organizationLabel={preview.organization_label ?? preview.organization_id ?? "Platform access"}
+          roleDerived={preview.authority.role_derived}
           grants={grants}
           explicitNone={explicitNone}
-          expiryIso={null}
+          expiryIso={preview.expires_at}
         />
       </div>
       <footer className="joinorg-footer">
@@ -568,16 +648,68 @@ function AcceptedView({
   onAccepted,
 }: {
   result: AcceptedInvitation;
-  onAccepted?: () => void;
+  onAccepted?: (nextUrl: string) => void;
 }) {
   const grants = result.authority.explicit_grants ?? [];
   const explicitNone = result.authority.explicit_none;
+
+  // An ENTRY invitation grants no membership: nothing to summarise, and the next
+  // step is creating an organization, not entering one.
+  const isEntry = !result.organization_id;
+
+  // The name, asked HERE and only when nobody could give it to us. Acceptance is
+  // the one moment both kinds of arrival pass through, which is why the question
+  // lives on this screen rather than on create-organization.
+  // Two inputs, same labels and autocomplete as CreateOrg: two screens asking the
+  // same thing must ask it the same way.
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [nameSaved, setNameSaved] = useState(false);
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  const mustAskName = (result.profile?.needs_name ?? false) && !nameSaved;
+  const displayName = `${firstName.trim()} ${lastName.trim()}`.trim();
+  const nameReady = !!firstName.trim() && !!lastName.trim() && displayName.length <= 255;
+
+  async function proceed() {
+    // The name goes first. If it fails we say so and stay put rather than routing
+    // on silently — arriving named is the point of asking.
+    if (mustAskName) {
+      if (!nameReady) return;
+      setSavingName(true);
+      setNameError(null);
+      try {
+        const resp = await apiFetch("/api/me/profile", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ display_name: displayName }),
+        });
+        if (!resp.ok) {
+          const body = (await resp.json().catch(() => ({}))) as { message?: string };
+          throw new Error(body.message ?? `Could not save your name (HTTP ${resp.status}).`);
+        }
+        setNameSaved(true);
+      } catch (err) {
+        setNameError(err instanceof Error ? err.message : String(err));
+        return;
+      } finally {
+        setSavingName(false);
+      }
+    }
+    if (onAccepted) onAccepted(result.next_url);
+    else if (result.next_url) window.location.assign(result.next_url);
+  }
 
   return (
     <>
       <GenericHeader
         title="You’re in"
-        subtitle="Your membership and grants are active. Here’s exactly what you can access."
+        subtitle={
+          isEntry
+            ? "Your invitation is accepted. Next, create the organization your data will live in."
+            : "Your membership and grants are active. Here’s exactly what you can access."
+        }
       />
       <div className="joinorg-body">
         <div className="joinorg-status" role="status" aria-live="polite">
@@ -587,28 +719,91 @@ function AcceptedView({
           </span>
         </div>
 
-        <ScopeSummary
-          organizationLabel={result.organization_id}
-          organizationMono
-          roleDerived={result.authority.role_derived}
-          grants={grants}
-          explicitNone={explicitNone}
-          expiryIso={null}
-          invitationId={result.invitation_id}
-        />
+        {isEntry ? (
+          <p className="joinorg-lead">
+            This invitation is to toorow itself, not to an existing organization — so there is
+            no membership to show yet. You will create your organization next, and you will be
+            its owner.
+          </p>
+        ) : (
+          <ScopeSummary
+            organizationLabel={result.organization_id ?? ""}
+            organizationMono
+            roleDerived={result.authority.role_derived}
+            grants={grants}
+            explicitNone={explicitNone}
+            expiryIso={null}
+            invitationId={result.invitation_id}
+          />
+        )}
+
+        {mustAskName && (
+          <fieldset className="createorg-identity">
+            <legend>Your name</legend>
+            <p className="field-hint">
+              We only know your email address. Your name identifies you to your colleagues and to
+              anyone you invite.
+            </p>
+            <div className="createorg-identity-row">
+              <div className="field">
+                <label htmlFor="joinorg-firstname">First name</label>
+                <input
+                  id="joinorg-firstname"
+                  className="text-input"
+                  type="text"
+                  value={firstName}
+                  maxLength={120}
+                  autoComplete="given-name"
+                  placeholder="Jean"
+                  onChange={(e) => {
+                    setFirstName(e.target.value);
+                    setNameError(null);
+                  }}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="joinorg-lastname">Last name</label>
+                <input
+                  id="joinorg-lastname"
+                  className="text-input"
+                  type="text"
+                  value={lastName}
+                  maxLength={120}
+                  autoComplete="family-name"
+                  placeholder="Albany"
+                  onChange={(e) => {
+                    setLastName(e.target.value);
+                    setNameError(null);
+                  }}
+                />
+              </div>
+            </div>
+            {nameError && (
+              <p className="field-error" role="alert">
+                {nameError}
+              </p>
+            )}
+          </fieldset>
+        )}
       </div>
       <footer className="joinorg-footer">
-        <span>Next: get started in this organization.</span>
+        <span>
+          {isEntry ? "Next: create your organization." : "Next: get started in this organization."}
+        </span>
         <div className="joinorg-actions">
           <button
             className="primary-button"
             type="button"
+            disabled={savingName || (mustAskName && !nameReady)}
             onClick={() => {
-              if (onAccepted) onAccepted();
-              else if (result.next_url) window.location.assign(result.next_url);
+              void proceed();
             }}
           >
-            Continue to getting started
+            {savingName
+              ? "Saving…"
+              : isEntry
+                ? "Create your organization"
+                : "Continue to getting started"}
           </button>
         </div>
       </footer>
@@ -630,8 +825,6 @@ interface ScopeSummaryProps {
   explicitNone: boolean;
   expiryIso: string | null;
   invitationId?: string;
-  /** Marks the summary as a representative example (no-backend fallback). */
-  example?: boolean;
 }
 
 function ScopeSummary({
@@ -642,7 +835,6 @@ function ScopeSummary({
   explicitNone,
   expiryIso,
   invitationId,
-  example,
 }: ScopeSummaryProps) {
   const projectGrants = useMemo(
     () => grants.filter((g) => g.scope_type === "project"),
@@ -658,7 +850,6 @@ function ScopeSummary({
     <div className="scope-summary" aria-label="Effective access this invitation grants">
       <div className="scope-summary-title">
         Effective access
-        {example && <span className="scope-example-tag">example</span>}
       </div>
 
       <div className="scope-row">

@@ -400,7 +400,9 @@ async def _resolve_measure(request: Request) -> Response:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
-            result = update_target_field(field_name, {"measure": measure}, conn)
+            result = update_target_field(
+                field_name, {"measure": measure}, conn, identity=identity or "anonymous"
+            )
     except ValueError as exc:
         return JSONResponse({"code": "validation_error", "message": str(exc)}, status_code=422)
     except Exception as exc:

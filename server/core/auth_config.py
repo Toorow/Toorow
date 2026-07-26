@@ -38,8 +38,7 @@ def build_auth_provider():
 
     if mode not in _VALID_MODES:
         raise ValueError(
-            f"TOOROW_AUTH_MODE={mode!r} is not valid. "
-            f"Accepted values: {', '.join(_VALID_MODES)}"
+            f"TOOROW_AUTH_MODE={mode!r} is not valid. Accepted values: {', '.join(_VALID_MODES)}"
         )
 
     if mode == "disabled":
@@ -69,8 +68,7 @@ def _build_static_verifier():
     token = os.environ.get("TOOROW_STATIC_TOKEN", "").strip()
     if not token:
         raise ValueError(
-            "TOOROW_AUTH_MODE=static requires TOOROW_STATIC_TOKEN to be set "
-            "to a non-empty string."
+            "TOOROW_AUTH_MODE=static requires TOOROW_STATIC_TOKEN to be set to a non-empty string."
         )
 
     subject = os.environ.get("TOOROW_STATIC_SUBJECT", "default-user").strip()
@@ -78,9 +76,7 @@ def _build_static_verifier():
         subject = "default-user"
 
     logger.info("Auth mode: static (subject=%s)", subject)
-    return StaticTokenVerifier(
-        tokens={token: {"client_id": subject, "sub": subject, "scopes": []}}
-    )
+    return StaticTokenVerifier(tokens={token: {"client_id": subject, "sub": subject, "scopes": []}})
 
 
 def _build_jwt_verifier():
@@ -92,8 +88,6 @@ def _build_jwt_verifier():
 
     Required:
         TOOROW_JWT_AUDIENCE  - expected audience claim (replay guard)
-
-    Optional:
         TOOROW_JWT_ISSUER    - expected issuer claim
     """
     from fastmcp.server.auth import JWTVerifier
@@ -126,8 +120,14 @@ def _build_jwt_verifier():
     # oauth mode therefore refuses to start without an explicit audience.
     if audience is None:
         raise ValueError(
-            "TOOROW_AUTH_MODE=oauth requires TOOROW_JWT_AUDIENCE "
-            "(cross-service token replay guard)"
+            "TOOROW_AUTH_MODE=oauth requires TOOROW_JWT_AUDIENCE (cross-service token replay guard)"
+        )
+
+    # Pinning the issuer is the other half of the JWT trust boundary. Without
+    # it, a key set shared across tenants/issuers can authenticate foreign JWTs.
+    if issuer is None:
+        raise ValueError(
+            "TOOROW_AUTH_MODE=oauth requires TOOROW_JWT_ISSUER (token issuer trust boundary)"
         )
 
     logger.info(

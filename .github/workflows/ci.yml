@@ -1,11 +1,18 @@
 name: CI
 
-# PR-scoped CI: a `changes` job (path filter) gates every downstream job so a
-# backend-only PR does not rebuild widgets, a UI-only PR does not run pytest,
-# and conformance/dbt run only for the connector(s) actually touched.
-# On push to `main`, every gate opens (full run post-merge).
-# The exhaustive "all connectors + whole suite" matrix runs in nightly.yml
-# (schedule / release), NOT on every PR.
+# CI de PR : un job `changes` (filtre par chemin) conditionne chaque job aval,
+# pour qu'une PR backend ne rebuild pas les widgets et qu'une PR UI ne lance pas
+# dbt. Sur push `main`, toutes les portes s'ouvrent (run complet post-merge).
+#
+# Ce que la CI NE fait PAS : tester les connecteurs, ni lancer les suites pytest
+# backend. Decision Jean, 2026-07-26 pour la conformance connecteur -- elle se
+# joue pendant le dev et en local, jamais dans git :
+#   uv run pytest server/tests/conformance/ --module-path server/modules/<connecteur>/
+# Le job `conformance` qui la portait ici a ete retire ; seul le controle de
+# fraicheur du registre genere reste, dans le job `python` (c'est un artefact
+# commite consomme par la vitrine, pas un test de connecteur).
+#
+# Depot PRIVE : les minutes de runner se paient. Raisonner en temps cumule.
 
 on:
   push:
@@ -20,6 +27,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
+      # `connectors` reste expose bien qu'aucun job ne le consomme depuis le
+      # retrait de la conformance : le filtre est le point d'entree naturel si
+      # un jour un job doit reagir a un changement de connecteur.
       connectors: ${{ steps.filter.outputs.connectors }}
       ui: ${{ steps.filter.outputs.ui }}
       vitrine: ${{ steps.filter.outputs.vitrine }}
@@ -37,6 +47,11 @@ jobs:
               - 'uv.lock'
               - 'dbt/**'
               - 'infra/nango/migrations/**'
+              - 'scripts/apply_migrations.py'
+              - 'scripts/check_migration_catalog.py'
+              - 'scripts/verify_migration_upgrade.py'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/nightly.yml'
             connectors:
               - 'server/modules/**'
             ui:
@@ -98,25 +113,46 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          # Evite de reinstaller tout l'environnement a chaque execution.
+          enable-cache: true
 
       - name: Assert Python 3.12
         run: |
           uv run python --version
           uv run python --version | grep -q "3.12" || (echo "Python 3.12 required" && exit 1)
 
+      # --all-packages : le contrôle du registre importe jsonschema, referencing
+      # et core.*, qui vivent dans server/pyproject.toml et pas à la racine.
       - name: Sync deps (resolves uv.lock — asserts fastmcp 3.4.x, dbt-core 1.11.x)
-        run: uv sync --frozen
+        run: uv sync --frozen --all-packages
 
       - name: Lint (ruff)
         run: uv run ruff check server
 
-      # NOTE: the pytest suites (core, modules, evals, integration, P1 gate) are
-      # intentionally NOT run in CI. They need the Docker platform services
-      # (Postgres/Nango) and are too heavy for the hosted runners on a project
-      # this size. Run them locally with the stack up:
+      - name: Validate migration catalog
+        run: uv run python scripts/check_migration_catalog.py
+
+      # Cohérence d'artefact généré, PAS un test de connecteur : ce fichier est
+      # commité et sert la vitrine. Quand il n'est pas régénéré après un changement
+      # de manifest, la vitrine casse en aval sur un décompte faux (arrivé le
+      # 2026-07-25 : 125 profils commités contre 128 attendus). Le contrôle portait
+      # jusqu'ici dans la suite de conformance ; celle-ci a quitté la CI, pas lui.
+      # ~2 s.
+      - name: Registre connecteurs à jour (artefact généré)
+        run: |
+          uv run python scripts/export_connector_registry.py \
+            --check web/src/generated/connector-registry.json
+
+      # NOTE : les suites pytest (core, modules, conformance des connecteurs,
+      # evals, integration, gate P1) ne tournent PAS en CI -- décision Jean,
+      # 2026-07-26 pour la conformance connecteur. Elles demandent les services
+      # Docker (Postgres/Nango) et sont trop lourdes pour des runners hébergés
+      # sur un projet de cette taille. Elles se rejouent en local, pendant le dev
+      # et avant déploiement, la stack up :
       #   docker compose --env-file infra/nango/.env -f infra/nango/docker-compose.yml up -d
       #   uv run pytest server/tests -q
-      # CI keeps only the fast, service-free static checks above.
+      #   uv run pytest server/tests/conformance/ --module-path server/modules/<connecteur>/
+      # La CI ne garde que les contrôles statiques rapides et sans service.
 
   # ---------------------------------------------------------------------------
   # Tokens + Shell: design token build and TypeScript type-check (Story 1.2).
@@ -329,6 +365,8 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          # Evite de reinstaller tout l'environnement a chaque execution.
+          enable-cache: true
 
       - name: Sync Python deps (dbt-core 1.11, dbt-duckdb, duckdb, python-ulid)
         run: uv sync --frozen --all-packages
@@ -355,65 +393,39 @@ jobs:
                 threads: 1
           PROFILES
 
-      - name: dbt run — staging + mart (google_analytics selector)
+      # Les seeds (dim_device, dim_country, dim_metric, ...) sont des dependances
+      # DUES du staging : normalize_dimension les ref(). Sans cette etape le
+      # premier modele echouait sur "Table with name dim_device does not exist".
+      - name: dbt seed — dimensions de reference
         run: |
           cd dbt
-          uv run dbt run --profiles-dir profiles
+          uv run dbt seed --profiles-dir profiles
+        env:
+          TOOROW_DUCKDB_PATH: /tmp/ci_test.duckdb
+
+      # --select explicite, contrairement a ce que le nom de l etape promettait
+      # jusqu ici : la commande etait un `dbt run` nu qui construisait les 66
+      # modeles sur un entrepot ne contenant QUE le seed GA4, donc 38 erreurs a
+      # chaque execution. Les marts unissent tous les connecteurs et le DAG
+      # complet demande un squelette des 53 sources (raw_* de 24 modules +
+      # schema mirror) que la CI ne provisionne pas. Ce que ce job prouve
+      # reellement, et qui a de la valeur : le chargeur de seed, les seeds, les
+      # macros de normalisation et le contrat du staging GA4 -- c est ce qui a
+      # rattrape la derive report_timezone. Le build dbt complet reste un gate
+      # LOCAL sur donnees reelles, pas un gate CI.
+      - name: dbt run — staging google_analytics (seul lignage seede)
+        run: |
+          cd dbt
+          uv run dbt run --profiles-dir profiles --select stg_ga4_standard_daily
         env:
           TOOROW_DUCKDB_PATH: /tmp/ci_test.duckdb
 
       - name: dbt test — data quality gates (AC6)
         run: |
           cd dbt
-          uv run dbt test --profiles-dir profiles
+          uv run dbt test --profiles-dir profiles --select stg_ga4_standard_daily
         env:
           TOOROW_DUCKDB_PATH: /tmp/ci_test.duckdb
-
-  # ---------------------------------------------------------------------------
-  # Module conformance suite (Story 1.8, AC8) — SCOPED to the connector(s)
-  # touched by this PR. The exhaustive all-connectors run lives in nightly.yml.
-  # ---------------------------------------------------------------------------
-  conformance:
-    needs: [changes, bundle-check]
-    # bundle-check may be skipped when UI is untouched; run conformance whenever
-    # connectors changed (or on push to main), regardless of the UI gate.
-    if: |
-      always() &&
-      (needs.changes.outputs.connectors == 'true' || github.event_name == 'push') &&
-      needs.bundle-check.result != 'failure'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
-
-      - name: Sync deps
-        run: uv sync --frozen
-
-      - name: Source capability contract -- all built-in modules (cheap, always)
-        run: uv run pytest server/tests/conformance/test_all_module_capabilities.py -q
-
-      - name: Module conformance suite — changed connector(s) only
-        run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$BASE" ]; then BASE="$(git rev-parse HEAD~1)"; fi
-          CHANGED=$(git diff --name-only "$BASE"...HEAD -- 'server/modules/*' | cut -d/ -f3 | sort -u)
-          if [ -z "$CHANGED" ]; then
-            echo "No specific connector changed; running google-analytics as the canonical smoke."
-            CHANGED="google-analytics"
-          fi
-          echo "Connectors to check: $CHANGED"
-          for m in $CHANGED; do
-            if [ -d "server/modules/$m" ]; then
-              echo "==== conformance: $m ===="
-              uv run pytest server/tests/conformance/ --module-path "server/modules/$m/" -q || exit 1
-            fi
-          done
 
   # ---------------------------------------------------------------------------
   # Cross-project isolation suite (Story 7.4 — permanent gate, FR12/AD-5).
@@ -451,21 +463,21 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          # Evite de reinstaller tout l'environnement a chaque execution.
+          enable-cache: true
 
+      # --all-packages : idem conformance, la suite isolation lance pytest.
       - name: Sync deps
-        run: uv sync --frozen
-
-      - name: Install psql client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        run: uv sync --frozen --all-packages
 
       - name: Apply app-schema migrations in order
-        env:
-          PGPASSWORD: connector_dev_only
-        run: |
-          for f in $(ls infra/nango/migrations/*.sql | sort -V); do
-            echo "applying $f"
-            psql -h localhost -U connector -d connector -v ON_ERROR_STOP=1 -f "$f"
-          done
+        run: uv run python scripts/apply_migrations.py
+
+      - name: Verify migration ledger is complete
+        run: uv run python scripts/apply_migrations.py --verify-complete
+
+      - name: Verify migration upgrade preserves tenant data
+        run: uv run python scripts/verify_migration_upgrade.py
 
       - name: Run isolation suite (HARD GATE — a failure blocks merge)
         run: uv run pytest server/tests/isolation/ -v -m isolation
@@ -478,7 +490,12 @@ jobs:
   # ---------------------------------------------------------------------------
   vitrine:
     needs: changes
-    if: needs.changes.outputs.vitrine == 'true'
+    # `|| push` comme tous les autres jobs filtres: l en-tete de ce fichier
+    # promet que sur main toutes les portes s ouvrent, et vitrine etait le seul
+    # a ne pas porter la clause. Il restait donc skipped post-merge -- c est
+    # ainsi qu un decompte de profils faux (125 != 128) a pu atterrir sur main
+    # sans que rien ne le voie.
+    if: needs.changes.outputs.vitrine == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

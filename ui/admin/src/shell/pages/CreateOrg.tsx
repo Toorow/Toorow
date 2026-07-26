@@ -41,9 +41,63 @@
  * create-org.css for the focused-dialog surface and this page's specifics.
  * Colors come exclusively from the application.css CSS variables — no hex.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { apiFetch } from "../../lib/apiFetch";
 import "../application.css";
 import "./create-org.css";
+
+/**
+ * WHO the person is — collected here, because this is the LAST moment we still
+ * can, and the first moment we need it.
+ *
+ * Nothing upstream ever asks for a name. The marketing form has exactly ONE
+ * field, the email (web/src/components/MailingListForm.astro); the CRM writes
+ * the contact with name=None; Klaviyo receives no first_name; and the app's
+ * Google flow deliberately does NOT request an identity scope
+ * (core/google_oauth.py: "openid/email are NOT requested: this flow authorizes
+ * DATA access, not identity"). So by the time somebody lands on this screen the
+ * platform knows an email address and nothing else — while the CRM table has a
+ * "Nom" column showing "Non renseigné" and lifecycle emails greet "Hi there".
+ *
+ * Decided by Jean 2026-07-26: collect it BEFORE the first organization exists.
+ * That ordering matters — an organization has an owner, and an owner with no
+ * name is what produces "jeanludovic.albany@gmail.com invited you to join Acme
+ * Media" in the invitation another human receives.
+ *
+ * Asked ONCE: if the profile already carries a display name (returning person
+ * adding a second organization) the fields are not shown again.
+ *
+ * Two inputs rather than one "Full name" so the GIVEN name is unambiguous at
+ * capture time — it is the part an email greets with. Stored as
+ * display_name = "First Last": app.user_profiles has no given/family columns
+ * today and adding them is a migration that does not belong in this change.
+ */
+const PROFILE_ENDPOINT = "/api/me/profile";
+
+interface MyProfile {
+  display_name?: string | null;
+  email?: string | null;
+  [key: string]: unknown;
+}
+
+/** Whether we must ask. Unknown until the profile has been read — we do not
+ *  flash the fields at somebody who already has a name on file. */
+type NameGate =
+  | { status: "loading" }
+  | { status: "ask" }
+  | { status: "known"; displayName: string };
+
+async function saveDisplayName(displayName: string): Promise<void> {
+  const resp = await apiFetch(PROFILE_ENDPOINT, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ display_name: displayName }),
+  });
+  if (!resp.ok) {
+    const body = (await resp.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? `Could not save your name (HTTP ${resp.status}).`);
+  }
+}
 
 /** Kebab-case slugify — mirrors the server's admin_api._slugify exactly so the
  *  preview matches what the API will store when no slug is supplied. */
@@ -66,6 +120,13 @@ function warehouseSlug(slug: string): string {
   return slug.replace(/-/g, "_");
 }
 
+function operationKey(prefix: string): string {
+  const value =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${value}`;
+}
 interface CreatedOrg {
   id: string;
   name: string;
@@ -81,13 +142,48 @@ type SubmitState =
   | { status: "error"; message: string }
   | { status: "created"; org: CreatedOrg };
 
-async function createOrganization(name: string, slug: string): Promise<CreatedOrg> {
-  const resp = await fetch("/api/organizations", {
+interface EntryConfirmationResponse {
+  confirmation_id: string;
+  confirmation_secret: string;
+}
+
+async function createOrganization(
+  name: string,
+  slug: string,
+  projectName: string,
+  projectSlug: string,
+  idempotencyKey: string,
+): Promise<CreatedOrg> {
+  const payload = {
+    organization_name: name,
+    organization_slug: slug,
+    project_name: projectName,
+    project_slug: projectSlug,
+    currency: "EUR",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  };
+  const confirmationResponse = await apiFetch("/api/entry/scope/confirmation", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    // Only the two spec fields. slug is sent explicitly so the warehouse
-    // datasets match the previewed, immutable name the operator confirmed.
-    body: JSON.stringify({ name, slug }),
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!confirmationResponse.ok) {
+    const body = (await confirmationResponse.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? `HTTP ${confirmationResponse.status}`);
+  }
+  const confirmation = (await confirmationResponse.json()) as EntryConfirmationResponse;
+  const resp = await apiFetch("/api/entry/scope", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey,
+      "X-Confirmation-Id": confirmation.confirmation_id,
+      "X-Confirmation-Secret": confirmation.confirmation_secret,
+    },
+    body: JSON.stringify(payload),
   });
   if (!resp.ok) {
     const body = (await resp.json().catch(() => ({}))) as { message?: string; code?: string };
@@ -95,10 +191,22 @@ async function createOrganization(name: string, slug: string): Promise<CreatedOr
   }
   return (await resp.json()) as CreatedOrg;
 }
+async function createOrganizationOnly(name: string, slug: string): Promise<CreatedOrg> {
+  const resp = await apiFetch("/api/organizations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, slug }),
+  });
+  if (resp.status !== 201) {
+    const body = (await resp.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? `HTTP ${resp.status}`);
+  }
+  return (await resp.json()) as CreatedOrg;
+}
 
 export interface CreateOrgProps {
-  /** Called after a successful create, with the new organization id. */
-  onCreated?: (orgId: string) => void;
+  /** Called after a successful create, with its tokenless destination. */
+  onCreated?: (orgId: string, nextUrl?: string) => void;
   /** Called when the operator cancels/closes the flow. */
   onCancel?: () => void;
   /**
@@ -108,21 +216,81 @@ export interface CreateOrgProps {
    * /onboarding · /create-org routes, where this is just another org being added.
    */
   welcome?: boolean;
+  /** Disabled-auth compatibility: create only the organization, then its first project separately. */
+  creationMode?: "entry-scope" | "organization-only";
 }
 
-export default function CreateOrg({ onCreated, onCancel, welcome = false }: CreateOrgProps) {
+export default function CreateOrg({
+  onCreated,
+  onCancel,
+  welcome = false,
+  creationMode = "entry-scope",
+}: CreateOrgProps) {
   const [name, setName] = useState("");
+  const [projectName, setProjectName] = useState("First project");
+  const [idempotencyKey] = useState(() => operationKey("hosted-entry"));
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [nameGate, setNameGate] = useState<NameGate>({ status: "loading" });
+
+  const organizationOnly = creationMode === "organization-only";
+  // Read the profile once to decide whether to ask. A failure here does NOT
+  // block onboarding: we fall back to asking, and the worst case is that a
+  // returning person retypes a name they already had.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await apiFetch(PROFILE_ENDPOINT);
+        const profile = resp.ok ? ((await resp.json()) as MyProfile) : null;
+        const existing = profile?.display_name?.trim();
+        if (!cancelled) {
+          setNameGate(existing ? { status: "known", displayName: existing } : { status: "ask" });
+        }
+      } catch {
+        if (!cancelled) setNameGate({ status: "ask" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const slug = useMemo(() => slugify(name), [name]);
   const wslug = useMemo(() => warehouseSlug(slug), [slug]);
+  const projectSlug = useMemo(() => slugify(projectName), [projectName]);
 
   const nameTrimmed = name.trim();
   const nameTooLong = nameTrimmed.length > 100; // admin_api: name max 100
   const slugTooLong = slug.length > 50; //        admin_api: slug max 50
   const slugValid = slug.length > 0 && SLUG_RE.test(slug) && !slugTooLong;
   const nameValid = nameTrimmed.length > 0 && !nameTooLong;
-  const canSubmit = nameValid && slugValid && submit.status !== "submitting";
+  const projectNameTrimmed = projectName.trim();
+  const projectValid =
+    projectNameTrimmed.length > 0 &&
+    projectNameTrimmed.length <= 100 &&
+    projectSlug.length > 0 &&
+    projectSlug.length <= 50 &&
+    SLUG_RE.test(projectSlug);
+
+  const firstTrimmed = firstName.trim();
+  const lastTrimmed = lastName.trim();
+  const displayName = `${firstTrimmed} ${lastTrimmed}`.trim();
+  const mustAskName = nameGate.status === "ask";
+  // display_name is capped at 255 server-side; refuse client-side rather than
+  // let the PATCH 422 land after the person pressed Create.
+  const personNameTooLong = displayName.length > 255;
+  const personNameValid = !mustAskName || (!!firstTrimmed && !!lastTrimmed && !personNameTooLong);
+  const personNameError = personNameTooLong ? "Your name must be 255 characters or fewer." : null;
+
+  const canSubmit =
+    nameValid &&
+    slugValid &&
+    (organizationOnly || projectValid) &&
+    personNameValid &&
+    nameGate.status !== "loading" &&
+    submit.status !== "submitting";
 
   const nameError = !nameTrimmed
     ? null
@@ -137,9 +305,26 @@ export default function CreateOrg({ onCreated, onCancel, welcome = false }: Crea
     if (!canSubmit) return;
     setSubmit({ status: "submitting" });
     try {
-      const org = await createOrganization(nameTrimmed, slug);
+      // The name goes FIRST, deliberately. If it fails we stop here and the
+      // organization is not created — that is the whole point of collecting it
+      // "before the first organization". Creating the org first and losing the
+      // name to a transient error is the failure this ordering prevents; the
+      // person just presses Create again.
+      if (mustAskName) {
+        await saveDisplayName(displayName);
+        setNameGate({ status: "known", displayName });
+      }
+      const org = organizationOnly
+        ? await createOrganizationOnly(nameTrimmed, slug)
+        : await createOrganization(
+            nameTrimmed,
+            slug,
+            projectNameTrimmed,
+            projectSlug,
+            idempotencyKey,
+          );
       setSubmit({ status: "created", org });
-      onCreated?.(org.id);
+      onCreated?.(org.id, typeof org.next_url === "string" ? org.next_url : undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setSubmit({ status: "error", message });
@@ -167,8 +352,10 @@ export default function CreateOrg({ onCreated, onCancel, welcome = false }: Crea
 
             <div className="createorg-body">
               <p className="createorg-lead">
-                <strong>{org.name}</strong> is active. Its warehouse is being provisioned and you
-                are its owner. Members, roles, countries, and billing belong to this organization.
+                <strong>{org.name}</strong> is active and you are its owner.{" "}
+                {organizationOnly
+                  ? "No project exists yet; the next screen creates the first real workspace."
+                  : "Its first project is ready. Members, roles, countries, and billing belong to this organization."}
               </p>
 
               {/* ScopeSummary-style read-only summary of what now exists. */}
@@ -200,9 +387,9 @@ export default function CreateOrg({ onCreated, onCancel, welcome = false }: Crea
                 </div>
               </div>
 
-              <h2 className="createorg-subhead">Provisioned warehouse datasets</h2>
+              <h2 className="createorg-subhead">Reserved warehouse dataset names</h2>
               <p className="createorg-note">
-                These dataset names are fixed by the slug and cannot change.
+                These names are fixed by the slug. Getting Started will show the actual provisioning state.
               </p>
               <ul className="schema-list">
                 <li>
@@ -217,12 +404,18 @@ export default function CreateOrg({ onCreated, onCancel, welcome = false }: Crea
             </div>
 
             <footer className="createorg-footer">
-              <span>Next: invite members and create a project to start a first report.</span>
+              <span>
+                {organizationOnly
+                  ? "Next: create the organization's first project."
+                  : "Next: continue in Getting Started with the first project."}
+              </span>
               <div className="createorg-actions">
                 <button
                   className="primary-button"
                   type="button"
-                  onClick={() => onCreated?.(org.id)}
+                  onClick={() =>
+                    onCreated?.(org.id, typeof org.next_url === "string" ? org.next_url : undefined)
+                  }
                 >
                   Go to organization
                 </button>
@@ -290,6 +483,51 @@ export default function CreateOrg({ onCreated, onCancel, welcome = false }: Crea
           </header>
 
           <div className="createorg-body">
+            {mustAskName && (
+              <fieldset className="createorg-identity">
+                <legend>Your name</legend>
+                <p className="field-hint">
+                  We only know your email address. Your name identifies you to the people you
+                  invite and to your colleagues inside the organization.
+                </p>
+                <div className="createorg-identity-row">
+                  <div className="field">
+                    <label htmlFor="createorg-firstname">First name</label>
+                    <input
+                      id="createorg-firstname"
+                      className="text-input"
+                      type="text"
+                      value={firstName}
+                      maxLength={120}
+                      autoComplete="given-name"
+                      placeholder="Jean"
+                      onChange={(e) => {
+                        setFirstName(e.target.value);
+                        if (submit.status === "error") setSubmit({ status: "idle" });
+                      }}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="createorg-lastname">Last name</label>
+                    <input
+                      id="createorg-lastname"
+                      className="text-input"
+                      type="text"
+                      value={lastName}
+                      maxLength={120}
+                      autoComplete="family-name"
+                      placeholder="Albany"
+                      onChange={(e) => {
+                        setLastName(e.target.value);
+                        if (submit.status === "error") setSubmit({ status: "idle" });
+                      }}
+                    />
+                  </div>
+                </div>
+                {personNameError && <p className="field-error">{personNameError}</p>}
+              </fieldset>
+            )}
+
             <div className="field">
               <label htmlFor="createorg-name">Organization name</label>
               <input
@@ -318,6 +556,25 @@ export default function CreateOrg({ onCreated, onCancel, welcome = false }: Crea
               )}
             </div>
 
+            {!organizationOnly && (
+              <div className="field">
+                <label htmlFor="createorg-project-name">First project</label>
+                <input
+                  id="createorg-project-name"
+                  className="text-input"
+                  type="text"
+                  value={projectName}
+                  maxLength={100}
+                  onChange={(event) => {
+                    setProjectName(event.target.value);
+                    if (submit.status === "error") setSubmit({ status: "idle" });
+                  }}
+                />
+                <p className="field-hint">
+                  Created atomically with the organization, so your first workspace is immediately usable.
+                </p>
+              </div>
+            )}
             {/* Derived slug preview — the immutable warehouse identity. */}
             <div className="slug-preview" aria-live="polite">
               <div className="slug-preview-head">
@@ -350,9 +607,21 @@ export default function CreateOrg({ onCreated, onCancel, welcome = false }: Crea
                   {wslug ? `org_${wslug}_raw · org_${wslug}_marts` : "—"}
                 </span>
               </div>
+              {!organizationOnly && (
+                <div className="scope-row">
+                  <span className="scope-key">First project</span>
+                  <span className="scope-val">{projectNameTrimmed || "—"}</span>
+                </div>
+              )}
               <div className="scope-row">
                 <span className="scope-key">Owner</span>
-                <span className="scope-val">You (auto-enrolled)</span>
+                <span className="scope-val">
+                  {nameGate.status === "known"
+                    ? `${nameGate.displayName} (auto-enrolled)`
+                    : displayName
+                      ? `${displayName} (auto-enrolled)`
+                      : "You (auto-enrolled)"}
+                </span>
               </div>
               <div className="scope-row">
                 <span className="scope-key">Impact</span>
@@ -374,7 +643,11 @@ export default function CreateOrg({ onCreated, onCancel, welcome = false }: Crea
           </div>
 
           <footer className="createorg-footer">
-            <span>You can invite members and add projects once the organization exists.</span>
+            <span>
+              {organizationOnly
+                ? "Create the organization first; its first project comes next."
+                : "Your organization and first project are created together."}
+            </span>
             <div className="createorg-actions">
               {onCancel && (
                 <button

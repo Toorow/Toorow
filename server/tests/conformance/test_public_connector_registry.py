@@ -224,6 +224,14 @@ def test_web_prebuild_exercises_registry_and_typescript_gates():
     assert "tsc --noEmit" in package["scripts"]["check"]
     assert "test:connectors" in package["scripts"]["check"]
 
+    # La moitie declarative ci-dessus vaut partout. Executer reellement le
+    # prebuild demande la chaine JS installee, ce que le job conformance -- un
+    # job Python -- n'a pas: tsc y echouait sur "astro/tsconfigs/strict not
+    # found", un faux rouge sans rapport avec le registre. Le vrai passage du
+    # prebuild est deja couvert par le job vitrine, qui installe les deps.
+    if not (ROOT / "web" / "node_modules").is_dir():
+        pytest.skip("web/node_modules absent -- prebuild couvert par le job vitrine")
+
     npm = "npm.cmd" if os.name == "nt" else "npm"
     env = {**os.environ, "UV_CACHE_DIR": str(ROOT / ".uv-cache")}
     original = REGISTRY_PATH.read_bytes()

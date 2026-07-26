@@ -1,9 +1,11 @@
 ---
 title: Semantic Layer & Canonical Marts
-description: Architecture of toorow's canonical daily fact surface, dbt semantic ratio views, and DuckDB read-through cache.
+description: Architecture of toorow's canonical daily fact surface, MDM semantic engine, geographic & currency harmonization, dbt ratio views, and DuckDB read-through cache.
 ---
 
-The **Semantic Layer** is toorow's central data modeling boundary. It transforms raw ingestion landings into unified, standardized business indicators available to AI agents and the Admin Console.
+The **Semantic Layer** is toorow's central data modeling boundary. It transforms raw ingestion landings into unified, standardized, governed business indicators available to AI agents and the Admin Console.
+
+The semantic engine has expanded significantly over recent epics — from a basic fact mart to a full **Metric Data Master (MDM)**, multi-source reconciliation, geographic posture governance, and multi-currency harmonization.
 
 ---
 
@@ -11,98 +13,171 @@ The **Semantic Layer** is toorow's central data modeling boundary. It transforms
 
 ```mermaid
 flowchart TD
-    subgraph Raw Landings
-        A1[raw_google_analytics]
-        A2[raw_meta_ads]
-        A3[raw_shopify]
+    subgraph raw["Raw Landings"]
+        A1["raw_google_analytics"]
+        A2["raw_meta_ads"]
+        A3["raw_shopify"]
     end
 
-    subgraph Staging Models
-        B1[stg_ga4_daily]
-        B2[stg_meta_ads_daily]
-        B3[stg_shopify_daily]
+    subgraph staging["Staging Models (QUALIFY dedup)"]
+        B1["stg_ga4_daily"]
+        B2["stg_meta_ads_daily"]
+        B3["stg_shopify_daily"]
     end
 
-    subgraph Canonical Marts
-        C1[fact_daily_kpi<br/>Additive Metrics Only]
+    subgraph mdm["Metric Data Master (MDM)"]
+        C0["dim_metric — canonical definitions"]
+        C1["overlap_groups — cross-source reconciliation"]
+        C2["source_metric_mappings — connector field bridge"]
     end
 
-    subgraph dbt Semantic Views
-        D1[semantic_ctr]
-        D2[semantic_cpa]
-        D3[semantic_roas]
-        D4[semantic_avg_position]
+    subgraph marts["Canonical Marts"]
+        D1["fact_daily_kpi — Additive Metrics Only"]
     end
 
-    subgraph Serving Layer
-        E1[DuckDB Read-Through Cache]
-        E2[FastMCP Server]
+    subgraph semantic["dbt Semantic Views"]
+        E1["semantic_ctr"]
+        E2["semantic_cpa"]
+        E3["semantic_roas"]
+        E4["semantic_avg_position"]
     end
 
-    A1 -->|QUALIFY pull_id DESC| B1
-    A2 -->|QUALIFY pull_id DESC| B2
-    A3 -->|QUALIFY pull_id DESC| B3
+    subgraph serve["Serving Layer"]
+        F1["DuckDB Read-Through Cache"]
+        F2["FastMCP Server — AI Agents"]
+    end
 
-    B1 & B2 & B3 -->|UNION ALL Harmonization| C1
+    A1 -->|"QUALIFY pull_id DESC"| B1
+    A2 -->|"QUALIFY pull_id DESC"| B2
+    A3 -->|"QUALIFY pull_id DESC"| B3
 
-    C1 -->|On-The-Fly Ratios| D1 & D2 & D3 & D4
+    B1 & B2 & B3 -->|"UNION ALL + MDM Cascade"| D1
+    C0 & C1 & C2 --> D1
 
-    C1 & D1 & D2 & D3 & D4 --> E1
-    E1 --> E2
+    D1 -->|"On-The-Fly Ratios"| E1 & E2 & E3 & E4
+
+    D1 & E1 & E2 & E3 & E4 --> F1
+    F1 --> F2
 ```
 
 ---
 
-## 1. Canonical Daily Fact Surface (`fact_daily_kpi`)
+## 1. The Data Model (MDM) — Metric Dictionary
 
-`fact_daily_kpi` is the canonical daily fact table. All additive daily marketing metrics across GA4, Meta Ads, Search Console, TikTok, LinkedIn, Shopify, Stripe, and Mailgun are harmonized into this single model.
+The **Data Model** is the canonical interface between raw source fields and the unified semantic metric space. Every connector field is mapped to a canonical target metric through a 3-layer structure:
 
-### Stored Additive Metrics
-Only **additive measures** are stored directly in `fact_daily_kpi`:
-- `impressions`: Total ad or search impressions.
-- `clicks`: Total click events.
-- `spend`: Total advertising cost (harmonized to project currency).
-- `conversions`: Total conversion events.
-- `revenue`: Total financial revenue.
+- **`dim_metric`** — Canonical metric definitions: name, aggregation rule, additive flag, ratio numerator/denominator.
+- **`overlap_groups` + `overlap_group_members`** — Multi-source reconciliation topology: which connectors emit the same metric and how their overlap is resolved (`SUM`, `PRIORITY`, `DEDUP_ID`, `KEEP_SEPARATE`).
+- **`source_metric_mappings`** — The bridge between a connector's physical field ID and the MDM canonical definition.
+
+### Admin Console: Data Model View
+
+![Data Model — KPI dictionary showing metrics, dimensions, and attribution per datastream](/images/data-model.png)
+
+The Data Model screen surfaces the live canonical field registry. Each field shows its:
+- **Type**: Metric (blue dot) or Dimension (grey circle)
+- **Aggregation Rule** (`sum`, `average`, `count`, `currency`)
+- **"Fed by" panel**: Which active datastreams feed this target field via their configured mappings
+
+![Data Model detail — "Clics" metric drawer showing fed-by datastreams and type information](/images/data-model-detail.png)
 
 ---
 
-## 2. Non-Additive & Ratio Metrics (dbt Semantic Views)
+## 2. Multi-Source Reconciliation Engine
 
-Non-additive metrics (ratios, percentages, averages) are **never stored** directly in `fact_daily_kpi` (AD-4 invariant). Summing non-additive metrics produces false, misleading figures.
+When multiple connectors emit the **same metric** (e.g., GA4 and Meta Ads both reporting conversions), the reconciliation engine resolves the overlap according to declared rules:
 
-Instead, ratios are calculated on-the-fly via dbt semantic views using exact numerators and denominators:
-
-| Metric | View Name | Calculation Formula |
+| Method | Description | Typical Use Case |
 |---|---|---|
-| **CTR** (Click-Through Rate) | `semantic_ctr` | `SUM(clicks) / NULLIF(SUM(impressions), 0)` |
-| **CPA** (Cost Per Acquisition) | `semantic_cpa` | `SUM(spend) / NULLIF(SUM(conversions), 0)` |
-| **ROAS** (Return on Ad Spend) | `semantic_roas` | `SUM(revenue) / NULLIF(SUM(spend), 0)` |
-| **Average Position** | `semantic_avg_position` | `SUM(position * impressions) / NULLIF(SUM(impressions), 0)` *(Impression-Weighted)* |
+| `PRIORITY` | Highest-priority connector wins. Falls back to next in priority list. | When one source is authoritative (e.g., GA4 for web conversions). |
+| `SUM` | Sum values across all sources. | When sources are additive and non-overlapping. |
+| `DEDUP_ID` | Deduplicate based on a shared event ID. | When same events are reported across sources. |
+| `KEEP_SEPARATE` | Keep metrics separate per connector, no merge. | Costs (Google Ads spend ≠ Meta Ads spend). |
+
+Resolution is scoped hierarchically: **PROJECT** overrides **ORG** overrides **PLATFORM** defaults. Every mutation writes an append-only audit row in the same transaction.
 
 ---
 
-## 3. Read-Through Cache (DuckDB)
+## 3. Geographic Posture & Market Semantics
 
-To deliver low-latency responses (~50ms) to AI agents without incurring repetitive BigQuery query costs, toorow includes an optional DuckDB read-through cache:
+Markets are defined by **the customer's business scope**, not by language or connector geography defaults. The geographic semantics module (`server/core/geographic_semantics.py`) enforces this:
 
-- **Activation**: Enabled via `TOOROW_CACHE_ENABLED=true` in `.env`.
-- **Ephemeral Snapshot**: Caches a rolling window of recent marts (default 30 days) filtered strictly by `project_id`.
-- **Automatic Rebuild**: Rebuilt automatically following nightly ingestion runs or on-demand via administration APIs.
+- **Geographic Posture**: Each project declares a `geographic_posture` — single-market, multi-market, or global.
+- **Market Dimensions**: Geography rolls up to `country` (ISO 3166-1) and optionally `market_group` (commercial region clusters).
+- **Language is not a dimension**: Language is a content attribute, not a market dimension. Connectors reporting by language are normalized before mart write.
+
+---
+
+## 4. Multi-Currency Harmonization (FX Engine)
+
+All monetary metrics (`spend`, `revenue`, `cost`) are harmonized to the project's declared target currency via the live FX engine (`server/core/money.py`, `server/core/fx_frankfurter.py`):
+
+- **FX at Read** (not at staging): Currency conversion is applied at query time via the Frankfurter FX API rates, avoiding permanent data mutation and enabling retroactive recalculation when the target currency changes.
+- **Money-in-Micros**: Monetary values are stored as integer micros internally to avoid floating-point rounding drift. Connectors declare monetary fields in their manifest for adapter-level normalization.
+- **Cross-Currency Refusal**: Queries attempting to mix unconverted currencies across sources are refused with a deterministic repair action, not silently summed.
+
+---
+
+## 5. Canonical Daily Fact Surface (`fact_daily_kpi`)
+
+`fact_daily_kpi` is the single canonical additive fact table. All ingestion channels converge here after MDM mapping and geographic/currency harmonization.
+
+### Stored Additive Metrics Only
+
+| Metric | `canonical_target` | Aggregation |
+|---|---|---|
+| Impressions | `impressions` | `sum` |
+| Clicks | `clicks` | `sum` |
+| Ad Spend | `spend` | `sum` (harmonized to project currency) |
+| Conversions | `conversions` | `sum` |
+| Revenue | `revenue` | `sum` (harmonized to project currency) |
+| Deployments | `deployments` | `count` |
+| Active Users | `active_users` | `sum` |
+
+---
+
+## 6. Non-Additive Ratio Views
+
+Non-additive metrics are **never stored** in `fact_daily_kpi` (AD-4 invariant). They are calculated on-the-fly via dbt semantic views:
+
+| Metric | View | Formula |
+|---|---|---|
+| **CTR** | `semantic_ctr` | `SUM(clicks) / NULLIF(SUM(impressions), 0)` |
+| **CPA** | `semantic_cpa` | `SUM(spend) / NULLIF(SUM(conversions), 0)` |
+| **ROAS** | `semantic_roas` | `SUM(revenue) / NULLIF(SUM(spend), 0)` |
+| **Avg Position** | `semantic_avg_position` | `SUM(position × impressions) / NULLIF(SUM(impressions), 0)` *(Impression-Weighted)* |
+
+---
+
+## 7. MCP App Widget: Live Semantic Output
+
+The semantic marts directly power the **MCP App GA Widget** — the interactive React UI served to AI agent hosts:
+
+![MCP App GA Widget — daily report with active users, sessions, conversions, and calendar heatmap](/images/widget-ga-report.png)
+
+---
+
+## 8. Read-Through Cache (DuckDB)
+
+To deliver low-latency responses to AI agents without incurring BigQuery query costs, toorow includes an optional DuckDB read-through cache:
+
+- **Activation**: `TOOROW_CACHE_ENABLED=true`
+- **Ephemeral Snapshot**: Rolling window (default 30 days), strictly scoped per `project_id`.
+- **Automatic Rebuild**: After nightly ingestion or on-demand via admin API.
 
 ---
 
 ## Next Steps & Cross-References
 
 <CardGroup cols={2}>
+  <Card title="Data Quality Monitors" icon="shield-check" href="/data-quality">
+    Review automated DQ surveillance that guards ingestion into the semantic marts.
+  </Card>
   <Card title="Anomaly Detection" icon="chart-line" href="/anomaly-detection-method">
-    Explore how semantic marts feed baseline anomaly tracking.
+    Explore how semantic marts feed z-score baseline anomaly tracking.
   </Card>
-  <Card title="Agentic Daily Insights" icon="sparkles" href="/agentic-daily-insights">
-    Learn how AI agents query semantic marts for morning briefings.
-  </Card>
-  <Card title="Environment Reference" icon="sliders" href="/self-hosting#environment-variable-reference">
-    Configure `TOOROW_CACHE_ENABLED` and cache window parameters.
+  <Card title="MCP App Use Cases" icon="layer-group" href="/use-cases-library">
+    See how AI agents query semantic marts to render interactive UI widgets.
   </Card>
   <Card title="Adding a Connector" icon="plug" href="/adding-a-connector">
     Map new source fields to canonical semantic targets.

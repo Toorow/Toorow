@@ -133,13 +133,21 @@ Present `Authorization: Bearer <token>` with the configured token value.
 ```
 TOOROW_AUTH_MODE=oauth
 TOOROW_JWT_PUBLIC_KEY=<PEM-string>    # OR TOOROW_JWKS_URI
-TOOROW_JWT_ISSUER=<issuer-url>        # optional
-TOOROW_JWT_AUDIENCE=<audience>        # optional
+TOOROW_JWT_ISSUER=<issuer-url>        # required
+TOOROW_JWT_AUDIENCE=<api-audience>    # required
 ```
 Set exactly one of `TOOROW_JWT_PUBLIC_KEY` or `TOOROW_JWKS_URI`.
 Literal `\n` in the PEM string is auto-converted to actual newlines when
 reading from `.env` files or shell exports.
 
+
+Browser authentication is a separate BFF contract. A self-hosted console uses
+`TOOROW_BROWSER_AUTH_MODE=oidc`, Authorization Code + PKCE and an encrypted
+HttpOnly session cookie; provider tokens never enter JavaScript. The ID-token
+audience is the explicit `TOOROW_OIDC_CLIENT_ID`, not the API Bearer audience
+above. Protected new setups also require `TOOROW_CANONICAL_IDENTITY_ENABLED=1`.
+See `infra/docs/self-hosting.md` and `.env.example` for the complete environment
+and CSRF/public-Origin contract.
 **Identity in tool responses:**
 All core tools (`health`, `list_modules`, `get_daily_report`) include
 `data.identity` in their response envelopes. In disabled mode this is

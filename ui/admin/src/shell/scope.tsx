@@ -52,7 +52,7 @@ export interface OrgRef {
  *   "ready"   — the request succeeded and there is at least one organization.
  * `org` and `activeProject` are non-null only when state is "ready".
  */
-export type ScopeState = "loading" | "error" | "empty" | "ready";
+export type ScopeState = "loading" | "error" | "empty" | "project_required" | "ready";
 
 export interface ScopeValue {
   state: ScopeState;
@@ -83,6 +83,9 @@ interface ApiProject {
   org_id?: string | null;
 }
 
+const INERT_SEED_ORG_IDS = new Set(["org_default", "org_integ-test-project"]);
+const INERT_SEED_PROJECT_IDS = new Set(["default", "integ-test-project"]);
+
 function brandingOf(o: ApiOrg): OrgBranding | null {
   const accent = o.brand_primary ?? undefined;
   const logoUrl = o.logo_url ?? undefined;
@@ -95,9 +98,11 @@ function brandingOf(o: ApiOrg): OrgBranding | null {
  *  reachable rather than vanishing). An empty result stays empty — a user with
  *  no organization must be told so, not handed one. */
 function compose(orgs: ApiOrg[], projects: ApiProject[]): OrgRef[] {
+  const visibleOrgs = orgs.filter((org) => !INERT_SEED_ORG_IDS.has(org.id));
   const byOrg = new Map<string, ProjectRef[]>();
   const orphans: ProjectRef[] = [];
   for (const p of projects) {
+    if (INERT_SEED_PROJECT_IDS.has(p.id)) continue;
     const ref = { id: p.id, name: p.name };
     if (p.org_id) {
       const list = byOrg.get(p.org_id) ?? [];
@@ -107,14 +112,12 @@ function compose(orgs: ApiOrg[], projects: ApiProject[]): OrgRef[] {
       orphans.push(ref);
     }
   }
-  const composed: OrgRef[] = orgs
-    .map((o) => ({
+  const composed: OrgRef[] = visibleOrgs.map((o) => ({
       id: o.id,
       name: o.name,
       branding: brandingOf(o),
       projects: byOrg.get(o.id) ?? [],
-    }))
-    .filter((o) => o.projects.length > 0);
+    }));
   if (orphans.length > 0) {
     composed.push({ id: "_unassigned", name: "Unassigned", branding: null, projects: orphans });
   }
@@ -131,7 +134,7 @@ export function ScopeProvider({
   apiBase?: string;
   children: ReactNode;
 }) {
-  const { route } = useRoute();
+  const { route, replace } = useRoute();
   const [loaded, setLoaded] = useState<OrgRef[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -169,9 +172,17 @@ export function ScopeProvider({
     };
   }, [orgsOverride, apiBase, attempt]);
 
+  const scopeOrgs = orgsOverride ?? loaded;
+  const routedOrg = scopeOrgs?.find((o) => o.projects.some((p) => p.id === route.projectId));
+  const firstProjectOrg = scopeOrgs?.find((o) => o.projects.length > 0);
+
+  useEffect(() => {
+    if (!scopeOrgs || routedOrg || !firstProjectOrg) return;
+    replace({ projectId: firstProjectOrg.projects[0].id });
+  }, [scopeOrgs, routedOrg, firstProjectOrg, replace]);
+
   const value = useMemo<ScopeValue>(() => {
-    const orgs = orgsOverride ?? loaded;
-    if (!orgs) {
+    if (!scopeOrgs) {
       return {
         state: failed ? "error" : "loading",
         org: null,
@@ -180,15 +191,24 @@ export function ScopeProvider({
         reload,
       };
     }
-    if (orgs.length === 0) {
-      return { state: "empty", org: null, orgs, activeProject: null, reload };
+    if (scopeOrgs.length === 0) {
+      return { state: "empty", org: null, orgs: scopeOrgs, activeProject: null, reload };
     }
-    const org = orgs.find((o) => o.projects.some((p) => p.id === route.projectId)) ?? orgs[0];
-    const activeProject =
-      org.projects.find((p) => p.id === route.projectId) ??
-      org.projects[0] ?? { id: route.projectId, name: route.projectId };
-    return { state: "ready", org, orgs, activeProject, reload };
-  }, [orgsOverride, loaded, failed, reload, route.projectId]);
+    if (routedOrg) {
+      const activeProject = routedOrg.projects.find((p) => p.id === route.projectId) ?? null;
+      return { state: "ready", org: routedOrg, orgs: scopeOrgs, activeProject, reload };
+    }
+    if (firstProjectOrg) {
+      return { state: "loading", org: null, orgs: scopeOrgs, activeProject: null, reload };
+    }
+    return {
+      state: "project_required",
+      org: scopeOrgs[0],
+      orgs: scopeOrgs,
+      activeProject: null,
+      reload,
+    };
+  }, [scopeOrgs, failed, reload, route.projectId, routedOrg, firstProjectOrg]);
 
   return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
 }

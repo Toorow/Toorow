@@ -48,6 +48,45 @@ def _fake_conn(fetch_map=None):
     return conn, cur
 
 
+def test_server_quota_estimate_uses_persisted_plan_and_reload_windows():
+    conn, cur = _fake_conn()
+    cur.fetchone.return_value = (
+        {"geographic": {"impact": {"quota_cost": {"read_points": 7}}}},
+    )
+    points = br._server_estimated_points(
+        conn,
+        datastream_id="ds-1",
+        project_id="proj-1",
+        kind=br.KIND_RELOAD,
+        interval={"windows": [{"date_from": "a"}, {"date_from": "b"}]},
+    )
+    assert points == 14
+    assert cur.execute.call_args.args[1] == ("ds-1", "proj-1", "ds-1", "proj-1")
+
+
+def test_server_quota_estimate_blocks_missing_evidence_and_reprocess_is_exact_zero():
+    conn, cur = _fake_conn()
+    cur.fetchone.return_value = ({"geographic": {"impact": {}}},)
+    with pytest.raises(br.BoundedRecoveryError) as exc:
+        br._server_estimated_points(
+            conn,
+            datastream_id="ds-1",
+            project_id="proj-1",
+            kind=br.KIND_SYNCHRONIZE,
+            interval={"from": "2026-07-20", "to": "2026-07-22"},
+        )
+    assert exc.value.code == "quota_estimate_unavailable"
+    cur.reset_mock()
+    assert br._server_estimated_points(
+        conn,
+        datastream_id="ds-1",
+        project_id="proj-1",
+        kind=br.KIND_REPROCESS,
+        interval=None,
+    ) == 0
+    cur.execute.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # (Pure) reload half-open scope normalization + windowing.
 # ---------------------------------------------------------------------------
@@ -201,18 +240,20 @@ def _patch_target(monkeypatch, **over):
     monkeypatch.setattr(operations_mcp, "_quota_estimate",
                         lambda p, n: {"can_proceed": True, "verdict": "ok",
                                       "estimated_points": n, "platform_known": True})
+    monkeypatch.setattr(br, "_server_estimated_points", lambda *args, **kwargs: 5)
     return base
 
 
 def test_assemble_synchronize_states_interval_and_versions(monkeypatch):
     _patch_target(monkeypatch)
     monkeypatch.setattr(br, "_load_refetch_days", lambda conn, ds: 3)
+    monkeypatch.setattr(br, "_server_estimated_points", lambda *args, **kwargs: 5)
     conn, _ = _fake_conn()
 
     proposal = br.assemble_proposal(
         conn, org_id="org-1", datastream_id="ds-1", kind=br.KIND_SYNCHRONIZE,
         actor="user-1", reason="late data", date_from=None, date_to_exclusive=None,
-        partition=None, chosen_mapping_version_id=None, estimated_points=5,
+        partition=None, chosen_mapping_version_id=None,
         today=date(2026, 7, 23),
     )
     assert proposal.kind == "synchronize"
@@ -232,7 +273,7 @@ def test_assemble_reload_carries_half_open_windows(monkeypatch):
     proposal = br.assemble_proposal(
         conn, org_id="org-1", datastream_id="ds-1", kind=br.KIND_RELOAD,
         actor="u", reason=None, date_from="2026-07-01", date_to_exclusive="2026-07-06",
-        partition=None, chosen_mapping_version_id=None, estimated_points=0,
+        partition=None, chosen_mapping_version_id=None,
     )
     assert proposal.kind == "reload"
     assert proposal.interval["from"] == "2026-07-01"
@@ -251,7 +292,7 @@ def test_assemble_reload_rejects_overwide_range(monkeypatch):
             conn, org_id="org-1", datastream_id="ds-1", kind=br.KIND_RELOAD,
             actor="u", reason=None, date_from="2026-01-01",
             date_to_exclusive="2027-01-01", partition=None,
-            chosen_mapping_version_id=None, estimated_points=0,
+            chosen_mapping_version_id=None,
         )
     assert exc.value.code == "forbidden_interval"
 
@@ -266,7 +307,7 @@ def test_assemble_reprocess_blocks_when_retention_missing(monkeypatch):
         br.assemble_proposal(
             conn, org_id="org-1", datastream_id="ds-1", kind=br.KIND_REPROCESS,
             actor="u", reason=None, date_from=None, date_to_exclusive=None,
-            partition=None, chosen_mapping_version_id="m2", estimated_points=0,
+            partition=None, chosen_mapping_version_id="m2",
         )
     assert exc.value.code == "retention_unavailable"
 
@@ -284,7 +325,7 @@ def test_assemble_reprocess_blocks_on_incompatible_schema(monkeypatch):
         br.assemble_proposal(
             conn, org_id="org-1", datastream_id="ds-1", kind=br.KIND_REPROCESS,
             actor="u", reason=None, date_from=None, date_to_exclusive=None,
-            partition=None, chosen_mapping_version_id="m2", estimated_points=0,
+            partition=None, chosen_mapping_version_id="m2",
         )
     assert exc.value.code == "incompatible_schema"
 
@@ -301,7 +342,7 @@ def test_assemble_reprocess_pins_chosen_mapping_when_compatible(monkeypatch):
     proposal = br.assemble_proposal(
         conn, org_id="org-1", datastream_id="ds-1", kind=br.KIND_REPROCESS,
         actor="u", reason=None, date_from=None, date_to_exclusive=None,
-        partition=None, chosen_mapping_version_id="m2", estimated_points=0,
+        partition=None, chosen_mapping_version_id="m2",
     )
     # The proposal pins the CHOSEN mapping (m2), not the live one (m1).
     assert proposal.target_versions["mapping_version_id"] == "m2"
@@ -320,6 +361,7 @@ def test_prepare_persists_immutable_proposal_and_returns_stated_fields(monkeypat
 
     _patch_target(monkeypatch)
     monkeypatch.setattr(br, "_load_refetch_days", lambda conn, ds: 3)
+    monkeypatch.setattr(br, "_server_estimated_points", lambda *args, **kwargs: 5)
     inserted = {}
 
     def fake_insert(conn, payload, idem):
@@ -358,7 +400,7 @@ def _prep_row(**over):
         "target_versions": {"plan_version_id": "p1", "mapping_version_id": "m1",
                             "policy_version": "pol-1"},
         "interval": {"from": "2026-07-20", "to": "2026-07-22"},
-        "impact": {}, "quota": {"estimated_points": 5},
+        "impact": {"reason": "late data"}, "quota": {"estimated_points": 5},
         "lock_ref": None, "rollback_ref": "dse_GOOD",
         "idempotency_key_hash": None, "state": "prepared", "operation_id": None,
         "expired": False,
@@ -378,13 +420,24 @@ def _wire_confirm(monkeypatch, prep, target, exec_return):
     monkeypatch.setattr(operations_mcp, "_quota_estimate",
                         lambda p, n: {"can_proceed": True, "verdict": "ok",
                                       "estimated_points": n, "platform_known": True})
+    monkeypatch.setattr(br, "_server_estimated_points", lambda *args, **kwargs: 5)
     marked = {}
     monkeypatch.setattr(operations_mcp, "_mark_preparation_confirmed",
                         lambda conn, pid, op_id: marked.setdefault("op_id", op_id))
 
+    monkeypatch.setattr(
+        operations_mcp, "_load_operation_trace", lambda conn, op_id: "e" * 32
+    )
     fp = operations_mcp._proposal_fingerprint(
-        {"datastream_id": prep["datastream_id"], "kind": prep["kind"],
-         "interval": prep["interval"], "target_versions": prep["target_versions"]}
+        {
+            "org_id": prep["org_id"],
+            "project_id": prep["project_id"],
+            "datastream_id": prep["datastream_id"],
+            "actor": prep["actor"],
+            "kind": prep["kind"],
+            "interval": prep["interval"],
+            "target_versions": prep["target_versions"],
+        }
     )
     key = operations_mcp._recovery_idempotency_key(
         prep["org_id"], prep["datastream_id"], prep["kind"], fp
@@ -414,6 +467,40 @@ def _live_target(**over):
     return base
 
 
+def _confirm(conn, **over):
+    kwargs = {
+        "preparation_id": "prep_1",
+        "expected_org_id": "org-1",
+        "expected_project_id": "proj-1",
+        "expected_datastream_id": "ds-1",
+        "actor": "user-1",
+        "trace_id": "f" * 32,
+    }
+    kwargs.update(over)
+    return br.confirm_bounded_recovery(conn, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"expected_org_id": "org-other"},
+        {"expected_project_id": "proj-other"},
+        {"expected_datastream_id": "ds-other"},
+        {"actor": "user-other"},
+    ],
+)
+def test_confirm_refuses_any_scope_or_actor_mismatch(monkeypatch, override):
+    from core import operations
+
+    op = operations.OperationResult("op-x", "succeeded", {}, "a", "b", False)
+    captured, _ = _wire_confirm(monkeypatch, _prep_row(), _live_target(), op)
+    conn, _ = _fake_conn()
+    with pytest.raises(br.BoundedRecoveryError) as exc:
+        _confirm(conn, **override)
+    assert exc.value.code == "not_found"
+    assert captured["calls"] == 0
+
+
 def test_confirm_routes_exactly_one_operation_and_records_audit_fields(monkeypatch):
     from core import operations
 
@@ -422,10 +509,8 @@ def test_confirm_routes_exactly_one_operation_and_records_audit_fields(monkeypat
     captured, marked = _wire_confirm(monkeypatch, _prep_row(), _live_target(), op)
     conn, _ = _fake_conn()
 
-    out = br.confirm_bounded_recovery(
-        conn, preparation_id="prep_1", actor="user-1", reason="late data",
-        trace_id="f" * 32,
-    )
+    out = _confirm(conn, reason="late data")
+
     assert captured["calls"] == 1
     spec = captured["spec"]
     # AC1: actor / reason / idempotency / trace / source-version / target-candidate.
@@ -436,6 +521,10 @@ def test_confirm_routes_exactly_one_operation_and_records_audit_fields(monkeypat
     assert spec.request_payload["plan_version_id"] == "p1"
     assert spec.request_payload["mapping_version_id"] == "m1"
     assert spec.confirmation_mode == "human"
+    assert spec.resource_path == (
+        "organization:org-1", "project:proj-1", "flux:ds-1"
+    )
+    assert out["trace_id"] == "e" * 32
     assert out["operation_id"] == "op-1"
     assert marked["op_id"] == "op-1"
 
@@ -446,6 +535,7 @@ def test_duplicate_confirm_replays_original_operation(monkeypatch):
     replay = operations.OperationResult("op-1", "succeeded", {"kind": "reload"},
                                         "audit-1", "opout-1", True)
     prep = _prep_row(kind="reload",
+                     state="confirmed", operation_id="op-1",
                      interval={"from": "2026-07-01", "to": "2026-07-05",
                                "to_exclusive": "2026-07-06",
                                "windows": [{"date_from": "2026-07-01",
@@ -454,7 +544,7 @@ def test_duplicate_confirm_replays_original_operation(monkeypatch):
     captured, _ = _wire_confirm(monkeypatch, prep, _live_target(), replay)
     conn, _ = _fake_conn()
 
-    out = br.confirm_bounded_recovery(conn, preparation_id="prep_1", actor="u")
+    out = _confirm(conn)
     assert captured["calls"] == 1  # execute_operation itself dedups.
     assert out["replayed"] is True
     assert out["operation_id"] == "op-1"
@@ -468,7 +558,7 @@ def test_confirm_refuses_stale_versions_for_repull_verbs(monkeypatch):
                                 _live_target(plan_version_id="p2"), op)
     conn, _ = _fake_conn()
     with pytest.raises(br.BoundedRecoveryError) as exc:
-        br.confirm_bounded_recovery(conn, preparation_id="prep_1", actor="u")
+        _confirm(conn)
     assert exc.value.code == "stale_versions"
     assert captured["calls"] == 0  # NO dispatch on refusal.
 
@@ -481,7 +571,7 @@ def test_confirm_refuses_lock_conflict(monkeypatch):
                                 _live_target(active_execution_id="dse_active"), op)
     conn, _ = _fake_conn()
     with pytest.raises(br.BoundedRecoveryError) as exc:
-        br.confirm_bounded_recovery(conn, preparation_id="prep_1", actor="u")
+        _confirm(conn)
     assert exc.value.code == "lock_conflict"
     assert captured["calls"] == 0
 
@@ -507,7 +597,7 @@ def test_confirm_reprocess_skips_quota_and_exposure_gates(monkeypatch):
                         MagicMock(side_effect=AssertionError("reprocess must not check quota")))
     conn, _ = _fake_conn()
 
-    out = br.confirm_bounded_recovery(conn, preparation_id="prep_1", actor="u")
+    out = _confirm(conn)
     assert captured["calls"] == 1
     assert out["operation_id"] == "op-1"
 
@@ -573,6 +663,7 @@ def test_reload_dispatch_carries_half_open_windows_and_supersedes_only_scope(mon
 
     conn, cur = _fake_conn()
     prep = _prep_row(kind="reload",
+                     state="confirmed", operation_id="op-1",
                      interval={"from": "2026-07-01", "to": "2026-07-05",
                                "to_exclusive": "2026-07-06",
                                "windows": [{"date_from": "2026-07-01",

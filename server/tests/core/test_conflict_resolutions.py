@@ -150,7 +150,7 @@ class TestUpsertFxResolution:
         row = (1, "proj_a", "cost", "meta-ads", "USD", "anonymous", _NOW, None)
         conn, cur = _make_conn(fetchone=row)
 
-        result = upsert_fx_resolution(
+        upsert_fx_resolution(
             project_id="proj_a",
             target_field="cost",
             source_module="meta-ads",
@@ -290,7 +290,7 @@ class TestListFxResolutions:
         rows = [(1, "proj_a", "cost", "meta-ads", "USD", "alice", _NOW, None)]
         conn, cur = _make_conn(fetchall=rows)
 
-        result = list_fx_resolutions(project_id="proj_a", conn=conn)
+        list_fx_resolutions(project_id="proj_a", conn=conn)
         # SQL has WHERE project_id = %s
         sql_call = cur.execute.call_args[0][0]
         assert "WHERE" in sql_call

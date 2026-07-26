@@ -1,0 +1,46 @@
+/**
+ * data-tree.css — the three load states of the sidebar Data tree.
+ *
+ * The tree's structural classes (data-tree, data-tool, tree-section,
+ * tree-search, stream-group, stream-link, attention-light) live in
+ * application.css and are global. This file adds ONLY what the loading / error /
+ * empty states need, so the shared stylesheet is not touched by this change.
+ *
+ * Tokenized: every color references an application.css CSS variable (--muted,
+ * --error, --ink, --line, --surface-2) so the states flip correctly in dark.
+ */
+
+.tree-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0 6px;
+  padding: 10px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tree-state.error {
+  color: var(--error);
+}
+
+.tree-retry {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: 600 12px "Plus Jakarta Sans", sans-serif;
+  cursor: pointer;
+}
+
+.tree-retry:hover {
+  border-color: var(--muted);
+}
+
+.tree-retry:focus-visible {
+  outline: 2px solid var(--focus, var(--info));
+  outline-offset: 2px;
+}

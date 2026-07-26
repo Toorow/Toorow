@@ -35,12 +35,12 @@ interface Props {
 }
 
 const MANAGED_FORMAT_LABELS: { value: ManagedFeedFormat; label: string; help: string }[] = [
-  { value: "csv", label: "CSV", help: "Import de fichier ponctuel, gouverné (12.9)." },
-  { value: "excel", label: "Excel", help: "Import de fichier ponctuel, gouverné (12.9)." },
+  { value: "csv", label: "CSV", help: "Governed one-time file import (12.9)." },
+  { value: "excel", label: "Excel", help: "Governed one-time file import (12.9)." },
   {
     value: "google_sheets",
     label: "Google Sheets",
-    help: "Synchronisation récurrente en lecture seule (12.10).",
+    help: "Recurring read-only synchronization (12.10).",
   },
 ];
 
@@ -55,27 +55,27 @@ export default function SourceStage({
   return (
     <Stack spacing={3} data-testid="stage-source">
       <TextField
-        label="Nom du flux"
+        label="Datastream name"
         value={name}
         onChange={(e) => onNameChange(e.target.value)}
         fullWidth
         required
-        helperText="Un nom clair pour retrouver ce flux dans la liste."
+        helperText="A clear name for finding this Datastream in the list."
         sx={{ maxWidth: 420 }}
       />
 
       <Box>
         <Typography component="h3" variant="subtitle1" sx={{ mb: 0.5 }}>
-          Choisir la source
+          Choose a source
         </Typography>
         <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
-          La source détermine qui possède la destination et comment les données
-          sont écrites. Aucune écriture n’a lieu chez la source dans tous les cas.
+          The source determines who owns the destination and how data
+          is written. The source is never modified.
         </Typography>
 
         <Box
           role="radiogroup"
-          aria-label="Type de source"
+          aria-label="Source type"
           sx={{
             display: "grid",
             gap: 2,
@@ -107,16 +107,16 @@ export default function SourceStage({
                         <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                           {meta.label}
                         </Typography>
-                        {/* Non-color selection cue: an explicit "Sélectionné" chip. */}
+                        {/* Non-color selection cue: an explicit "Selected" chip. */}
                         {selected && (
-                          <Chip size="small" color="primary" label="Sélectionné" />
+                          <Chip size="small" color="primary" label="Selected" />
                         )}
                       </Stack>
                       <Typography variant="body2" color="text.secondary">
-                        <strong>Propriété :</strong> {meta.ownership}
+                        <strong>Ownership:</strong> {meta.ownership}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        <strong>Écriture :</strong> {meta.writeBehavior}
+                        <strong>Write behavior:</strong> {meta.writeBehavior}
                       </Typography>
                     </Stack>
                   </CardContent>
@@ -130,7 +130,7 @@ export default function SourceStage({
       {sourceKind === "managed_feed" && (
         <Box>
           <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
-            Format du flux managé
+            Managed-feed format
           </Typography>
           <TextField
             select
@@ -144,11 +144,11 @@ export default function SourceStage({
             helperText={
               managedFeedFormat
                 ? MANAGED_FORMAT_LABELS.find((f) => f.value === managedFeedFormat)?.help
-                : "CSV et Excel sont des imports ponctuels ; Google Sheets est une synchronisation récurrente."
+                : "CSV and Excel are one-time imports; Google Sheets is a recurring synchronization."
             }
           >
             <option value="" disabled>
-              Choisir un format…
+              Choose a format...
             </option>
             {MANAGED_FORMAT_LABELS.map((f) => (
               <option key={f.value} value={f.value}>
@@ -161,17 +161,17 @@ export default function SourceStage({
 
       {sourceKind && (
         <Alert severity="info" data-testid="source-ownership-summary">
-          Propriétaire de l’écriture :{" "}
+          Writer:{" "}
           <strong>
-            {sourceKindMeta(sourceKind).writer === "toorow" ? "toorow" : "externe (vous)"}
+            {sourceKindMeta(sourceKind).writer === "toorow" ? "toorow" : "external (you)"}
           </strong>{" "}
-          · Politique de destination :{" "}
+          · Destination policy:{" "}
           <strong>
             {sourceKindMeta(sourceKind).destinationPolicy === "managed_raw"
-              ? "jeu managé toorow"
-              : "lecture seule externe"}
+              ? "toorow-managed dataset"
+              : "external read-only"}
           </strong>
-          . Cette propriété est déduite de la source et n’est pas modifiable.
+          . This ownership is derived from the source and cannot be changed.
         </Alert>
       )}
     </Stack>

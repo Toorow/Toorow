@@ -1,10 +1,27 @@
-name: Nightly / Release (full matrix)
+name: Nightly / Release
 
-# The exhaustive suite that PR CI deliberately does NOT run: the WHOLE server
-# test suite and conformance for EVERY connector, plus the full dbt loop.
-# Runs on a schedule, on published releases, and on manual dispatch — so the
-# "test everything / every connector" cost is paid at release cadence, not on
-# every PR (see ci.yml for the PR-scoped, per-connector jobs).
+# Deux verifications d'infrastructure jouees a cadence de release : la boucle
+# dbt (seed -> run -> test) et la suite d'isolation sur un Postgres ephemere
+# avec toutes les migrations rejouees dans l'ordre. C'est tout.
+#
+# CE QUE CE WORKFLOW NE FAIT PAS, ET NE DOIT PAS REFAIRE :
+#
+#   1. Tester les connecteurs. Decision Jean, 2026-07-26 : la conformance
+#      connecteur ne tourne PAS dans git, ni par PR ni la nuit. Elle se joue
+#      pendant le dev et en local. Le harnais reste dans le depot :
+#        uv run pytest server/tests/conformance/ --module-path server/modules/<connecteur>/
+#      La matrice qui l'executait ici ouvrait un job par connecteur (~35).
+#
+#   2. Lancer la suite pytest complete. Un job `full-python` le faisait
+#      (`uv run pytest server/tests`) et tournait 95 MINUTES sans finir. Les
+#      suites backend, offline comme pg-gated, se rejouent EN LOCAL avec la
+#      stack Docker avant deploiement :
+#        docker compose --env-file infra/nango/.env -f infra/nango/docker-compose.yml up -d
+#        uv run pytest server/tests -q
+#
+# Le depot est PRIVE : les minutes de runner se paient, et c'est le temps
+# cumule qui compte, pas le mur d'horloge. Avant ce menage le nightly finissait
+# en 2 minutes en brulant 42 minutes de runner.
 
 on:
   schedule:
@@ -14,71 +31,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Whole Python suite (no path scoping) + lint.
-  # ---------------------------------------------------------------------------
-  full-python:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
-
-      - name: Sync deps
-        run: uv sync --frozen
-
-      - name: Lint (ruff)
-        run: uv run ruff check server
-
-      - name: Full test suite (unit + integration + conformance + evals)
-        run: uv run pytest server/tests -q
-
-  # ---------------------------------------------------------------------------
-  # Conformance for EVERY built-in connector (dynamic matrix over server/modules).
-  # ---------------------------------------------------------------------------
-  discover-connectors:
-    runs-on: ubuntu-latest
-    outputs:
-      modules: ${{ steps.list.outputs.modules }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: list
-        name: Enumerate connector module directories
-        run: |
-          MODS=$(ls -d server/modules/*/ | sed 's#server/modules/##; s#/##' | sort)
-          JSON=$(printf '%s\n' "$MODS" | grep -v '^$' | jq -R . | jq -s -c .)
-          echo "modules=$JSON" >> "$GITHUB_OUTPUT"
-          echo "Discovered connectors: $JSON"
-
-  conformance-all:
-    needs: discover-connectors
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        module: ${{ fromJson(needs.discover-connectors.outputs.modules) }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
-
-      - name: Sync deps
-        run: uv sync --frozen
-
-      - name: Capability contract (all modules)
-        run: uv run pytest server/tests/conformance/test_all_module_capabilities.py -q
-
-      - name: Conformance — ${{ matrix.module }}
-        run: |
-          uv run pytest server/tests/conformance/ \
-            --module-path "server/modules/${{ matrix.module }}/" -q
-
   # ---------------------------------------------------------------------------
   # Full dbt loop (seed → load → run → test).
   # ---------------------------------------------------------------------------
@@ -91,6 +43,8 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          # Evite de reinstaller tout l'environnement a chaque execution.
+          enable-cache: true
 
       - name: Sync Python deps
         run: uv sync --frozen --all-packages
@@ -114,13 +68,24 @@ jobs:
                 threads: 1
           PROFILES
 
-      - name: dbt run + test
+      # Meme correctif que le job dbt-test de ci.yml. `dbt seed` manquait alors
+      # que le staging ref() les dimensions de reference, et le `dbt run` etait
+      # nu: il tentait les 66 modeles sur un entrepot ne contenant que le seed
+      # GA4, soit 38 erreurs et 0 modele reussi a chaque nuit.
+      #
+      # DETTE ASSUMEE, et c est la seule raison pour laquelle ce job "full" est
+      # ici aussi etroit que celui de la CI: construire le DAG complet demande
+      # un squelette des 53 sources (les raw_* de 24 modules plus le schema
+      # mirror) qu aucun workflow ne provisionne. Tant qu il n existe pas, un
+      # nightly "exhaustif" sur dbt est un mensonge -- mieux vaut un smoke vrai.
+      - name: dbt seed + run + test (staging google_analytics)
         env:
           TOOROW_DUCKDB_PATH: /tmp/ci_test.duckdb
         run: |
           cd dbt
-          uv run dbt run --profiles-dir profiles
-          uv run dbt test --profiles-dir profiles
+          uv run dbt seed --profiles-dir profiles
+          uv run dbt run --profiles-dir profiles --select stg_ga4_standard_daily
+          uv run dbt test --profiles-dir profiles --select stg_ga4_standard_daily
 
   # ---------------------------------------------------------------------------
   # Isolation suite (ephemeral Postgres, all migrations).
@@ -155,21 +120,23 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          # Evite de reinstaller tout l'environnement a chaque execution.
+          enable-cache: true
 
+      # --all-packages : la racine ne declare aucune dependance, les libs de run
+      # (jsonschema, ...) vivent dans server/pyproject.toml. Sans ce flag pytest
+      # casse a la collecte sur ModuleNotFoundError. Meme correctif que ci.yml.
       - name: Sync deps
-        run: uv sync --frozen
-
-      - name: Install psql client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        run: uv sync --frozen --all-packages
 
       - name: Apply app-schema migrations in order
-        env:
-          PGPASSWORD: connector_dev_only
-        run: |
-          for f in $(ls infra/nango/migrations/*.sql | sort -V); do
-            echo "applying $f"
-            psql -h localhost -U connector -d connector -v ON_ERROR_STOP=1 -f "$f"
-          done
+        run: uv run python scripts/apply_migrations.py
+
+      - name: Verify migration ledger is complete
+        run: uv run python scripts/apply_migrations.py --verify-complete
+
+      - name: Verify migration upgrade preserves tenant data
+        run: uv run python scripts/verify_migration_upgrade.py
 
       - name: Run isolation suite
         run: uv run pytest server/tests/isolation/ -v -m isolation

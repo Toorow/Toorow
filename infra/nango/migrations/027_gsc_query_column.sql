@@ -21,4 +21,15 @@
 -- Apply with:
 --   psql $PLATFORM_DB_URL -f infra/nango/migrations/027_gsc_query_column.sql
 
-ALTER TABLE raw_gsc_daily ADD COLUMN IF NOT EXISTS query VARCHAR;
+-- Conditionnel: raw_gsc_daily n'est PAS creee par le schema app, c'est le
+-- connecteur GSC qui la cree dans l'entrepot (_RAW_CREATE_DDL). Sur une base
+-- fraiche -- le job CI isolation qui rejoue toutes les migrations dans l'ordre --
+-- la table n'existe pas et un ALTER sec echoue. Le no-op est exactement
+-- l'intention decrite plus haut: n'agir que la ou la table est managee.
+DO $$
+BEGIN
+  IF to_regclass('public.raw_gsc_daily') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE raw_gsc_daily ADD COLUMN IF NOT EXISTS query VARCHAR';
+  END IF;
+END
+$$;

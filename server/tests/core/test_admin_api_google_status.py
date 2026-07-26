@@ -137,6 +137,7 @@ def _build_client():
 # Helpers: project_access mock
 # ---------------------------------------------------------------------------
 
+
 def _patch_project_access(allowed: bool):
     """Patch identity_has_project_access to return *allowed*."""
     return patch(
@@ -147,6 +148,7 @@ def _patch_project_access(allowed: bool):
 
 # Actually core.project_access is imported inside the function; patch the
 # module where it's referenced (inside admin_api).
+
 
 def _patch_pa(allowed: bool):
     return patch("core.project_access.identity_has_project_access", return_value=allowed)
@@ -163,13 +165,13 @@ class TestGoogleStatus:
     def _row_connected(self, health_expiry=None):
         """Row for a google_direct connection with an optional expiry."""
         return (
-            "proj_alpha",       # project_id
-            "google_direct",    # auth_path
-            health_expiry,      # token_expiry
+            "proj_alpha",  # project_id
+            "google_direct",  # auth_path
+            health_expiry,  # token_expiry
             [
                 "https://www.googleapis.com/auth/analytics.readonly",
                 "https://www.googleapis.com/auth/webmasters.readonly",
-            ],                  # granted_scopes
+            ],  # granted_scopes
         )
 
     def _row_nango(self):
@@ -187,21 +189,28 @@ class TestGoogleStatus:
         def _get():
             yield conn
 
-        return patch("core.db.get_connection", new=_get)
+        @contextmanager
+        def _patches():
+            with (
+                patch("core.db.get_connection", new=_get),
+                patch("core.project_access.identity_can_manage_org", return_value=True),
+            ):
+                yield
+
+        return _patches()
 
     def test_returns_401_when_no_auth(self):
         """Unauthenticated request -> 401 (auth mode test = disabled: on patche _check_auth)."""
-        with patch(
-            "core.admin_api._check_auth", new=AsyncMock(return_value=(False, None))
-        ):
+        with patch("core.admin_api._check_auth", new=AsyncMock(return_value=(False, None))):
             client = _build_client()
             resp = client.get("/api/google/oauth/status/conn_test001")
         assert resp.status_code == 401
 
     def test_returns_404_when_connection_not_found(self):
         """Unknown connection_ref_id -> 404."""
-        with self._patch_db(None), patch(
-            "core.project_access.identity_has_project_access", return_value=True
+        with (
+            self._patch_db(None),
+            patch("core.project_access.identity_has_project_access", return_value=True),
         ):
             client = _build_client()
             resp = client.get(
@@ -215,9 +224,11 @@ class TestGoogleStatus:
     def test_returns_403_cross_project(self):
         """Caller without access to the connection's project -> 403 + audit."""
         row = self._row_connected(_FAR_FUTURE)
-        with self._patch_db(row), patch(
-            "core.project_access.identity_has_project_access", return_value=False
-        ), patch("core.admin_api.write_audit_row") as audit_mock:
+        with (
+            self._patch_db(row),
+            patch("core.project_access.identity_has_project_access", return_value=False),
+            patch("core.admin_api.write_audit_row") as audit_mock,
+        ):
             client = _build_client()
             resp = client.get(
                 "/api/google/oauth/status/conn_alpha_001",
@@ -232,8 +243,9 @@ class TestGoogleStatus:
     def test_returns_status_connected_ok(self):
         """google_direct + far-future expiry -> health='ok', scopes present (AI-56)."""
         row = self._row_connected(_FAR_FUTURE)
-        with self._patch_db(row), patch(
-            "core.project_access.identity_has_project_access", return_value=True
+        with (
+            self._patch_db(row),
+            patch("core.project_access.identity_has_project_access", return_value=True),
         ):
             client = _build_client()
             resp = client.get(
@@ -253,8 +265,7 @@ class TestGoogleStatus:
         assert "https://www.googleapis.com/auth/analytics.readonly" in scope_uris
         # Labels must be French (UX-DR10).
         ga4_entry = next(
-            s for s in scopes
-            if s["scope"] == "https://www.googleapis.com/auth/analytics.readonly"
+            s for s in scopes if s["scope"] == "https://www.googleapis.com/auth/analytics.readonly"
         )
         assert "Google Analytics" in ga4_entry["label"]
         # NFR3: no blob, no token in response.
@@ -265,8 +276,9 @@ class TestGoogleStatus:
     def test_returns_status_not_connected(self):
         """auth_path='nango' -> health='not_connected', scopes empty."""
         row = self._row_nango()
-        with self._patch_db(row), patch(
-            "core.project_access.identity_has_project_access", return_value=True
+        with (
+            self._patch_db(row),
+            patch("core.project_access.identity_has_project_access", return_value=True),
         ):
             client = _build_client()
             resp = client.get(
@@ -282,8 +294,9 @@ class TestGoogleStatus:
     def test_returns_status_stale_when_expired(self):
         """google_direct + past expiry -> health='stale'."""
         row = self._row_connected(_PAST)
-        with self._patch_db(row), patch(
-            "core.project_access.identity_has_project_access", return_value=True
+        with (
+            self._patch_db(row),
+            patch("core.project_access.identity_has_project_access", return_value=True),
         ):
             client = _build_client()
             resp = client.get(
@@ -301,8 +314,9 @@ class TestGoogleStatus:
             _FAR_FUTURE,
             ["https://www.googleapis.com/auth/unknown.scope"],
         )
-        with self._patch_db(row), patch(
-            "core.project_access.identity_has_project_access", return_value=True
+        with (
+            self._patch_db(row),
+            patch("core.project_access.identity_has_project_access", return_value=True),
         ):
             client = _build_client()
             resp = client.get(
@@ -325,10 +339,10 @@ class TestGoogleRevoke:
     """POST /api/google/oauth/revoke/{id} endpoint tests."""
 
     def _row_connected(self):
-        return ("proj_alpha", "google_direct", _FAR_FUTURE, ["analytics.readonly"])
+        return ("proj_alpha", "google_direct", _FAR_FUTURE, ["analytics.readonly"], "org_alpha")
 
     def _row_nango(self):
-        return ("proj_alpha", "nango", None, None)
+        return ("proj_alpha", "nango", None, None, "org_alpha")
 
     def _patch_db(self, row):
         cur = _make_cursor_mock(row)
@@ -341,21 +355,28 @@ class TestGoogleRevoke:
         def _get():
             yield conn
 
-        return patch("core.db.get_connection", new=_get)
+        @contextmanager
+        def _patches():
+            with (
+                patch("core.db.get_connection", new=_get),
+                patch("core.project_access.identity_can_manage_org", return_value=True),
+            ):
+                yield
+
+        return _patches()
 
     def test_returns_401_when_no_auth(self):
         """Unauthenticated request -> 401 (auth mode test = disabled: on patche _check_auth)."""
-        with patch(
-            "core.admin_api._check_auth", new=AsyncMock(return_value=(False, None))
-        ):
+        with patch("core.admin_api._check_auth", new=AsyncMock(return_value=(False, None))):
             client = _build_client()
             resp = client.post("/api/google/oauth/revoke/conn_test001")
         assert resp.status_code == 401
 
     def test_returns_404_when_not_found(self):
         """Unknown connection_ref_id -> 404."""
-        with self._patch_db(None), patch(
-            "core.project_access.identity_has_project_access", return_value=True
+        with (
+            self._patch_db(None),
+            patch("core.project_access.identity_has_project_access", return_value=True),
         ):
             client = _build_client()
             resp = client.post(
@@ -368,9 +389,11 @@ class TestGoogleRevoke:
     def test_returns_403_cross_project(self):
         """Caller without project access -> 403 + audit (AD-5)."""
         row = self._row_connected()
-        with self._patch_db(row), patch(
-            "core.project_access.identity_has_project_access", return_value=False
-        ), patch("core.admin_api.write_audit_row") as audit_mock:
+        with (
+            self._patch_db(row),
+            patch("core.project_access.identity_has_project_access", return_value=False),
+            patch("core.admin_api.write_audit_row") as audit_mock,
+        ):
             client = _build_client()
             resp = client.post(
                 "/api/google/oauth/revoke/conn_alpha_001",
@@ -429,9 +452,8 @@ class TestGoogleRevoke:
         assert data["google_revoke"] == "ok"
         # review-18-1 F-6: performed_by must NOT be 'system'.
         clear_call_kwargs = mock_clear.call_args
-        performed_by_arg = (
-            clear_call_kwargs.kwargs.get("performed_by")
-            or (clear_call_kwargs.args[1] if len(clear_call_kwargs.args) > 1 else None)
+        performed_by_arg = clear_call_kwargs.kwargs.get("performed_by") or (
+            clear_call_kwargs.args[1] if len(clear_call_kwargs.args) > 1 else None
         )
         assert performed_by_arg != "system", (
             "F-6: performed_by must be the real identity, never 'system'"
@@ -591,9 +613,7 @@ class TestGoogleRevoke:
 
         assert len(captured) == 1, "clear_google_token must have been called"
         pb = captured[0]["performed_by"]
-        assert pb != "system", (
-            "F-6: performed_by on a human-triggered path must never be 'system'"
-        )
+        assert pb != "system", "F-6: performed_by on a human-triggered path must never be 'system'"
 
 
 # ---------------------------------------------------------------------------
@@ -629,8 +649,9 @@ class TestGoogleStatusLivePostgres:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO app.connection_ref (id, provider, nango_connection_id, project_id)
-                    VALUES (%s, 'gsc', %s, 'default')
+                    INSERT INTO app.connection_ref (id, provider, nango_connection_id, project_id,
+                        owner_org_id, owner_identity)
+                    VALUES (%s, 'gsc', %s, 'default', 'org_test_fixture', 'tester@example.com')
                     ON CONFLICT (id) DO NOTHING
                     """,
                     (conn_ref_id, conn_ref_id),

@@ -46,6 +46,24 @@
           "items": {"type": "string", "pattern": "^[A-Z]{2}$"},
           "uniqueItems": true
         },
+        "markets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "country_codes"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"},
+              "label": {"type": "string", "minLength": 1, "maxLength": 120},
+              "country_codes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string", "pattern": "^[A-Z]{2}$"},
+                "uniqueItems": true
+              }
+            }
+          }
+        },
         "posture_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "compilation_status": {
           "enum": [
@@ -72,6 +90,7 @@
             "grain_after": {"$ref": "#/$defs/string_list"},
             "added_dimensions": {"$ref": "#/$defs/string_list"},
             "tracked_country_count": {"type": "integer", "minimum": 0},
+            "tracked_market_count": {"type": "integer", "minimum": 0},
             "quota_cost": {"type": ["object", "null"]},
             "cardinality_estimate": {
               "enum": ["unchanged", "provider_country_cardinality"]

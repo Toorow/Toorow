@@ -95,15 +95,29 @@ export interface AccountSettingsProps {
   /** What to do once the account no longer exists. Default: drop the held token
    *  and go back to the sign-in gate — staying signed in as an erased user
    *  would be a scope pointing at nothing. */
-  onDeleted?: () => void;
+  onDeleted?: () => void | Promise<void>;
 }
 
-function defaultOnDeleted(): void {
+export async function clearDeletedAccountSession(
+  navigate: () => void = () => window.location.assign("/"),
+): Promise<void> {
   localStorage.removeItem("api_token");
-  window.location.assign("/");
+  sessionStorage.removeItem("toorow_browser_identity");
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+  } catch {
+    // The account is already erased; local cleanup and navigation still win.
+  } finally {
+    navigate();
+  }
 }
 
-export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}) {
+export default function AccountSettings({
+  onDeleted,
+}: AccountSettingsProps = {}) {
   const [open, setOpen] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
@@ -119,7 +133,9 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
     setPreview({ status: "loading" });
     void (async () => {
       try {
-        const data = await apiGet<AccountDeletionPreview>("/api/me/deletion-preview");
+        const data = await apiGet<AccountDeletionPreview>(
+          "/api/me/deletion-preview",
+        );
         if (alive) setPreview({ status: "ready", preview: data });
       } catch (err) {
         if (alive) {
@@ -154,7 +170,7 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
         headers: { "X-Confirm-Delete": ACCOUNT_CONFIRM_HEADER },
       });
       setDel({ status: "deleted", result });
-      (onDeleted ?? defaultOnDeleted)();
+      await (onDeleted ?? clearDeletedAccountSession)();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         // Sole owner of an organization that still has members. Membership can
@@ -214,11 +230,11 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
 
         <div className="dangerzone-card">
           <p className="dangerzone-lead">
-            Erasing your account removes your identity, your memberships and your
-            invitations. <strong>Audit entries are kept</strong> — they record who
-            did what inside an organization, and the organizations you belonged to
-            keep that history. Organizations, projects and their data are not
-            deleted with your account.
+            Erasing your account removes your identity, your memberships and
+            your invitations. <strong>Audit entries are kept</strong> — they
+            record who did what inside an organization, and the organizations
+            you belonged to keep that history. Organizations, projects and their
+            data are not deleted with your account.
           </p>
 
           {!open ? (
@@ -241,17 +257,26 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
               tabIndex={-1}
               aria-labelledby="account-danger-panel-title"
             >
-              <h3 className="dangerzone-panel-title" id="account-danger-panel-title">
+              <h3
+                className="dangerzone-panel-title"
+                id="account-danger-panel-title"
+              >
                 Delete my account
               </h3>
 
               {preview.status === "loading" && (
-                <div className="dangerzone-status" role="status" aria-live="polite">
+                <div
+                  className="dangerzone-status"
+                  role="status"
+                  aria-live="polite"
+                >
                   <span className="signal-label info">
                     <span className="signal-mark" />
                     Checking
                   </span>
-                  <p>Checking exactly what erasing your account would remove…</p>
+                  <p>
+                    Checking exactly what erasing your account would remove…
+                  </p>
                 </div>
               )}
 
@@ -262,10 +287,10 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
                     We could not check what would be erased
                   </span>
                   <p>
-                    {preview.message}. Nothing has been erased. We will not offer a
-                    deletion we cannot describe — this is not a sign that you belong
-                    to nothing. Try again, and if it keeps failing, do not assume
-                    your account is empty.
+                    {preview.message}. Nothing has been erased. We will not
+                    offer a deletion we cannot describe — this is not a sign
+                    that you belong to nothing. Try again, and if it keeps
+                    failing, do not assume your account is empty.
                   </p>
                   <button
                     type="button"
@@ -299,7 +324,10 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
                 <div className="dangerzone-manifest">
                   <div className="dangerzone-group">
                     <h4>Account</h4>
-                    <ul className="dangerzone-chips" aria-label="Account identity">
+                    <ul
+                      className="dangerzone-chips"
+                      aria-label="Account identity"
+                    >
                       <li>
                         <span className="mono">{ready.email}</span>
                         <span className="dangerzone-chip-note">email</span>
@@ -316,13 +344,21 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
                     {ready.memberships.length === 0 ? (
                       <p>You are not a member of any organization.</p>
                     ) : (
-                      <ul className="dangerzone-list" aria-label="Memberships that will be removed">
+                      <ul
+                        className="dangerzone-list"
+                        aria-label="Memberships that will be removed"
+                      >
                         {ready.memberships.map((m) => (
                           <li key={m.org_id}>
-                            <span className="dangerzone-list-kind">{m.role}</span>
+                            <span className="dangerzone-list-kind">
+                              {m.role}
+                            </span>
                             <span className="dangerzone-list-detail">
-                              {m.org_name} — {m.other_active_members} other active{" "}
-                              {m.other_active_members === 1 ? "member" : "members"}
+                              {m.org_name} — {m.other_active_members} other
+                              active{" "}
+                              {m.other_active_members === 1
+                                ? "member"
+                                : "members"}
                             </span>
                           </li>
                         ))}
@@ -333,10 +369,11 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
                   <div className="dangerzone-group">
                     <h4>Kept after erasure</h4>
                     <p>
-                      Audit entries are retained. They record actions taken inside an
-                      organization and belong to that organization&apos;s history, so they
-                      survive your account. Everything else tied to your identity —
-                      your profile, your memberships and your invitations — is erased.
+                      Audit entries are retained. They record actions taken
+                      inside an organization and belong to that
+                      organization&apos;s history, so they survive your account.
+                      Everything else tied to your identity — your profile, your
+                      memberships and your invitations — is erased.
                     </p>
                   </div>
                 </div>
@@ -346,19 +383,26 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
                 <div className="dangerzone-status blocked" role="alert">
                   <span className="signal-label warning">
                     <span className="signal-mark" />
-                    You are the only owner of an organization that still has members
+                    You are the only owner of an organization that still has
+                    members
                   </span>
                   <p>
-                    Your account cannot be erased while these organizations would be
-                    left without an owner. Open each one, promote another member to
-                    owner (Organization settings &gt; Members and roles) — or delete
-                    the organization from its danger zone — then come back here.
+                    Your account cannot be erased while these organizations
+                    would be left without an owner. Open each one, promote
+                    another member to owner (Organization settings &gt; Members
+                    and roles) — or delete the organization from its danger zone
+                    — then come back here.
                   </p>
-                  <ul className="dangerzone-list" aria-label="Organizations blocking the erasure">
+                  <ul
+                    className="dangerzone-list"
+                    aria-label="Organizations blocking the erasure"
+                  >
                     {soleOwnerBlocking.map((o) => (
                       <li key={o.org_id}>
                         <span className="dangerzone-list-kind">sole owner</span>
-                        <span className="dangerzone-list-detail">{o.org_name}</span>
+                        <span className="dangerzone-list-detail">
+                          {o.org_name}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -372,14 +416,16 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
                     Your account cannot be erased yet
                   </span>
                   <p>
-                    Erasure is unavailable until the following is resolved. Nothing
-                    has been erased.
+                    Erasure is unavailable until the following is resolved.
+                    Nothing has been erased.
                   </p>
                   <ul className="dangerzone-list">
                     {blockers.map((b, i) => (
                       <li key={`${b.kind}-${i}`}>
                         <span className="dangerzone-list-kind">{b.kind}</span>
-                        <span className="dangerzone-list-detail">{b.detail}</span>
+                        <span className="dangerzone-list-detail">
+                          {b.detail}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -393,15 +439,20 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
                     These organizations lose their last member
                   </span>
                   <p>
-                    You are the only member of the organizations below. Erasing your
-                    account does not delete them or their data; it leaves them
-                    without anyone able to sign in. Delete them from their danger
-                    zone first if their data should go too.
+                    You are the only member of the organizations below. Erasing
+                    your account does not delete them or their data; it leaves
+                    them without anyone able to sign in. Delete them from their
+                    danger zone first if their data should go too.
                   </p>
-                  <ul className="dangerzone-list" aria-label="Organizations left without a member">
+                  <ul
+                    className="dangerzone-list"
+                    aria-label="Organizations left without a member"
+                  >
                     {soleOwnerAlone.map((o) => (
                       <li key={o.org_id}>
-                        <span className="dangerzone-list-detail">{o.org_name}</span>
+                        <span className="dangerzone-list-detail">
+                          {o.org_name}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -416,8 +467,8 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
                       This is permanent
                     </span>
                     <p>
-                      Your account is erased when you confirm. It cannot be undone,
-                      and signing in again creates a new, empty account.
+                      Your account is erased when you confirm. It cannot be
+                      undone, and signing in again creates a new, empty account.
                     </p>
                   </div>
 
@@ -460,22 +511,34 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
                       value={confirmText}
                       placeholder={ready.email}
                       aria-describedby="account-danger-confirm-hint"
-                      disabled={del.status === "deleting" || del.status === "deleted"}
+                      disabled={
+                        del.status === "deleting" || del.status === "deleted"
+                      }
                       onChange={(e) => {
                         setConfirmText(e.target.value);
-                        if (del.status === "error" || del.status === "conflict") {
+                        if (
+                          del.status === "error" ||
+                          del.status === "conflict"
+                        ) {
                           setDel({ status: "idle" });
                         }
                       }}
                     />
-                    <p className="dangerzone-hint" id="account-danger-confirm-hint">
-                      Enter <span className="mono">{ready.email}</span> exactly. The
-                      delete button stays disabled until it matches.
+                    <p
+                      className="dangerzone-hint"
+                      id="account-danger-confirm-hint"
+                    >
+                      Enter <span className="mono">{ready.email}</span> exactly.
+                      The delete button stays disabled until it matches.
                     </p>
                   </div>
 
                   <div className="dangerzone-actions">
-                    <button type="button" className="dangerzone-cancel" onClick={closeZone}>
+                    <button
+                      type="button"
+                      className="dangerzone-cancel"
+                      onClick={closeZone}
+                    >
                       Cancel
                     </button>
                     <button
@@ -488,7 +551,9 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
                       }
                       onClick={() => void runDelete()}
                     >
-                      {del.status === "deleting" ? "Erasing…" : "Delete my account permanently"}
+                      {del.status === "deleting"
+                        ? "Erasing…"
+                        : "Delete my account permanently"}
                     </button>
                   </div>
                 </>
@@ -496,7 +561,11 @@ export default function AccountSettings({ onDeleted }: AccountSettingsProps = {}
 
               {(preview.status === "error" || blocked) && (
                 <div className="dangerzone-actions">
-                  <button type="button" className="dangerzone-cancel" onClick={closeZone}>
+                  <button
+                    type="button"
+                    className="dangerzone-cancel"
+                    onClick={closeZone}
+                  >
                     Close
                   </button>
                 </div>

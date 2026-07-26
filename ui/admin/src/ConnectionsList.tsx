@@ -57,6 +57,11 @@ export interface Connection {
   token_expiry?: string | null;
   /** Derived exposure of this credential to the viewing org. */
   exposure?: "owned" | "shared_with_org" | "provided_by_org";
+  account_label?: string | null;
+  account_state?: "pending_account_selection" | "ready" | null;
+  auth_path?: "nango" | "google_direct";
+  status?: "active" | "revoked";
+  can_manage?: boolean;
 }
 
 interface ConnectionsResponse {

@@ -124,7 +124,16 @@ def test_golden_pull(
         )
 
     for i, (actual, expected) in enumerate(zip(actual_rows, expected_rows)):
-        all_keys = set(expected.keys()) | set(actual.keys())
+        # Les cles prefixees d'un underscore sont des annotations de fixture
+        # (_fixture_note, _comment, ...), pas des champs emis par le connecteur.
+        # Les comparer revenait a exiger que la note explicative de
+        # golden_pull.json soit mot pour mot celle d'expected_facts.json --
+        # une divergence de PROSE faisait echouer la conformance du connecteur
+        # (klaviyo). Le contrat porte sur la donnee, pas sur les commentaires.
+        all_keys = {
+            k for k in (set(expected.keys()) | set(actual.keys()))
+            if not k.startswith("_")
+        }
         for field in sorted(all_keys):
             exp_val = expected.get(field, "<missing>")
             act_val = actual.get(field, "<missing>")

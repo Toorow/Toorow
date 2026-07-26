@@ -66,8 +66,8 @@ def _seed_project(conn, project_id: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, created_by)
-            VALUES (%s, %s, %s, 'story-12.7-test')
+            INSERT INTO app.projects (id, name, slug, created_by, org_id)
+            VALUES (%s, %s, %s, 'story-12.7-test', 'org_test_fixture')
             ON CONFLICT (id) DO NOTHING
             """,
             (project_id, project_id, project_id),
@@ -83,8 +83,8 @@ def _seed_external_datastream(
         cur.execute(
             """
             INSERT INTO app.datastreams
-                (id, project_id, name, module_name, source_kind, enabled, created_by)
-            VALUES (%s, %s, 'EXT', NULL, 'external_bq', FALSE, 'test')
+                (id, project_id, name, module_name, source_kind, enabled, created_by, org_id)
+            VALUES (%s, %s, 'EXT', NULL, 'external_bq', FALSE, 'test', 'org_test_fixture')
             """,
             (ds_id, project_id),
         )
@@ -135,8 +135,8 @@ def test_scheduler_exclusion_flag_synced_from_source_kind(pg_conn):
         cur.execute(
             """
             INSERT INTO app.datastreams
-                (id, project_id, name, module_name, source_kind, enabled, created_by)
-            VALUES (%s, %s, 'EXT', NULL, 'external_bq', FALSE, 'test')
+                (id, project_id, name, module_name, source_kind, enabled, created_by, org_id)
+            VALUES (%s, %s, 'EXT', NULL, 'external_bq', FALSE, 'test', 'org_test_fixture')
             RETURNING external_dispatch_excluded
             """,
             (ds_id, project_id),

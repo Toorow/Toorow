@@ -1,178 +1,68 @@
 /**
- * Activity — Governance › Activity surface (v3).
+ * Activity — Governance › Activity surface.
  *
- * Puts the two "who/what happened" surfaces of governance on one page: the
- * definition-changes audit log (PANEL 1 — Changes) and the notification rules
- * (PANEL 2 — Alert rules) — the "alerts and logs together" idea.
+ * PANEL 1 — Changes: the shared audit registry, read from GET /api/audit
+ * (AD-9). Rows carry `created_at`, `identity`, `action`, `provider_account` and
+ * `connection_ref`; the table shows exactly those and nothing else.
  *
- * The application shell (ApplicationShell.tsx) already renders the frame,
- * sidebar, topbar, and <main>. This component renders ONLY the page content:
- * the page header and the two panels.
+ * PANEL 2 — Alert rules: there is NO rules backend. The panel therefore states
+ * that plainly instead of listing rules, because the previous version's three
+ * "Active" rules told the user they would be warned when an extraction fell
+ * behind. They would not have been.
  *
- * Styling: application.css (global, via the shell) for shell/layout classes
- * (page-header, header-actions, panel, secondary-button, primary-button,
- * quiet-button, signal-label, signal-mark, number, event/mono, table-scroll) +
- * activity.css for the page-specific panel headers, table cell layouts, and
- * the calm alert-rule rows. Colors come exclusively from the application.css
- * CSS variables (dark-safe); dates/counts use Geist tabular, ids use mono.
+ * History (audit 2026-07-25): this page made no network call. It rendered eight
+ * fabricated audit entries attributed to NAMED people ("Jean Albany",
+ * "Marie Chen", "Northwind Studio"), timestamped, with entities and outcomes,
+ * under the footer "Shared audit registry · AD-9 provenance" — a counterfeit
+ * audit trail. Four buttons did nothing. All removed; the real /api/audit, which
+ * existed the whole time, is now wired, and the export and filter controls act
+ * on it.
  *
- * ── Data ─────────────────────────────────────────────────────────────────────
- * PANEL 1 is the type-1 distributed log: it draws on the shared audit registry
- * (envelope provenance, AD-9). A real GET /api/audit is NOT wired yet, so the
- * rows below are designed placeholders, flagged with // TODO(api).
- *
- * PANEL 2 rebuilds the intent of the legacy AlertsPanel.tsx (a static MUI
- * mockup) in v3 chrome + English. There is no rules backend yet, so the rules
- * are literals, also flagged with // TODO(api).
+ * Styling: application.css (global, via the shell) + activity.css. Colors come
+ * exclusively from the application.css CSS variables (dark-safe).
  */
-import type { ReactElement, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { apiFetch, apiGet } from "../../lib/apiFetch";
 import "../application.css";
 import "./activity.css";
 
 // ---------------------------------------------------------------------------
-// PANEL 1 — Changes (definition-changes audit log)
+// GET /api/audit — {rows: AuditRow[], count: number}
 // ---------------------------------------------------------------------------
 
-type Signal = "success" | "warning" | "error" | "info";
-
-interface ChangeRow {
-  /** ISO-ish "when" — split into date + time in the cell (Geist tabular). */
-  date: string;
-  time: string;
-  actor: string; // identity that made the change
-  action: string; // e.g. "Approved field", "Published mapping"
-  /** Canonical id / target — mono when it is a real identifier. */
-  entity: string;
-  entityMono: boolean;
-  result: string; // signal-label copy
-  resultSignal: Signal;
+interface AuditRow {
+  id?: number | string;
+  identity?: string | null;
+  action?: string | null;
+  provider_account?: string | null;
+  connection_ref?: string | null;
+  metadata?: unknown;
+  created_at?: string | null;
 }
 
-// Designed placeholder rows. TODO(api): source from the shared audit registry
-// (GET /api/audit — AD-9 envelope provenance) once wired; nothing is real yet.
-const CHANGE_ROWS: ChangeRow[] = [
-  {
-    date: "22 Jul 2026",
-    time: "16:42",
-    actor: "Jean Albany",
-    action: "Approved field",
-    entity: "mdm_…MEDIA_SPEND",
-    entityMono: true,
-    result: "Published",
-    resultSignal: "success",
-  },
-  {
-    date: "22 Jul 2026",
-    time: "14:08",
-    actor: "Marie Chen",
-    action: "Published mapping",
-    entity: "Meta Ads → Media spend",
-    entityMono: false,
-    result: "Live",
-    resultSignal: "success",
-  },
-  {
-    date: "21 Jul 2026",
-    time: "11:27",
-    actor: "Jean Albany",
-    action: "Resolved currency conflict",
-    entity: "mdm_…REVENUE",
-    entityMono: true,
-    result: "Resolved",
-    resultSignal: "success",
-  },
-  {
-    date: "21 Jul 2026",
-    time: "09:15",
-    actor: "System",
-    action: "Activated Country split",
-    entity: "module:country-split",
-    entityMono: true,
-    result: "Active",
-    resultSignal: "info",
-  },
-  {
-    date: "20 Jul 2026",
-    time: "18:51",
-    actor: "Northwind Studio",
-    action: "Added tracked brand",
-    entity: "brand:northwind",
-    entityMono: true,
-    result: "Added",
-    resultSignal: "info",
-  },
-  {
-    date: "20 Jul 2026",
-    time: "10:33",
-    actor: "Marie Chen",
-    action: "Created canonical field",
-    entity: "mdm_…ROAS",
-    entityMono: true,
-    result: "Draft",
-    resultSignal: "warning",
-  },
-  {
-    date: "19 Jul 2026",
-    time: "15:20",
-    actor: "Jean Albany",
-    action: "Rejected mapping",
-    entity: "Google Sheets → Revenue",
-    entityMono: false,
-    result: "Rejected",
-    resultSignal: "error",
-  },
-  {
-    date: "18 Jul 2026",
-    time: "08:47",
-    actor: "System",
-    action: "Activated FX module",
-    entity: "module:currency-fx",
-    entityMono: true,
-    result: "Active",
-    resultSignal: "info",
-  },
-];
-
-// ---------------------------------------------------------------------------
-// PANEL 2 — Alert rules (notification rules)
-// Rebuilt intent of the legacy AlertsPanel.tsx (static MUI mockup) in v3 + EN.
-// ---------------------------------------------------------------------------
-
-interface AlertRule {
-  name: string;
-  condition: string;
-  channel: string; // Email / Slack
-  active: boolean;
+interface AuditResponse {
+  rows?: AuditRow[];
+  count?: number;
 }
 
-// TODO(api): no rules backend yet — these are literals mirroring the intent of
-// the legacy AlertsPanel (extraction delay, conversion-rate drop, spend cap).
-const ALERT_RULES: AlertRule[] = [
-  {
-    name: "Extraction delay",
-    condition: "Stream pull delayed > 3h",
-    channel: "Email & Slack",
-    active: true,
-  },
-  {
-    name: "Conversion-rate drop",
-    condition: "Daily conversion rate drops > 25%",
-    channel: "Slack #growth-alerts",
-    active: true,
-  },
-  {
-    name: "Spend cap exceeded",
-    condition: "Daily spend > $5,000",
-    channel: "Email",
-    active: true,
-  },
-  {
-    name: "Schema drift",
-    condition: "Column set differs from reference",
-    channel: "Slack #data-eng",
-    active: false,
-  },
-];
+type LoadState = "loading" | "error" | "ready";
+
+/** The endpoint clamps to 500; 200 is plenty for a governance read-out. */
+const LIMIT = 200;
+
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -183,8 +73,82 @@ interface ActivityProps {
 }
 
 export default function Activity({ projectId }: ActivityProps): ReactElement {
-  // projectId will scope GET /api/audit + the rules list once those are wired.
+  // /api/audit is deliberately org-wide: it carries no project scope (see
+  // core/audit.py query_audit_log). projectId is accepted for interface parity
+  // with the other Governance surfaces but must not be sent as a filter that the
+  // server would ignore — pretending to scope is its own small lie.
   void projectId;
+
+  const [state, setState] = useState<LoadState>("loading");
+  const [error, setError] = useState("");
+  const [rows, setRows] = useState<AuditRow[]>([]);
+  /** Every action seen at least once, for the filter — grown, never reset by a filter. */
+  const [actions, setActions] = useState<string[]>([]);
+  const [action, setAction] = useState("all");
+  const [attempt, setAttempt] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
+  const query = useMemo(() => {
+    const parts = [`limit=${LIMIT}`];
+    if (action !== "all") parts.push(`action=${encodeURIComponent(action)}`);
+    return parts.join("&");
+  }, [action]);
+
+  useEffect(() => {
+    let alive = true;
+    setState("loading");
+    setError("");
+
+    (async () => {
+      try {
+        const body = await apiGet<AuditResponse>(`/api/audit?${query}`);
+        if (!alive) return;
+        const list = Array.isArray(body.rows) ? body.rows : [];
+        setRows(list);
+        setActions((prev) => {
+          const seen = new Set(prev);
+          for (const r of list) if (r.action) seen.add(r.action);
+          return [...seen].sort();
+        });
+        setState("ready");
+      } catch (err) {
+        if (!alive) return;
+        setRows([]);
+        setError(err instanceof Error ? err.message : "Request failed");
+        setState("error");
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [query, attempt]);
+
+  /** Export the SAME query as CSV, straight from /api/audit?format=csv. */
+  const exportCsv = useCallback(async () => {
+    setExporting(true);
+    setExportError("");
+    try {
+      const resp = await apiFetch(`/api/audit?${query}&format=csv`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "audit.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }, [query]);
 
   return (
     <>
@@ -192,18 +156,18 @@ export default function Activity({ projectId }: ActivityProps): ReactElement {
         <div>
           <h1>Activity</h1>
           <p>
-            Every change to a definition and every alert rule, together — who changed what,
-            and what gets flagged when it drifts.
+            The shared audit registry — who did what, against which account, and when.
           </p>
         </div>
         <div className="header-actions">
-          {/* TODO(api): export the audit log (GET /api/audit — AD-9). */}
-          <button className="secondary-button" type="button">
-            Export log
-          </button>
-          {/* TODO(api): open the add-rule flow (no rules backend yet). */}
-          <button className="primary-button" type="button">
-            + Add rule
+          <button
+            className="secondary-button"
+            type="button"
+            data-testid="export-log"
+            onClick={exportCsv}
+            disabled={state !== "ready" || rows.length === 0 || exporting}
+          >
+            {exporting ? "Exporting…" : "Export log (CSV)"}
           </button>
         </div>
       </div>
@@ -214,118 +178,123 @@ export default function Activity({ projectId }: ActivityProps): ReactElement {
           <div>
             <h2>Changes</h2>
             <p>
-              Definition-changes audit log — canonical fields, mappings, conflicts, modules,
-              and tracked brands.
+              Every recorded action, newest first. The registry is org-wide, not scoped
+              to one project.
             </p>
           </div>
-          {/* TODO(api): actor / action filter over the audit registry. */}
-          <button className="selector" type="button">
-            All actors
-          </button>
-        </div>
-        <div className="table-scroll" tabIndex={0} aria-label="Definition changes audit log">
-          <table className="activity-table">
-            <thead>
-              <tr>
-                <th style={{ width: "18%" }}>When</th>
-                <th style={{ width: "18%" }}>Actor</th>
-                <th style={{ width: "24%" }}>Action</th>
-                <th style={{ width: "24%" }}>Entity</th>
-                <th style={{ width: "16%" }}>Result</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* TODO(api): rows are designed placeholders (GET /api/audit not wired). */}
-              {CHANGE_ROWS.map((row, i) => (
-                <tr key={`${row.date}-${row.time}-${i}`}>
-                  <td>
-                    <div className="when-cell">
-                      <strong className="number">{row.date}</strong>
-                      <small className="number">{row.time}</small>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="actor-cell">{row.actor}</span>
-                  </td>
-                  <td>{row.action}</td>
-                  <td>
-                    {row.entityMono ? (
-                      <span className="mono entity-id">{row.entity}</span>
-                    ) : (
-                      <span className="entity-text">{row.entity}</span>
-                    )}
-                  </td>
-                  <td>
-                    <span className={`signal-label ${row.resultSignal}`}>
-                      <span className="signal-mark" />
-                      {row.result}
-                    </span>
-                  </td>
-                </tr>
+          <label className="activity-filter">
+            <span className="sr-only">Filter by action</span>
+            <select
+              className="selector"
+              data-testid="action-filter"
+              value={action}
+              onChange={(e) => setAction(e.target.value)}
+              disabled={actions.length === 0}
+            >
+              <option value="all">All actions</option>
+              {actions.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
               ))}
-            </tbody>
-          </table>
+            </select>
+          </label>
         </div>
-        <div className="activity-footer">
-          <span>
-            Showing <span className="number">{CHANGE_ROWS.length}</span> recent changes
-          </span>
-          {/* TODO(api): paginate the audit registry. */}
-          <span className="activity-footer-note">Shared audit registry · AD-9 provenance</span>
-        </div>
+
+        {exportError ? (
+          <p className="activity-state error" data-testid="export-error">
+            Export failed. {exportError}
+          </p>
+        ) : null}
+
+        {state === "loading" ? (
+          <p className="activity-state" data-testid="activity-loading">
+            Loading the audit registry…
+          </p>
+        ) : null}
+
+        {state === "error" ? (
+          <div className="activity-state error" data-testid="activity-error">
+            <p>Couldn&apos;t load the audit registry. {error}</p>
+            <button className="secondary-button" type="button" onClick={retry}>
+              Retry
+            </button>
+          </div>
+        ) : null}
+
+        {state === "ready" && rows.length === 0 ? (
+          <p className="activity-state" data-testid="activity-empty">
+            {action === "all"
+              ? "No action has been recorded yet."
+              : `No action recorded for “${action}”.`}
+          </p>
+        ) : null}
+
+        {state === "ready" && rows.length > 0 ? (
+          <>
+            <div className="table-scroll" tabIndex={0} aria-label="Audit registry">
+              <table className="activity-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: "18%" }}>When</th>
+                    <th style={{ width: "22%" }}>Identity</th>
+                    <th style={{ width: "24%" }}>Action</th>
+                    <th style={{ width: "18%" }}>Provider account</th>
+                    <th style={{ width: "18%" }}>Connection</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, i) => (
+                    <tr key={String(row.id ?? `${row.created_at}-${i}`)}>
+                      <td>
+                        <div className="when-cell">
+                          <strong className="number">{fmtDate(row.created_at)}</strong>
+                          <small className="number">{fmtTime(row.created_at)}</small>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="actor-cell">{row.identity || "—"}</span>
+                      </td>
+                      <td>
+                        <span className="mono entity-id">{row.action || "—"}</span>
+                      </td>
+                      <td>
+                        <span className="entity-text">{row.provider_account || "—"}</span>
+                      </td>
+                      <td>
+                        <span className="mono entity-id">{row.connection_ref || "—"}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="activity-footer">
+              <span>
+                Showing <span className="number">{rows.length}</span> entr
+                {rows.length === 1 ? "y" : "ies"}
+                {rows.length === LIMIT ? ` (capped at ${LIMIT})` : ""}
+              </span>
+              <span className="activity-footer-note mono">GET /api/audit</span>
+            </div>
+          </>
+        ) : null}
       </section>
 
-      {/* PANEL 2 — Alert rules --------------------------------------------- */}
+      {/* PANEL 2 — Alert rules ---------------------------------------------- */}
       <section className="panel activity-panel">
         <div className="activity-panel-header">
           <div>
             <h2>Alert rules</h2>
-            <p>
-              Notification rules — each watches a condition and posts to a channel when it
-              fires. No configuration is required to receive them.
-            </p>
+            <p>Conditions that would notify you when a datastream drifts or falls behind.</p>
           </div>
-          {/* TODO(api): open the add-rule flow (no rules backend yet). */}
-          <button className="quiet-button" type="button">
-            + Add rule
-          </button>
         </div>
-        <ul className="rule-list">
-          {/* TODO(api): rules are literals — no rules backend yet. */}
-          {ALERT_RULES.map((rule) => (
-            <li className="rule-row" key={rule.name}>
-              <div className="rule-main">
-                <strong>{rule.name}</strong>
-                <small>{rule.condition}</small>
-              </div>
-              <div className="rule-channel">
-                <span className="channel-label">{rule.channel}</span>
-              </div>
-              <div className="rule-state">
-                {renderRuleState(rule.active)}
-              </div>
-            </li>
-          ))}
-        </ul>
+        <p className="activity-state" data-testid="rules-unavailable">
+          Alert rules are not available yet. No rule exists on this account, nothing is
+          being watched, and no notification will be sent — check the audit registry above
+          and the datastream states in Data for anything that needs attention.
+        </p>
       </section>
     </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function renderRuleState(active: boolean): ReactNode {
-  return active ? (
-    <span className="signal-label success">
-      <span className="signal-mark" />
-      Active
-    </span>
-  ) : (
-    <span className="signal-label">
-      <span className="signal-mark" />
-      Off
-    </span>
   );
 }

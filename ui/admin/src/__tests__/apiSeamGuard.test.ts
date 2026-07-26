@@ -32,7 +32,17 @@ const SOURCES = import.meta.glob("../**/*.{ts,tsx}", {
  *   - shell/pages/CreateOrg.tsx: owned by a parallel change on the same finding;
  *     it is being reworked there, not here.
  */
-const ALLOWLIST = new Set(["shell/pages/CreateOrg.tsx"]);
+/*
+ * Vide, et cela doit le rester.
+ *
+ * CreateOrg.tsx y figurait « le temps qu'un changement parallèle atterrisse ». Cette
+ * exception n'a jamais été refermée, et c'est exactement ce qu'elle a coûté : son
+ * `fetch` nu partait sans jeton, l'API répondait 401 sous TOOROW_AUTH_MODE=oauth, et
+ * l'écran d'accueil du premier login ne pouvait PAS créer d'organisation. La garde
+ * passait au vert pendant ce temps — une allowlist est un trou déclaré, pas un sursis.
+ * Trouvé par audit le 2026-07-25, refermé le même jour.
+ */
+const ALLOWLIST = new Set<string>();
 
 /** Signals that a call site builds its own authenticated headers. */
 const AUTH_SIGNALS = [
@@ -81,7 +91,10 @@ function codeOf(relPath: string): string {
 
 /** `fetch(` occurrences that are neither `apiFetch(` nor obviously authenticated. */
 function bareFetchCalls(relPath: string): string[] {
-  const lines = sourceOf(relPath).split("\n");
+  // codeOf, pas sourceOf : la garde doit juger le CODE, pas la prose. Elle a
+  // signalé un commentaire qui EXPLIQUAIT pourquoi un fetch nu était interdit —
+  // interdire de documenter le défaut qu'on prévient est absurde.
+  const lines = codeOf(relPath).split("\n");
   const found: string[] = [];
   lines.forEach((line: string, i: number) => {
     if (line.trimStart().startsWith("*")) return; // doc comment

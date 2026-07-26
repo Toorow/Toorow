@@ -1903,3 +1903,89 @@ def query_daily_report(
 
     else:
         raise ValueError(f"Unknown TOOROW_DB_MODE: {mode!r}")
+
+
+# ---------------------------------------------------------------------------
+# Story 37.9 -- country partition inventory for the geography DQ monitor.
+# ---------------------------------------------------------------------------
+
+
+def _build_breakdown_value_query(
+    schema_prefix: str,
+    project_id: str,
+    dimension: str,
+    start_date: str,
+    end_date: str,
+    *,
+    placeholder: str = "?",
+) -> tuple[str, list]:
+    """Build the distinct (connector, breakdown_value, rows) query for one partition.
+
+    The dimension is BOUND as a parameter, never interpolated: it is caller data
+    (AD-2 -- the core holds no dimension vocabulary of its own here).
+    """
+
+    def ph(i: int) -> str:
+        return f"@p{i}" if placeholder != "?" else "?"
+
+    sql = f"""
+    SELECT
+        connector,
+        breakdown_value,
+        COUNT(*) AS row_count
+    FROM {schema_prefix}fact_daily_kpi
+    WHERE project_id = {ph(0)}
+      AND breakdown_dimension = {ph(1)}
+      AND date BETWEEN {ph(2)} AND {ph(3)}
+    GROUP BY connector, breakdown_value
+    ORDER BY connector, breakdown_value
+    """
+    return sql, [project_id, dimension, start_date, end_date]
+
+
+def query_breakdown_values(
+    project_id: str,
+    dimension: str,
+    start_date: str,
+    end_date: str,
+) -> list[dict]:
+    """Return the distinct values observed on one breakdown partition, with counts.
+
+    Rows look like ``{"connector", "breakdown_value", "row_count"}``. Never raises
+    when the mart is absent -- returns ``[]`` with the same structured warning as
+    the other read paths (AD-12: marts only, never raw_*).
+    """
+    mode = _db_mode()
+    if mode == "duckdb":
+        sql, params = _build_breakdown_value_query(
+            _duckdb_mart_prefix(project_id), project_id, dimension, start_date, end_date
+        )
+        try:
+            return _query_duckdb(sql, params)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                json.dumps({"event": "warehouse_breakdown_read_failed", "error": str(exc)})
+            )
+            return []
+    if mode == "bigquery":
+        if not _check_bigquery_mart(project_id):
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": "warehouse_not_ready",
+                        "message": "marts not populated — run Story 1.4 seed first",
+                    }
+                )
+            )
+            return []
+        sql, params = _build_breakdown_value_query(
+            "", project_id, dimension, start_date, end_date, placeholder="@"
+        )
+        try:
+            return _query_bigquery(sql, params)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                json.dumps({"event": "warehouse_breakdown_read_failed", "error": str(exc)})
+            )
+            return []
+    raise ValueError(f"Unknown TOOROW_DB_MODE: {mode!r}")

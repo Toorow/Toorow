@@ -65,13 +65,20 @@ _NOW = datetime(2026, 7, 21, 10, 0, 0, tzinfo=timezone.utc)
 
 
 def _conn_returning(row_values):
-    """Mock psycopg conn whose cursor returns one RETURNING row (for the allowed path)."""
+    """Mock psycopg conn whose cursor returns one RETURNING row (for the allowed path).
+
+    Story 44.7: create_target_field also does a MAX(version_number) lookup
+    (finding #1) via the same reused cursor mock -- fetchone() is called
+    twice: INSERT...RETURNING, then SELECT COALESCE(MAX(version_number), 0).
+    A constant fetchone.return_value would feed the field row's tuple back
+    into the MAX lookup and blow up on `row[0] + 1` (a str, not an int).
+    """
     conn = MagicMock()
     cur = MagicMock()
     conn.cursor.return_value.__enter__ = lambda _s: cur
     conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
     cur.description = [(c,) for c in _TF_RETURNING_COLS]
-    cur.fetchone.return_value = row_values
+    cur.fetchone.side_effect = [row_values, (0,)]
     return conn
 
 

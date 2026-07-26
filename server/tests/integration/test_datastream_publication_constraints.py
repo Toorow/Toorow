@@ -54,16 +54,16 @@ def _seed(conn, project_id: str, ds_id: str, plan_id: str, mapping_id: str) -> N
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, created_by)
-            VALUES (%s, %s, %s, 'story-12.5-test')
+            INSERT INTO app.projects (id, name, slug, created_by, org_id)
+            VALUES (%s, %s, %s, 'story-12.5-test', 'org_test_fixture')
             """,
             (project_id, project_id, project_id),
         )
         cur.execute(
             """
             INSERT INTO app.datastreams
-                (id, project_id, name, module_name, source_kind, enabled, created_by)
-            VALUES (%s, %s, 'DS', 'generic', 'connector_pull', FALSE, 'test')
+                (id, project_id, name, module_name, source_kind, enabled, created_by, org_id)
+            VALUES (%s, %s, 'DS', 'generic', 'connector_pull', FALSE, 'test', 'org_test_fixture')
             """,
             (ds_id, project_id),
         )

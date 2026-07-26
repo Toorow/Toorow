@@ -5,6 +5,7 @@ schema_version = 1
 root_files = [
   ".dockerignore",
   ".env.example",
+  ".gitattributes",
   ".gitignore",
   "CHANGELOG.md",
   "CONTRIBUTING.md",

@@ -161,12 +161,66 @@ resource "google_project_service" "dev_additional_services" {
 # Images are separated by tag/sha, not by repository (MVP decision).
 # Hosted in the dev project; prod deploy pulls images from here.
 # ---------------------------------------------------------------------------
+#
+# Retention: Artifact Registry bills storage per GB per month, forever. The
+# deploy workflow pushes a full image on EVERY push to main (tag = git sha,
+# plus `latest`), so without a cleanup policy this repository grows without
+# bound and the bill grows with it. The policies below are the same set the
+# `cloud-run-source-deploy` repository gets via `make retention-apply`
+# (infra/scripts/apply_retention.sh) -- that one is auto-created by
+# `gcloud run deploy --source` and is therefore not managed here.
+#
+# Ordering matters and is not obvious: KEEP policies take precedence over
+# DELETE policies. `keep-recent` is what makes the two delete rules safe --
+# the newest versions of each package survive regardless of age, and the image
+# a live Cloud Run revision serves is always among them.
+#
+# keep_count = 2 (decision Jean 2026-07-26): one developer, one dev instance and
+# one deployment, so "current + previous" is the whole rollback need. Note the
+# count is PER PACKAGE, not per repository -- mcp-server, toorow-admin and
+# inbound each keep their own 2.
+#
+# Because keep_count is this low, the age windows are what actually bound the
+# size: with a long `older_than` a busy week still piles up images that KEEP
+# does not protect but DELETE does not yet touch. 1 day / 7 days keeps the
+# steady state at roughly two images per service.
 resource "google_artifact_registry_repository" "connector" {
   project       = google_project.dev.project_id
   location      = var.artifact_registry_location
   repository_id = "connector"
   format        = "DOCKER"
   description   = "toorow Docker images (mcp-server). Dev + prod images separated by tag."
+
+  # Safety net: current + previous version of each package, always.
+  cleanup_policies {
+    id     = "keep-recent"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 2
+    }
+  }
+
+  # Untagged layers are build leftovers (superseded `latest`, overwritten tags).
+  # Nothing rolls back to an untagged image that keep-recent does not already
+  # hold, so these go fast.
+  cleanup_policies {
+    id     = "delete-untagged"
+    action = "DELETE"
+    condition {
+      tag_state  = "UNTAGGED"
+      older_than = "86400s" # 1 day
+    }
+  }
+
+  # Anything older than a week that keep-recent does not protect.
+  cleanup_policies {
+    id     = "delete-stale"
+    action = "DELETE"
+    condition {
+      tag_state  = "ANY"
+      older_than = "604800s" # 7 days
+    }
+  }
 
   depends_on = [google_project_service.dev_additional_services]
 }

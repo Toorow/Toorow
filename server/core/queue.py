@@ -910,6 +910,30 @@ def _execute_job(job: dict) -> bool:
                 except Exception as exc:
                     logger.warning("queue: verification_hook_failed: %s", exc)
 
+                # Story 44.2: day-0 context seed after a successful landing.
+                # Restricted to the module that just landed, so a nightly run is
+                # a cheap no-op once its connector topic exists. Best-effort:
+                # seed_project_context_best_effort swallows its own failures and
+                # the guard below covers even an import error -- a seeding
+                # problem must never mark a completed pull as failed.
+                #
+                # ensure_schema=False explicite (decision revue vague 2) : le
+                # hook ne lance JAMAIS le generateur 11.2. Sinon CHAQUE pull
+                # rouvrait DuckDB pour profiler tout l'entrepot, en concurrence
+                # avec le writer qui vient d'atterrir. Les schema docs viennent
+                # du passage nocturne ; les aretes describes se creent au
+                # premier pull qui suit leur existence.
+                try:
+                    from core.context_seed import (  # noqa: PLC0415
+                        seed_project_context_best_effort,
+                    )
+
+                    seed_project_context_best_effort(
+                        project_id, module_names=[provider], ensure_schema=False
+                    )
+                except Exception as exc:  # noqa: BLE001 -- never break a done pull
+                    logger.warning("queue: context_seed_hook_failed: %s", exc)
+
             except RateLimitError as exc:
                 # Story 3.3 (AC3, AC4): trip breaker, then dead-letter if exhausted.
                 # G-12: without this guard the job requeues forever -- after max_att

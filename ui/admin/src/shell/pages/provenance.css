@@ -7,9 +7,10 @@
  * classes that are NOT already in application.css:
  *   provenance-explainer, provenance-explainer-header, guarantee-rows,
  *   guarantee-row, guarantee-icon, guarantee-copy, guarantee-key,
- *   provenance-panel, provenance-panel-header, table-scroll, provenance-table,
- *   datastream-cell, figure-cell, pull-cell, pull-more, mapping-tag, fx-cell,
- *   fx-none, published-cell, provenance-footer, footer-note.
+ *   provenance-gap, provenance-panel, provenance-panel-header,
+ *   provenance-filter, provenance-state, table-scroll, provenance-table,
+ *   datastream-cell, mapping-tag, published-cell, provenance-footer,
+ *   footer-note.
  *
  * Tokenized: every color references an application.css CSS variable only
  * (--ink, --muted, --surface, --surface-2, --page, --line, --info, --success,
@@ -101,7 +102,21 @@
   white-space: nowrap;
 }
 
-/* --- Panel: recent published figures --- */
+/* Honest gap note: what provenance does NOT surface yet. */
+.provenance-gap {
+  margin: 0;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.provenance-gap code {
+  font-size: 12px;
+}
+
+/* --- Panel: recent publications --- */
 .provenance-panel {
   overflow: hidden;
 }
@@ -193,35 +208,14 @@
   font-size: 12px;
 }
 
-/* Figure cell: metric name + grain note. */
-.figure-cell strong {
-  display: block;
-  font-size: 13px;
-}
-.figure-cell small {
-  display: block;
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-/* Pull ids cell: mono chips + overflow count. */
-.pull-cell {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.pull-cell code {
-  padding: 3px 8px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--page);
-  color: var(--ink);
-  font-size: 12px;
-}
-.pull-more {
-  color: var(--muted);
+/* Identifier cells: mono, truncated in the cell, full value in the title. */
+.provenance-table code.mono {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
   font-size: 12px;
 }
 
@@ -235,20 +229,38 @@
   font-size: 12px;
 }
 
-/* FX as-of cell: date (Geist) over rate (mono). */
-.fx-cell strong {
-  display: block;
-  font-size: 13px;
-}
-.fx-cell small {
-  display: block;
-  margin-top: 3px;
+/* --- Load states: loading / error / empty / partial --- */
+.provenance-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  padding: 22px 20px;
   color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.provenance-state p {
+  margin: 0;
+}
+.provenance-state.error {
+  color: var(--error);
+}
+.provenance-state.warning {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+  color: var(--warning);
   font-size: 12px;
 }
-.fx-none {
-  color: var(--muted);
-  font-size: 15px;
+
+/* Datastream filter: a real <select> over the loaded fleet. */
+.provenance-filter select.selector {
+  min-width: 180px;
+  max-width: 260px;
+}
+.provenance-filter select.selector:disabled {
+  opacity: 0.55;
 }
 
 .published-cell {

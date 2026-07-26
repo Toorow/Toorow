@@ -55,6 +55,21 @@ COPY --from=builder /build/.venv /app/.venv
 # Simpler: copy server/ and set PYTHONPATH=/app/server — python -m core.main works.
 COPY --from=builder /build/server /app/server
 
+# Runtime DATA, not build inputs. Six core modules resolve these paths from
+# `Path(__file__).parents[2]` -- i.e. /app -- and read them while serving:
+# country_vocabulary, fx_helper, money, metric_semantics, metrics and
+# report_dictionary. Without the seeds the container starts and answers /health
+# perfectly, then fails the moment real work happens: creating a project
+# returned 503 country_vocabulary_unavailable on the deployed service, which
+# blocked the entire journey (an org could be created, a project never could).
+# The builder had them all along; only the runtime stage was missing them.
+COPY --from=builder /build/dbt/seeds /app/dbt/seeds
+
+# Same class of miss: adaptation_executor spawns infra/sandbox/worker.py at
+# parents[2]/infra/sandbox. Copied from the build context (the builder stage
+# never received infra/).
+COPY infra/sandbox /app/infra/sandbox
+
 # Fix ownership so appuser can read the package.
 RUN chown -R appuser:appuser /app
 

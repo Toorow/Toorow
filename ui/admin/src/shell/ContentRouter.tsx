@@ -13,7 +13,7 @@ import { WORKSPACE_BY_KEY } from "./navigation";
 import type { NavSection } from "../Sidebar";
 
 // v3 pages (faithful mockup ports) + existing panels mounted in their v3 homes
-import Overview from "./pages/Overview";
+import Overview from "./pages/Overview43";
 import DataWorkspace from "./pages/DataWorkspace";
 import Sources from "./pages/Sources";
 import ProjectMapping from "./pages/ProjectMapping";
@@ -24,6 +24,7 @@ import RegressionRuns from "./pages/RegressionRuns";
 import WidgetFeedback from "./pages/WidgetFeedback";
 import Provenance from "./pages/Provenance";
 import Procedures from "./pages/Procedures";
+import ReconciliationMethods from "./pages/ReconciliationMethods";
 import Competitors from "./pages/Competitors";
 import Activity from "./pages/Activity";
 import DatastreamOverview from "./pages/DatastreamOverview";
@@ -40,11 +41,11 @@ import ReportsPanel from "../ReportsPanel";
 import WidgetCardsPage from "../WidgetCardsPage";
 import NotebooksPanel from "../NotebooksPanel";
 import RenderGalleryPage from "../RenderGalleryPage";
-import ConnectionsList from "../ConnectionsList";
 import MediaplansShell from "../mediaplans/MediaplansShell";
 import DataModelPage from "../DataModelPage";
 import DataQualityPage from "../DataQualityPage";
 import KnowledgeBasePage from "../KnowledgeBasePage";
+import KnowledgeGraphPage from "../KnowledgeGraphPage";
 import BusinessContextPanel from "../BusinessContextPanel";
 
 /** Bridge legacy NavSection navigation onto the new router. */
@@ -83,7 +84,13 @@ function navSectionToRoute(section: NavSection): Partial<Route> {
   }
 }
 
-function ComingSoon({ workspace, section }: { workspace: string; section: string }) {
+function ComingSoon({
+  workspace,
+  section,
+}: {
+  workspace: string;
+  section: string;
+}) {
   return (
     <Box
       sx={{
@@ -99,8 +106,8 @@ function ComingSoon({ workspace, section }: { workspace: string; section: string
         {section}
       </Typography>
       <Typography sx={{ color: "text.secondary", maxWidth: 520, mx: "auto" }}>
-        This {workspace} surface is being migrated to the v3 experience. Its data and
-        actions land here as the workspace story completes.
+        This {workspace} surface is being migrated to the v3 experience. Its
+        data and actions land here as the workspace story completes.
       </Typography>
     </Box>
   );
@@ -110,11 +117,23 @@ export default function ContentRouter() {
   const { route, navigate } = useRoute();
   const { org } = useScope();
   const projectId = route.projectId;
-  const onNavigate = (section: NavSection) => navigate(navSectionToRoute(section));
-  const onOpenDatastream = (id: string) =>
-    navigate({ workspace: "data", section: "datastreams", objectType: "datastream", objectId: id });
+  const onNavigate = (section: NavSection) =>
+    navigate(navSectionToRoute(section));
+  const onOpenDatastream = (id: string, tab?: string) =>
+    navigate({
+      workspace: "data",
+      section: "datastreams",
+      objectType: "datastream",
+      objectId: id,
+      tab: tab ?? "overview",
+    });
   const openModule = (moduleId: string) =>
-    navigate({ workspace: "data", section: "modules", objectType: "module", objectId: moduleId });
+    navigate({
+      workspace: "data",
+      section: "modules",
+      objectType: "module",
+      objectId: moduleId,
+    });
   const full = { projectId, onOpenDatastream, onNavigate };
 
   // Datastream object detail — local tabs (Overview/Data/Mapping/Runs/…)
@@ -122,37 +141,60 @@ export default function ContentRouter() {
     const dsId = route.objectId;
     switch (route.tab ?? "overview") {
       case "data":
-        return <DatastreamData projectId={projectId} datastreamId={dsId} />;
+        return (
+          <DatastreamData
+            projectId={projectId}
+            datastreamId={dsId}
+            onNavigateTab={(tab) => onOpenDatastream(dsId, tab)}
+          />
+        );
       case "mapping":
-        return <DatastreamMapping projectId={projectId} datastreamId={dsId} />;
+        return (
+          <DatastreamMapping
+            projectId={projectId}
+            datastreamId={dsId}
+            onNavigateTab={(tab) => onOpenDatastream(dsId, tab)}
+          />
+        );
       case "runs":
       case "recovery":
-        return <DatastreamRecovery projectId={projectId} datastreamId={dsId} />;
+        return <DatastreamRecovery projectId={projectId} datastreamId={dsId} onNavigateTab={(tab) => onOpenDatastream(dsId, tab)} />;
       case "first-publication":
         return <FirstPublication projectId={projectId} datastreamId={dsId} />;
       case "overview":
       default:
-        return <DatastreamOverview projectId={projectId} datastreamId={dsId} />;
+        return (
+          <DatastreamOverview
+            projectId={projectId}
+            datastreamId={dsId}
+            onNavigateTab={(tab) => onOpenDatastream(dsId, tab)}
+          />
+        );
     }
   }
 
   // Activatable alignment module detail — Data > Modules > <module>. Country
   // split is the built member; its ModuleSettings surface opens here.
   if (route.objectType === "module" && route.objectId) {
-    const backToModules = () => navigate({ workspace: "data", section: "modules" });
+    const backToModules = () =>
+      navigate({ workspace: "data", section: "modules" });
     switch (route.objectId) {
       case "country-split":
         return <CountrySplit projectId={projectId} onBack={backToModules} />;
       default:
-        return <ModulesCatalog projectId={projectId} onOpenModule={openModule} />;
+        return (
+          <ModulesCatalog projectId={projectId} onOpenModule={openModule} />
+        );
     }
   }
 
   // Scope settings (reached from the TopBar scope actions menu, any workspace).
-  if (route.section === "project-settings") return <ProjectSettings projectId={projectId} />;
+  if (route.section === "project-settings")
+    return <ProjectSettings projectId={projectId} />;
   // org is null until the scope has loaded (see ScopeValue.state) — the shell
   // gates on that, so this only guards the type.
-  if (route.section === "org-settings") return org ? <OrgSettings orgId={org.id} /> : null;
+  if (route.section === "org-settings")
+    return org ? <OrgSettings orgId={org.id} /> : null;
   // The signed-in person's own account (identity + account erasure). Like the
   // organization settings it is NOT a project workspace: it is reached from the
   // TopBar scope control, and it needs no scope at all — it is about the user.
@@ -165,8 +207,27 @@ export default function ContentRouter() {
       return (
         <Overview
           projectId={projectId}
+          onAddDatastream={() =>
+            navigate({ workspace: "data", section: "add" })
+          }
+          onOpenDataOverview={() =>
+            navigate({ workspace: "data", section: "data-overview" })
+          }
+          onOpenAnalyze={() =>
+            navigate({ workspace: "analyze", section: "reports" })
+          }
           onOpenDatastream={onOpenDatastream}
-          onOpenRenders={() => navigate({ workspace: "analyze", section: "renders" })}
+          onOpenRenders={() =>
+            navigate({ workspace: "analyze", section: "renders" })
+          }
+          onOpenRender={(renderId) =>
+            navigate({
+              workspace: "analyze",
+              section: "renders",
+              objectType: "render",
+              objectId: renderId,
+            })
+          }
         />
       );
     case "overview/getting-started":
@@ -192,23 +253,57 @@ export default function ContentRouter() {
 
     // Data
     case "data/data-overview":
-      return <DataWorkspace projectId={projectId} onOpenDatastream={onOpenDatastream} />;
+      return (
+        <DataWorkspace
+          projectId={projectId}
+          onOpenDatastream={onOpenDatastream}
+          onAddDatastream={() =>
+            navigate({ workspace: "data", section: "add" })
+          }
+        />
+      );
     case "data/sources":
-      return <Sources projectId={projectId} />;
+      return (
+        <Sources
+          projectId={projectId}
+          onAddDatastream={() =>
+            navigate({ workspace: "data", section: "add" })
+          }
+        />
+      );
     case "data/modules":
       return <ModulesCatalog projectId={projectId} onOpenModule={openModule} />;
     case "data/add":
       return (
         <DatastreamCreate
           projectId={projectId}
-          onCancel={() => navigate({ workspace: "data", section: "data-overview" })}
+          onCancel={() =>
+            navigate({ workspace: "data", section: "data-overview" })
+          }
+          onActivated={(datastreamId) =>
+            navigate({
+              workspace: "data",
+              section: "datastreams",
+              objectType: "datastream",
+              objectId: datastreamId,
+              tab: "first-publication",
+            })
+          }
         />
       );
     case "data/datastreams":
       // The v3 fleet list (DataWorkspace) is the datastreams list; individual
       // streams open into their object-detail tabs (handled above). The legacy
       // MUI ops list is retired.
-      return <DataWorkspace projectId={projectId} onOpenDatastream={onOpenDatastream} />;
+      return (
+        <DataWorkspace
+          projectId={projectId}
+          onOpenDatastream={onOpenDatastream}
+          onAddDatastream={() =>
+            navigate({ workspace: "data", section: "add" })
+          }
+        />
+      );
     case "data/imports":
       return <MediaplansShell projectId={projectId} />;
 
@@ -221,6 +316,8 @@ export default function ContentRouter() {
       return <Competitors projectId={projectId} />;
     case "governance/data-quality":
       return <DataQualityPage {...full} />;
+    case "governance/reconciliation":
+      return <ReconciliationMethods projectId={projectId} />;
     case "governance/provenance":
       return <Provenance projectId={projectId} />;
     case "governance/activity":
@@ -229,6 +326,21 @@ export default function ContentRouter() {
     // Context
     case "context/knowledge":
       return <KnowledgeBasePage projectId={projectId} />;
+    case "context/graph":
+      return (
+        <KnowledgeGraphPage
+          projectId={projectId}
+          onOpenKnowledge={() =>
+            navigate({ workspace: "context", section: "knowledge" })
+          }
+          onOpenProcedures={() =>
+            navigate({ workspace: "context", section: "procedures" })
+          }
+          onOpenSemanticModel={() =>
+            navigate({ workspace: "governance", section: "semantic-model" })
+          }
+        />
+      );
     case "context/events":
       return <BusinessContextPanel {...full} />;
     case "context/procedures":
@@ -236,7 +348,9 @@ export default function ContentRouter() {
 
     default: {
       const ws = WORKSPACE_BY_KEY[route.workspace];
-      return <ComingSoon workspace={ws.label} section={route.section ?? ws.label} />;
+      return (
+        <ComingSoon workspace={ws.label} section={route.section ?? ws.label} />
+      );
     }
   }
 }

@@ -261,11 +261,21 @@ field. Archival always completes regardless (best-effort semantics).
 ### AI-44 — Nango migration file naming
 
 Migrations in `infra/nango/migrations/` MUST be named `NNN_description.sql` with
-a zero-padded 3-digit numeric prefix (`001_...` … `021_...`). There is no local
-apply script; migrations are applied in numeric order (CI orders them with
-`sort -t_ -k1,1 -k2,2n` — commit 433c1ef — which is only correct because the
-prefix is zero-padded). Never reuse or renumber an applied prefix; the next
-migration always takes the next free number.
+a zero-padded 3-digit numeric prefix. Prefixes are unique and continuous from
+`001`; `python scripts/check_migration_catalog.py` enforces this before CI. The
+reviewed filenames and normalized checksums are pinned in
+`infra/nango/migrations/manifest.json`; update it only with
+`python scripts/check_migration_catalog.py --write-manifest` in the same review
+as a new migration.
+`python scripts/apply_migrations.py` is the only application runner: it applies
+pending SQL in numeric order under an advisory lock and records filename and
+checksum in `toorow_meta.schema_migrations`. Production must run it with a
+migration-owner DSN distinct from the application runtime role; the runtime role
+must have no privilege on `toorow_meta`. Never reuse or renumber an applied
+prefix; the next migration takes the next free number. If a historical collision
+must be repaired, move only a replay-safe migration to the next free identifier
+and record the exception. The runner refuses a non-empty pre-ledger database;
+adoption requires a separately reviewed operator procedure.
 
 ## dbt Mart Template Rules
 

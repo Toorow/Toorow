@@ -10,7 +10,18 @@ from typing import Any, Callable, Iterable, Mapping
 from ulid import ULID
 
 from core.datastream_intents import compile_geographic_intent, normalize_intent
-from core.geographic_reporting import GLOBAL, LOCAL_MARKETS, GeographicPosture
+from core.geographic_reporting import (
+    GLOBAL,
+    LOCAL_MARKETS,
+    GeographicPosture,
+    Market,
+    market_diff,
+)
+
+NO_BACKFILL_STATEMENT = (
+    "Regrouping only: retained country data is reclassified semantically. "
+    "No raw rewrite, no provider pull and no backfill are required."
+)
 
 
 class GeographicChangeError(RuntimeError):
@@ -41,13 +52,32 @@ def _sha256(value: object) -> str:
     return hashlib.sha256(_canonical_json(value).encode()).hexdigest()
 
 
-def posture_diff(previous: GeographicPosture, target: GeographicPosture) -> dict[str, list[str]]:
-    previous_codes = set(previous.country_codes)
-    target_codes = set(target.country_codes)
-    return {
-        "added_country_codes": sorted(target_codes - previous_codes),
-        "removed_country_codes": sorted(previous_codes - target_codes),
+def posture_diff(previous: GeographicPosture, target: GeographicPosture) -> dict[str, object]:
+    """Story 37.8: the recorded diff is a diff of MARKETS, not only of codes."""
+
+    diff: dict[str, object] = {
+        "previous_mode": previous.mode,
+        "new_mode": target.mode,
     }
+    diff.update(market_diff(previous, target))
+    return diff
+
+
+def is_regrouping_only(previous: GeographicPosture, target: GeographicPosture) -> bool:
+    """True when only market composition/labelling changes, not the tracked set.
+
+    Adding, removing or moving a country *between* markets keeps the union of
+    tracked codes identical, so nothing new must be extracted: the change is a
+    pure read-layer reclassification of retained facts.
+    """
+
+    if previous.mode != LOCAL_MARKETS or target.mode != LOCAL_MARKETS:
+        return False
+    if set(previous.country_codes) != set(target.country_codes):
+        return False
+    return tuple(m.as_dict() for m in previous.markets) != tuple(
+        m.as_dict() for m in target.markets
+    )
 
 
 def dependency_fingerprint(
@@ -99,6 +129,7 @@ def build_datastream_impact(
     capabilities: dict[str, Any] | None,
     *,
     earliest_country_date: str | None,
+    reclassification_only: bool = False,
 ) -> dict[str, Any]:
     """Build one deterministic, source-agnostic preview entry without writes."""
 
@@ -123,6 +154,10 @@ def build_datastream_impact(
     evidenced_country_date = earliest_country_date if current_plan_has_country else None
     local_target = target.mode == LOCAL_MARKETS
     backfill_required = local_target and country_capability and not retained_country
+    if reclassification_only:
+        # Regrouping never changes what must be extracted: the same retained
+        # country rows are simply classified into different markets.
+        backfill_required = False
     coverage_state = (
         "consolidated"
         if target.mode == GLOBAL
@@ -167,6 +202,8 @@ def build_datastream_impact(
         "blocking_gaps": blocking_gaps,
         "backfill_required": backfill_required,
         "provider_pull_required": backfill_required,
+        "reclassification_only": reclassification_only,
+        "raw_rewrite_required": False,
         "retained_history_preserved": True,
         "coverage_state": coverage_state,
         "proposed_intent": proposed_intent,
@@ -197,8 +234,26 @@ def _mint_preview_id() -> str:
 
 
 def _posture_from_dict(value: Mapping[str, object]) -> GeographicPosture:
+    """Rebuild a stored posture; pre-37.8 previews carry only flat codes."""
+
     mode = str(value.get("geographic_mode") or GLOBAL)
     codes = value.get("local_market_country_codes")
+    raw_markets = value.get("local_markets")
+    if isinstance(raw_markets, list) and raw_markets:
+        return GeographicPosture(
+            mode=mode,
+            markets=tuple(
+                Market(
+                    id=str(item.get("id")),
+                    label=str(item.get("label")),
+                    country_codes=tuple(
+                        str(code).upper() for code in item.get("country_codes") or ()
+                    ),
+                )
+                for item in raw_markets
+                if isinstance(item, Mapping)
+            ),
+        )
     return GeographicPosture(
         mode=mode,
         country_codes=tuple(str(code) for code in codes) if isinstance(codes, list) else (),
@@ -371,6 +426,7 @@ def create_geographic_change_preview(
     previous, datastreams, capabilities_by_id, fingerprint = _current_dependencies(
         project_id, identity, conn, loaded_modules, loader
     )
+    regrouping_only = is_regrouping_only(previous, target)
     impacts = [
         build_datastream_impact(
             datastream,
@@ -378,17 +434,28 @@ def create_geographic_change_preview(
             target,
             capabilities_by_id[str(datastream["id"])],
             earliest_country_date=datastream.get("earliest_completed_date"),
+            reclassification_only=regrouping_only,
         )
         for datastream in datastreams
     ]
     diff = posture_diff(previous, target)
+    # Story 37.9: the used-by guard SAYS what depends on a market before the
+    # change is accepted. A regroup must never silently change the meaning of
+    # figures already published under a bound market id.
+    from core.market_governance import collect_market_usage  # noqa: PLC0415
+
+    _usage_impacts, market_usage = collect_market_usage(project_id, previous, target, conn)
     impact = {
         "posture_diff": diff,
+        "market_usage": market_usage,
         "datastreams": impacts,
         "affected_datastream_count": len(impacts),
         "blocking_gap_count": sum(len(item["blocking_gaps"]) for item in impacts),
         "backfill_required": any(item["backfill_required"] for item in impacts),
         "provider_pull_required": any(item["provider_pull_required"] for item in impacts),
+        "reclassification_only": regrouping_only,
+        "raw_rewrite_required": False,
+        "backfill_statement": NO_BACKFILL_STATEMENT if regrouping_only else None,
     }
     preview_id = _mint_preview_id()
     with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -450,8 +517,14 @@ def confirm_geographic_change(
     conn: object,
     loaded_modules: list[Any],
     capability_loader: CapabilityLoader | None = None,
+    acknowledge_market_usage: bool = False,
 ) -> dict[str, Any]:
-    """Confirm a fresh preview and commit plan pointers + posture atomically."""
+    """Confirm a fresh preview and commit plan pointers + posture atomically.
+
+    ``acknowledge_market_usage`` is the operator's answer to the used-by guard
+    (Story 37.9). It is required only when the change actually re-means a bound
+    market; a relabel, or a change touching nothing bound, needs no ceremony.
+    """
 
     if backfill_decision not in {"defer", "request"}:
         raise ValueError("backfill_decision must be 'defer' or 'request'")
@@ -470,9 +543,20 @@ def confirm_geographic_change(
     if previous.as_dict() != preview["previous_posture"]:
         raise GeographicPreviewStale("project posture changed; create a fresh preview")
 
+    # Story 37.9: re-read the registry at confirm time (a binding may have been
+    # declared since the preview) and refuse an unacknowledged meaning change.
+    from core.market_governance import (  # noqa: PLC0415
+        assert_market_change_acknowledged,
+        collect_market_usage,
+    )
+
+    market_impacts, market_usage = collect_market_usage(project_id, previous, target, conn)
+    assert_market_change_acknowledged(market_impacts, acknowledge_market_usage)
+
     preview_impacts = {
         item["datastream_id"]: item for item in preview["impact"].get("datastreams", [])
     }
+    regrouping_only = is_regrouping_only(previous, target)
     fresh_impacts: dict[str, dict[str, Any]] = {}
     for datastream in datastreams:
         datastream_id = str(datastream["id"])
@@ -482,6 +566,7 @@ def confirm_geographic_change(
             target,
             capabilities_by_id[datastream_id],
             earliest_country_date=datastream.get("earliest_completed_date"),
+            reclassification_only=regrouping_only,
         )
         expected = preview_impacts.get(datastream_id)
         if (
@@ -549,9 +634,17 @@ def confirm_geographic_change(
             "previous_posture": previous.as_dict(),
             "new_posture": target.as_dict(),
             "posture_diff": posture_diff(previous, target),
+            "market_diff": market_diff(previous, target),
+            # Append-only audit of what depended on the changed markets and that
+            # the operator was told before the change was accepted.
+            "market_usage": market_usage,
+            "market_usage_acknowledged": bool(acknowledge_market_usage),
             "plan_versions": version_results,
             "backfill_decision": backfill_decision,
             "backfill_actions": backfill_actions,
+            "reclassification_only": regrouping_only,
+            "raw_rewrite_required": False,
+            "backfill_statement": NO_BACKFILL_STATEMENT if regrouping_only else None,
             "coverage_state": resulting_coverage,
             "idempotent_replay": False,
         }

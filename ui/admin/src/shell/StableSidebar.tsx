@@ -15,10 +15,43 @@ import { getThemeMode, setThemeMode, type ThemeMode } from "./themeMode";
 /** The signed-in identity, decoded from the Google ID token AuthGate stored in
  *  localStorage.api_token. Falls back to a neutral placeholder when no valid
  *  token is present so the footer never shows a stale hard-coded name. */
-function currentUser(): { name: string; email: string; initials: string; picture?: string } {
-  const fallback = { name: "Signed out", email: "Not signed in", initials: "—" };
+function currentUser(): {
+  name: string;
+  email: string;
+  initials: string;
+  picture?: string;
+} {
+  const fallback = {
+    name: "Signed out",
+    email: "Not signed in",
+    initials: "—",
+  };
   const t = localStorage.getItem("api_token");
-  if (!t) return fallback;
+  if (!t) {
+    const browserIdentity = sessionStorage.getItem("toorow_browser_identity");
+    if (!browserIdentity) return fallback;
+    try {
+      const identity = JSON.parse(browserIdentity) as {
+        name?: string;
+        email?: string;
+        picture?: string;
+      };
+      const name = identity.name || identity.email || "Account";
+      const initials = name
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((part) => part[0] ?? "")
+        .join("");
+      return {
+        name,
+        email: identity.email ?? "",
+        initials: initials.toUpperCase() || "?",
+        picture: identity.picture,
+      };
+    } catch {
+      return fallback;
+    }
+  }
   try {
     const p = JSON.parse(atob(t.split(".")[1] ?? "")) as {
       name?: string;
@@ -27,10 +60,20 @@ function currentUser(): { name: string; email: string; initials: string; picture
       family_name?: string;
       picture?: string;
     };
-    const name = p.name || [p.given_name, p.family_name].filter(Boolean).join(" ") || p.email || "Account";
+    const name =
+      p.name ||
+      [p.given_name, p.family_name].filter(Boolean).join(" ") ||
+      p.email ||
+      "Account";
     const initials =
-      (p.given_name?.[0] ?? name[0] ?? "") + (p.family_name?.[0] ?? name.split(" ")[1]?.[0] ?? "");
-    return { name, email: p.email ?? "", initials: initials.toUpperCase() || "?", picture: p.picture };
+      (p.given_name?.[0] ?? name[0] ?? "") +
+      (p.family_name?.[0] ?? name.split(" ")[1]?.[0] ?? "");
+    return {
+      name,
+      email: p.email ?? "",
+      initials: initials.toUpperCase() || "?",
+      picture: p.picture,
+    };
   } catch {
     return fallback;
   }
@@ -93,7 +136,8 @@ export default function StableSidebar() {
   useEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (userRef.current && !userRef.current.contains(e.target as Node)) setMenuOpen(false);
+      if (userRef.current && !userRef.current.contains(e.target as Node))
+        setMenuOpen(false);
     };
     const onEsc = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") setMenuOpen(false);
@@ -113,7 +157,13 @@ export default function StableSidebar() {
 
   const signOut = () => {
     localStorage.removeItem("api_token");
-    window.location.assign("/");
+    sessionStorage.removeItem("toorow_browser_identity");
+    void fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "same-origin",
+    }).finally(() => {
+      window.location.assign("/");
+    });
   };
 
   const activate = (ws: (typeof WORKSPACES)[number]) =>
@@ -129,8 +179,17 @@ export default function StableSidebar() {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <img className="brand-logo brand-logo--on-light" src="/brand/toorow-logo-horizontal-dark.png" alt="toorow" />
-        <img className="brand-logo brand-logo--on-dark" src="/brand/toorow-logo-horizontal-light.png" alt="" aria-hidden="true" />
+        <img
+          className="brand-logo brand-logo--on-light"
+          src="/brand/toorow-logo-horizontal-dark.png"
+          alt="toorow"
+        />
+        <img
+          className="brand-logo brand-logo--on-dark"
+          src="/brand/toorow-logo-horizontal-light.png"
+          alt=""
+          aria-hidden="true"
+        />
       </div>
 
       <nav className="nav" aria-label="Project">
@@ -150,7 +209,9 @@ export default function StableSidebar() {
               >
                 {ICONS[ws.key]}
                 {ws.label}
-                {hasSub ? <span className="chevron">{active ? "⌄" : "›"}</span> : null}
+                {hasSub ? (
+                  <span className="chevron">{active ? "⌄" : "›"}</span>
+                ) : null}
               </div>
 
               {active && hasSub && ws.key === "data" ? <DataTree /> : null}
@@ -167,9 +228,13 @@ export default function StableSidebar() {
                         tabIndex={0}
                         aria-current={on ? "page" : undefined}
                         data-testid={`sec-${ws.key}-${s.slug}`}
-                        onClick={() => navigate({ workspace: ws.key, section: s.slug })}
+                        onClick={() =>
+                          navigate({ workspace: ws.key, section: s.slug })
+                        }
                         onKeyDown={(e) =>
-                          onKey(e, () => navigate({ workspace: ws.key, section: s.slug }))
+                          onKey(e, () =>
+                            navigate({ workspace: ws.key, section: s.slug }),
+                          )
                         }
                       >
                         {s.label}
@@ -185,7 +250,12 @@ export default function StableSidebar() {
 
       <div className="user" ref={userRef}>
         {user.picture ? (
-          <img className="avatar" src={user.picture} alt="" referrerPolicy="no-referrer" />
+          <img
+            className="avatar"
+            src={user.picture}
+            alt=""
+            referrerPolicy="no-referrer"
+          />
         ) : (
           <div className="avatar">{user.initials}</div>
         )}
@@ -221,7 +291,12 @@ export default function StableSidebar() {
               ))}
             </div>
             <div className="user-menu-sep" />
-            <button className="user-menu-item" type="button" role="menuitem" onClick={signOut}>
+            <button
+              className="user-menu-item"
+              type="button"
+              role="menuitem"
+              onClick={signOut}
+            >
               Sign out
             </button>
           </div>

@@ -67,7 +67,8 @@ class TestOfficialSnapshot:
             assert f["kind"] == m["kind"], f"kind mismatch for {fid}"
             src = f.get("source_field", fid)
             assert src == m["source_field"], (
-                f"source_field mismatch for {fid}: official {src!r} vs manifest {m['source_field']!r}"
+                f"source_field mismatch for {fid}: "
+                f"official {src!r} vs manifest {m['source_field']!r}"
             )
 
     def test_key_families_present(self, official):
@@ -123,7 +124,9 @@ class TestCatalogSourcesDeclaration:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(not _API_CATALOG.exists(), reason="api_catalog.json not generated yet (orchestrator step)")
+@pytest.mark.skipif(
+    not _API_CATALOG.exists(), reason="api_catalog.json not generated yet (orchestrator step)"
+)
 class TestGeneratedCatalog:
     @pytest.fixture(scope="class")
     def catalog(self):
@@ -148,7 +151,9 @@ class TestGeneratedCatalog:
         assert manifest_ids <= exposed_ids
 
 
-@pytest.mark.skipif(not _FUSION.exists(), reason="fusion-report.json not generated yet (orchestrator step)")
+@pytest.mark.skipif(
+    not _FUSION.exists(), reason="fusion-report.json not generated yet (orchestrator step)"
+)
 class TestFusionReport:
     @pytest.fixture(scope="class")
     def report(self):

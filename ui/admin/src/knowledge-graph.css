@@ -1,0 +1,939 @@
+/**
+ * knowledge-graph.css — Story 44.4 (Context ▸ Graph).
+ *
+ * Shell/layout classes (page-header, panel, primary-button, secondary-button,
+ * signal-label, .number) live in application.css. This file adds the mindmap:
+ * the filter toolbar, the canvas, the node card, and the detail drawer.
+ *
+ * Tokens only. Every colour resolves to an application.css CSS variable, so the
+ * page follows the light/dark scheme with no per-scheme rule of its own:
+ *   topic      -> --rose   (the product accent, as for governed knowledge)
+ *   procedure  -> --info   (the violet-blue accent; application.css ships no
+ *                           other blue, and inventing a hex is forbidden)
+ *   schema_doc -> --muted  (neutral: generated, read-only, AD-17)
+ *   target_field -> --success (Story 44.10, the dictionary accent — the only
+ *                           remaining application.css accent not already taken
+ *                           by another node type; --warning is spoken for by
+ *                           the schema_doc "auto" tag)
+ * Numbers, versions and dates use the Geist tabular treatment.
+ *
+ * React Flow ships a base stylesheet with hardcoded light colours. Rather than
+ * fighting its selectors we re-point its own `--xy-*` variables at our tokens.
+ * They MUST be set on `.kg-canvas .react-flow` (specificity 0,2,0), not on the
+ * `.kg-canvas` wrapper: @xyflow/react/dist/style.css declares every one of these
+ * custom properties on `.react-flow` itself, and a declaration on the element
+ * always beats a value inherited from an ancestor — setting them on the wrapper
+ * is inert and the stock light palette (#fefefe controls, #b1b1b7 edges,
+ * #91919a dots, #ffffff edge labels) leaks through, including in dark mode.
+ *
+ * Story 44.6 adds the view-switcher row (.kg-view-*) and MiniMap theming
+ * (the `--xy-minimap-*` block below + `.kg-canvas .react-flow__minimap`,
+ * same rule as above: the library sets these vars on `.react-flow` itself).
+ */
+
+.kg-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.kg-note {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.kg-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 20px 22px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--error) 28%, var(--surface));
+  background: color-mix(in srgb, var(--error) 6%, var(--surface));
+}
+.kg-load-error p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+/* Verbatim server envelope — kept, but demoted below the English headline. */
+.kg-technical {
+  max-width: 72ch;
+  color: var(--muted);
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-size: 11px;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.kg-inline-error {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--surface));
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+  color: var(--error);
+  font-size: 13px;
+}
+
+/* Honest empty state — only after a real fetch returned zero nodes. */
+.kg-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 28px 24px;
+}
+.kg-empty h2 {
+  margin: 0;
+  font: 600 17px/1.35 "Lexend", sans-serif;
+  color: var(--ink);
+}
+.kg-empty p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+/* An empty project has no canvas, so the "New topic" action lives here next
+   to the Knowledge CTA rather than only behind a canvas right-click. */
+.kg-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+/* >500 nodes: the map still renders, we just say it is heavy (R44-UX04). */
+.kg-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--surface));
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+}
+.kg-warning p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ── View switcher row (Story 44.6) ─────────────────────────────────────────
+   Deliberately its OWN row, not folded into the filter toolbar below: this
+   re-projects the same visible set, it does not filter it. */
+.kg-view-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.kg-view-switcher {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.kg-view-option {
+  min-height: 30px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.kg-view-option.is-active {
+  background: var(--surface-2);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 16%, var(--surface));
+}
+.kg-view-option:focus-visible {
+  outline: 3px solid var(--focus, var(--lavender));
+  outline-offset: 2px;
+}
+.kg-projection-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.kg-tidy-button {
+  margin-left: auto;
+}
+
+/* ── Filter toolbar ─────────────────────────────────────────────────────── */
+.kg-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.kg-toggles {
+  display: flex;
+  gap: 8px;
+}
+
+.kg-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.kg-toggle .kg-toggle-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--track);
+}
+.kg-toggle.is-on {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 22%, var(--surface));
+  background: var(--surface-2);
+}
+.kg-toggle--topic.is-on .kg-toggle-dot {
+  background: var(--rose);
+}
+.kg-toggle--procedure.is-on .kg-toggle-dot {
+  background: var(--info);
+}
+.kg-toggle--schema_doc.is-on .kg-toggle-dot {
+  background: var(--muted);
+}
+.kg-toggle--target_field.is-on .kg-toggle-dot {
+  background: var(--success);
+}
+.kg-toggle:focus-visible {
+  outline: 3px solid var(--focus, var(--lavender));
+  outline-offset: 2px;
+}
+
+.kg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.kg-field select,
+.kg-field input,
+.kg-field textarea {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 13px/1.4 "Plus Jakarta Sans", sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* The review modal's note field (44.11): same tokens, comfortable height. */
+.kg-field textarea {
+  padding: 8px 10px;
+  resize: vertical;
+}
+.kg-field--search {
+  flex: 1 1 240px;
+  min-width: 200px;
+}
+.kg-field--search input {
+  width: 100%;
+}
+
+.kg-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Stage: canvas (+ drawer when a node is selected) ───────────────────── */
+.kg-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-height: 560px;
+}
+.kg-stage.has-drawer {
+  grid-template-columns: minmax(0, 1fr) 380px;
+}
+@media (max-width: 1180px) {
+  .kg-stage.has-drawer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.kg-canvas {
+  position: relative;
+  min-height: 560px;
+  height: 62vh;
+  padding: 0;
+  background: var(--page);
+}
+
+/*
+ * React Flow theming seam. The library sets these same `--xy-*-default`
+ * properties ON `.react-flow`; only a selector that also targets `.react-flow`
+ * (and is more specific) can override them — hence `.kg-canvas .react-flow`.
+ */
+.kg-canvas .react-flow {
+  --xy-background-color-default: var(--page);
+  --xy-background-pattern-dots-color-default: color-mix(in srgb, var(--muted) 32%, transparent);
+  --xy-background-pattern-lines-color-default: color-mix(in srgb, var(--muted) 22%, transparent);
+  --xy-background-pattern-cross-color-default: color-mix(in srgb, var(--muted) 22%, transparent);
+  --xy-edge-stroke-default: color-mix(in srgb, var(--muted) 55%, transparent);
+  --xy-edge-stroke-selected-default: var(--info);
+  --xy-edge-stroke-width-default: 1.5;
+  --xy-edge-label-background-color-default: var(--surface);
+  --xy-edge-label-color-default: var(--muted);
+  --xy-connectionline-stroke-default: var(--info);
+  --xy-handle-background-color-default: color-mix(in srgb, var(--muted) 60%, transparent);
+  --xy-handle-border-color-default: var(--surface);
+  --xy-node-background-color-default: var(--surface);
+  --xy-node-color-default: var(--ink);
+  --xy-node-border-default: 1px solid var(--line);
+  --xy-node-border-radius-default: 14px;
+  --xy-node-boxshadow-hover-default: 0 6px 18px color-mix(in srgb, var(--ink) 12%, transparent);
+  --xy-node-boxshadow-selected-default: 0 0 0 2px var(--info);
+  --xy-selection-background-color-default: color-mix(in srgb, var(--info) 12%, transparent);
+  --xy-selection-border-default: 1px dotted var(--info);
+  --xy-attribution-background-color-default: color-mix(in srgb, var(--surface) 80%, transparent);
+  --xy-controls-button-background-color-default: var(--surface);
+  --xy-controls-button-background-color-hover-default: var(--surface-2);
+  --xy-controls-button-color-default: var(--ink);
+  --xy-controls-button-color-hover-default: var(--ink);
+  --xy-controls-button-border-color-default: var(--line);
+  --xy-controls-box-shadow-default: 0 4px 14px color-mix(in srgb, var(--ink) 12%, transparent);
+  --xy-minimap-background-color-default: var(--surface);
+  --xy-minimap-mask-background-color-default: color-mix(in srgb, var(--page) 55%, transparent);
+  --xy-minimap-mask-stroke-color-default: color-mix(in srgb, var(--info) 35%, transparent);
+  --xy-minimap-mask-stroke-width-default: 1;
+  --xy-minimap-node-background-color-default: color-mix(in srgb, var(--muted) 55%, var(--surface));
+  --xy-minimap-node-stroke-color-default: var(--line);
+  --xy-minimap-node-stroke-width-default: 1;
+}
+/* MiniMap panel chrome — the vars above theme its SVG content, but the
+   library draws its own border/shadow that is not exposed via a --xy-* var. */
+.kg-canvas .react-flow__minimap {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+/*
+ * Every node filtered out: a blank canvas is indistinguishable from a broken
+ * render, so say so and offer the way back.
+ */
+.kg-no-match {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--page) 72%, transparent);
+}
+.kg-no-match h3 {
+  margin: 0;
+  font: 600 15px/1.35 "Lexend", sans-serif;
+  color: var(--ink);
+}
+.kg-no-match p {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.kg-no-match button {
+  pointer-events: auto;
+}
+
+.kg-canvas .react-flow__attribution a {
+  color: var(--muted);
+}
+.kg-canvas .react-flow__edge-text {
+  fill: var(--muted);
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* ── Node card ──────────────────────────────────────────────────────────── */
+.kg-node {
+  box-sizing: border-box;
+  width: 268px;
+  height: 156px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 6%, transparent);
+  transition: opacity 120ms ease, box-shadow 120ms ease;
+}
+.kg-node--topic {
+  border-left-color: var(--rose);
+}
+.kg-node--procedure {
+  border-left-color: var(--info);
+}
+.kg-node--schema_doc {
+  border-left-color: var(--muted);
+}
+.kg-node--target_field {
+  border-left-color: var(--success);
+}
+.kg-node.is-selected {
+  box-shadow: 0 0 0 2px var(--info);
+}
+.kg-node.is-match {
+  box-shadow: 0 0 0 2px var(--rose);
+}
+.kg-node.is-dim {
+  opacity: 0.35;
+}
+
+.kg-node-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 18px;
+}
+.kg-node-kind {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.kg-node--topic .kg-node-kind {
+  color: color-mix(in srgb, var(--rose) 70%, var(--ink));
+}
+.kg-node--procedure .kg-node-kind {
+  color: var(--info);
+}
+.kg-node--target_field .kg-node-kind {
+  color: var(--success);
+}
+
+.kg-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--muted) 28%, var(--surface));
+  background: color-mix(in srgb, var(--muted) 9%, var(--surface));
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.kg-tag--auto {
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--surface));
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+  color: var(--warning);
+}
+/* metric / dimension on a dictionary-field node (Story 44.10). */
+.kg-tag--field-kind {
+  border-color: color-mix(in srgb, var(--success) 32%, var(--surface));
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+  color: var(--success);
+}
+
+/* ── "Fed by" panel (Story 44.10): read-only list of the datastream mappings
+   that land in the selected dictionary field. Rendered as rows rather than
+   canvas edges — they are NOT context_graph links and must not look like
+   something the operator can delete from the map. */
+.kg-fed-by-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kg-fed-by-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px dashed color-mix(in srgb, var(--muted) 40%, var(--surface));
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.kg-fed-by-source {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--ink);
+}
+.kg-fed-by-arrow {
+  color: var(--muted);
+}
+.kg-fed-by-stream {
+  color: var(--ink);
+}
+.kg-tag--module {
+  border-color: color-mix(in srgb, var(--info) 30%, var(--surface));
+  background: color-mix(in srgb, var(--info) 10%, var(--surface));
+  color: var(--info);
+}
+
+.kg-node-title {
+  margin: 0;
+  font: 600 13px/1.3 "Lexend", sans-serif;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Verbatim excerpt: clamped visually at 3 lines, never paraphrased (R44-UX03). */
+.kg-node-excerpt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.kg-node-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+.kg-node-owner {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kg-node-version {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.kg-mark {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--rose) 45%, transparent);
+  color: inherit;
+}
+
+.kg-handle {
+  width: 7px;
+  height: 7px;
+  border-width: 1px;
+}
+
+/* ── Drawer ─────────────────────────────────────────────────────────────── */
+.kg-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px;
+  overflow-y: auto;
+  max-height: 62vh;
+}
+.kg-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.kg-drawer-head h2 {
+  margin: 4px 0 0;
+  font: 600 18px/1.3 "Lexend", sans-serif;
+  color: var(--ink);
+}
+
+.kg-readonly-banner {
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--surface));
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.kg-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 0;
+}
+.kg-meta dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.kg-meta dd {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.kg-meta .number,
+.kg-meta time {
+  font-family: "Geist", "Plus Jakarta Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.kg-drawer-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.kg-drawer-section h3 {
+  margin: 0 0 8px;
+  font: 600 13px/1.3 "Lexend", sans-serif;
+  color: var(--ink);
+}
+
+.kg-body {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--muted) 20%, var(--surface));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--muted) 4%, var(--surface));
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12px/1.6 "Plus Jakarta Sans", sans-serif;
+  color: var(--ink);
+}
+
+.kg-edge-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kg-edge-list button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+.kg-edge-list button:hover {
+  background: var(--surface-2);
+}
+.kg-edge-list button:focus-visible {
+  outline: 3px solid var(--focus, var(--lavender));
+  outline-offset: 2px;
+}
+/* Peer hidden by the current filters: still listed (the link exists), not
+   clickable (focusing it would silently no-op on an absent node). */
+.kg-edge-list button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.kg-edge-list button[disabled]:hover {
+  background: var(--surface);
+}
+.kg-edge-hidden {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.kg-edge-type {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--info) 10%, var(--surface));
+  color: var(--info);
+  font-size: 10px;
+  font-weight: 700;
+}
+.kg-edge-peer {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Story 44.5: edge editing — drawer row delete + inline confirm ───────── */
+/*
+ * Specificity note: .kg-edge-list button (one class + one type selector,
+ * from Story 44.4) beats a bare .kg-edge-delete/.kg-edge-nav class rule, so
+ * every selector below is prefixed with .kg-edge-list to win the cascade.
+ */
+.kg-edge-list .kg-edge-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.kg-edge-list .kg-edge-row > .kg-edge-nav {
+  width: auto;
+  flex: 1 1 auto;
+}
+.kg-edge-list .kg-edge-delete {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--error) 28%, var(--surface));
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--error);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.kg-edge-list .kg-edge-delete:hover {
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+}
+.kg-edge-confirm {
+  display: inline-flex;
+  gap: 6px;
+}
+.kg-edge-list .kg-edge-confirm button {
+  width: auto;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.kg-edge-list .kg-edge-confirm-yes {
+  border-color: color-mix(in srgb, var(--error) 32%, var(--surface));
+  color: var(--error);
+}
+.kg-edge-row .kg-inline-error {
+  flex: 1 0 100%;
+  margin-top: 4px;
+}
+
+/*
+ * Canvas-level confirm bar. The Delete-key flow can be driven with the drawer
+ * closed, so the question — and any refusal from the server — is rendered over
+ * the canvas itself. Above the React Flow panes (Controls/MiniMap sit at z 5)
+ * but below the context menu (20) and the modals (30).
+ */
+.kg-edge-confirm-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  z-index: 10;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(560px, calc(100% - 32px));
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--surface));
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.kg-edge-confirm-question {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ── Story 44.5: drawer head actions (Edit / Edit in Procedures / Close) ──── */
+.kg-drawer-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Story 44.5: canvas right-click context menu ──────────────────────────── */
+.kg-context-menu {
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.kg-context-menu button {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.kg-context-menu button:hover {
+  background: var(--surface-2);
+}
+
+/* ── Story 44.5: edge-create + topic editor modals ────────────────────────── */
+.kg-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+}
+.kg-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  padding: 22px;
+}
+.kg-modal--wide {
+  width: 560px;
+}
+.kg-modal h2 {
+  margin: 0;
+  font: 600 16px/1.3 "Lexend", sans-serif;
+  color: var(--ink);
+}
+.kg-modal textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 12px/1.5 "Plus Jakarta Sans", sans-serif;
+  resize: vertical;
+}
+.kg-edge-type-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kg-edge-suggestion {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.kg-edge-suggestion.is-active {
+  border-color: var(--info);
+  background: color-mix(in srgb, var(--info) 10%, var(--surface));
+  color: var(--info);
+}
+.kg-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* Topic editor: Markdown on the left, raw preview on the right — the same
+   side-by-side shape as Story 44.1's editor (knowledge-editor-split). */
+.kg-editor-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .kg-editor-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.kg-editor-split textarea {
+  width: 100%;
+}
+.kg-editor-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.kg-editor-preview-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.kg-editor-preview .kg-body {
+  flex: 1 1 auto;
+  max-height: 260px;
+}

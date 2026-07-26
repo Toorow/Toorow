@@ -348,7 +348,7 @@ def get_reconciled_journey(
 def bootstrap_journey_from_acceptance(
     conn,
     *,
-    invitation_id: str,
+    invitation_id: str | None,
     org_id: str,
     project_id: str | None,
     operator_identity: str,

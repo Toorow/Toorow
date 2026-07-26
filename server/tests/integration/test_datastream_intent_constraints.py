@@ -24,8 +24,8 @@ def _seed_project(conn, project_id: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, created_by)
-            VALUES (%s, %s, %s, 'story-12.2-test')
+            INSERT INTO app.projects (id, name, slug, created_by, org_id)
+            VALUES (%s, %s, %s, 'story-12.2-test', 'org_test_fixture')
             """,
             (project_id, project_id, project_id),
         )
@@ -59,8 +59,10 @@ def test_plan_versions_are_immutable_and_pointer_is_same_datastream(live_postgre
                 cur.execute(
                     """
                     INSERT INTO app.datastreams
-                        (id, project_id, name, module_name, source_kind, enabled, created_by)
-                    VALUES (%s, %s, %s, 'generic', 'connector_pull', FALSE, 'test')
+                        (id, project_id, name, module_name, source_kind, enabled, created_by,
+                            org_id)
+                    VALUES (%s, %s, %s, 'generic', 'connector_pull', FALSE, 'test',
+                        'org_test_fixture')
                     """,
                     (ds_id, project_id, name),
                 )
@@ -122,8 +124,9 @@ def test_concurrent_revisions_get_unique_ordinals_and_latest_pointer() -> None:
             cur.execute(
                 """
                 INSERT INTO app.datastreams
-                    (id, project_id, name, module_name, source_kind, enabled, created_by)
-                VALUES (%s, %s, 'Concurrent revisions', NULL, 'external_bq', FALSE, 'test')
+                    (id, project_id, name, module_name, source_kind, enabled, created_by, org_id)
+                VALUES (%s, %s, 'Concurrent revisions', NULL, 'external_bq', FALSE, 'test',
+                    'org_test_fixture')
                 """,
                 (datastream_id, project_id),
             )
@@ -189,6 +192,7 @@ def test_concurrent_revisions_get_unique_ordinals_and_latest_pointer() -> None:
     assert [version_number for _, version_number in versions] == [1, 2]
     assert current_plan_id == versions[-1][0]
 
+
 @requires_postgres
 def test_legacy_row_remains_valid(live_postgres) -> None:
     conn = live_postgres
@@ -200,8 +204,9 @@ def test_legacy_row_remains_valid(live_postgres) -> None:
             cur.execute(
                 """
                 INSERT INTO app.datastreams
-                    (id, project_id, name, module_name, schedule_mode, enabled, created_by)
-                VALUES (%s, %s, 'Legacy nightly', 'generic', 'nightly', TRUE, 'test')
+                    (id, project_id, name, module_name, schedule_mode, enabled, created_by, org_id)
+                VALUES (%s, %s, 'Legacy nightly', 'generic', 'nightly', TRUE, 'test',
+                    'org_test_fixture')
                 RETURNING source_kind, current_plan_version_id, enabled
                 """,
                 (ds_id, project_id),

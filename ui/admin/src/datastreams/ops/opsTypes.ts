@@ -102,25 +102,67 @@ export interface PublicationLogEntry {
 export interface ImportLedgerRow {
   id?: string | null;
   execution_id?: string | null;
-  status?: string | null;
+  outcome?: string | null;
   row_count?: number | null;
-  rejection_count?: number | null; // present on ledger rows, not on the execution
-  loaded_at?: string | null;
-  date?: string | null;
+  rejected_row_count?: number | null;
+  snapshot_observed_at?: string | null;
+  created_at?: string | null;
   [k: string]: unknown;
+}
+
+export interface DatastreamRunInterval {
+  from: string;
+  to_exclusive: string;
+}
+
+/** One universal app.datastream_executions row with optional ledger enrichment. */
+export interface DatastreamRun {
+  id: string;
+  state: string;
+  state_changed_at: string | null;
+  row_count: number | null;
+  plan_version_id: string | null;
+  mapping_version_id: string | null;
+  error_code: string | null;
+  created_at: string | null;
+  created_by: string | null;
+  duration_seconds: number | null;
+  recovery_kind: string | null;
+  recovery_interval: DatastreamRunInterval | null;
+  import_evidence: {
+    ledger_id: string | null;
+    outcome: string | null;
+    row_count: number | null;
+    rejected_row_count: number | null;
+    snapshot_observed_at: string | null;
+  } | null;
+  publication_state: "current" | "previously_published" | "unpublished";
 }
 
 /** GET /api/datastreams/{id}/read-model response. */
 export interface DatastreamReadModel {
   datastream_id: string;
   project_id: string;
+  data_project_id: string;
+  datastream: {
+    id: string;
+    name?: string | null;
+    module_name?: string | null;
+    source_kind?: string | null;
+    enabled?: boolean | null;
+    next_run_at?: string | null;
+    current_plan_version?: number | null;
+    [k: string]: unknown;
+  };
   plan_versions: PlanVersion[];
   mapping_versions: MappingVersion[];
   current_published_execution_id: string | null;
   published_execution: PublishedExecution | null;
   current_candidate: CandidateExecution | null;
+  latest_execution: PublishedExecution | null;
   publication_log: PublicationLogEntry[];
   recent_imports: ImportLedgerRow[];
+  runs: DatastreamRun[];
 }
 
 // ---------------------------------------------------------------------------
@@ -128,32 +170,43 @@ export interface DatastreamReadModel {
 // ---------------------------------------------------------------------------
 
 export type BoundedRecoveryKind =
-  | "sync" // Synchronize
+  | "synchronize" // Synchronize
   | "reload" // Reload
   | "reprocess"; // Reprocess
 
-/** POST /bounded/prepare response — the AD-27 immutable proposal. */
+/** POST /bounded/prepare response - the AD-27 immutable proposal. */
 export interface BoundedPreparation {
   preparation_id: string;
-  kind: string;
-  target?: Record<string, unknown> | null;
-  target_versions?: Record<string, unknown> | null;
-  interval?: { date_from?: string | null; date_to_exclusive?: string | null } | null;
-  impact?: Record<string, unknown> | null;
-  quota?: Record<string, unknown> | null;
-  [k: string]: unknown;
+  kind: BoundedRecoveryKind;
+  target: { datastream_id: string; project_id: string };
+  target_versions: {
+    plan_version_id: string | null;
+    mapping_version_id: string | null;
+    policy_version: string;
+  };
+  interval: DatastreamRunInterval | null;
+  impact: Record<string, unknown>;
+  quota: {
+    platform_known: boolean;
+    estimated_points: number;
+    verdict: string;
+    can_proceed: boolean;
+  };
+  lock_ref: string | null;
+  rollback_ref: string | null;
+  reason: string | null;
+  expires_in_seconds: number;
 }
 
 /** POST /bounded/confirm response. */
 export interface BoundedConfirmResult {
   preparation_id: string;
-  operation_id?: string | null;
-  outcome?: string | null;
-  replayed?: boolean | null;
-  result?: Record<string, unknown> | null;
-  [k: string]: unknown;
+  operation_id: string;
+  trace_id: string;
+  outcome: "succeeded" | "failed" | "outcome_unknown";
+  replayed: boolean;
+  result: Record<string, unknown> | null;
 }
-
 // ---------------------------------------------------------------------------
 // 12.12 dataset recovery (rollback / replace / append)
 // ---------------------------------------------------------------------------

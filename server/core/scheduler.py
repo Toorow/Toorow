@@ -844,7 +844,7 @@ def _dispatch_hourly_datastreams(
     A lean sibling of _dispatch_nightly_datastreams (NOT a refactor of it -- the
     nightly path's per-connection fallback + refetch ladder are nightly concerns).
     Differences from nightly:
-      * WHERE ds.schedule_mode = 'hourly' (migration 087 widened the CHECK).
+      * WHERE ds.schedule_mode = 'hourly' (migration 110 widened the CHECK).
       * The window is anchored to TODAY inclusive ([today - (window-1), today]) so an
         hourly run captures the day's accumulating data (date-grain invariant: still a
         DATE window, never an hour -- a more frequent re-pull of the same daily grain).

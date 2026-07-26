@@ -33,8 +33,8 @@ def _seed_project(conn, project_id: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, created_by)
-            VALUES (%s, %s, %s, 'test')
+            INSERT INTO app.projects (id, name, slug, created_by, org_id)
+            VALUES (%s, %s, %s, 'test', 'org_test_fixture')
             ON CONFLICT DO NOTHING
             """,
             (project_id, project_id, project_id),
@@ -47,8 +47,9 @@ def _seed_connection(conn, conn_id: str, project_id: str, provider: str = "ga") 
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.connection_ref (id, provider, nango_connection_id, project_id)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO app.connection_ref (id, provider, nango_connection_id, project_id,
+                owner_org_id, owner_identity)
+            VALUES (%s, %s, %s, %s, 'org_test_fixture', 'tester@example.com')
             ON CONFLICT DO NOTHING
             """,
             (conn_id, provider, f"nango_{conn_id}", project_id),
@@ -96,8 +97,8 @@ class TestDatastreamsUniqueConstraint:
                 cur.execute(
                     """
                     INSERT INTO app.datastreams
-                        (id, project_id, name, module_name, created_by)
-                    VALUES (%s, %s, 'My Stream', 'google-analytics', 'test')
+                        (id, project_id, name, module_name, created_by, org_id)
+                    VALUES (%s, %s, 'My Stream', 'google-analytics', 'test', 'org_test_fixture')
                     """,
                     (ds_id1, project_id),
                 )
@@ -109,8 +110,8 @@ class TestDatastreamsUniqueConstraint:
                     cur.execute(
                         """
                         INSERT INTO app.datastreams
-                            (id, project_id, name, module_name, created_by)
-                        VALUES (%s, %s, 'My Stream', 'meta-ads', 'test')
+                            (id, project_id, name, module_name, created_by, org_id)
+                        VALUES (%s, %s, 'My Stream', 'meta-ads', 'test', 'org_test_fixture')
                         """,
                         (ds_id2, project_id),
                     )
@@ -132,8 +133,9 @@ class TestDatastreamsUniqueConstraint:
                     cur.execute(
                         """
                         INSERT INTO app.datastreams
-                            (id, project_id, name, module_name, created_by)
-                        VALUES (%s, %s, 'Shared Name', 'google-analytics', 'test')
+                            (id, project_id, name, module_name, created_by, org_id)
+                        VALUES (%s, %s, 'Shared Name', 'google-analytics', 'test',
+                            'org_test_fixture')
                         """,
                         (f"ds_{_unique_id()}", proj),
                     )
@@ -162,8 +164,8 @@ class TestDatastreamsFKConstraint:
                 cur.execute(
                     """
                     INSERT INTO app.datastreams
-                        (id, project_id, name, module_name, created_by)
-                    VALUES (%s, %s, 'Test', 'ga', 'test')
+                        (id, project_id, name, module_name, created_by, org_id)
+                    VALUES (%s, %s, 'Test', 'ga', 'test', 'org_test_fixture')
                     """,
                     (ds_id, nonexistent_project),
                 )
@@ -185,8 +187,9 @@ class TestDatastreamsFKConstraint:
                     cur.execute(
                         """
                         INSERT INTO app.datastreams
-                            (id, project_id, name, module_name, connection_ref_id, created_by)
-                        VALUES (%s, %s, 'Test', 'ga', 'conn_ghost_xxx', 'test')
+                            (id, project_id, name, module_name, connection_ref_id, created_by,
+                                org_id)
+                        VALUES (%s, %s, 'Test', 'ga', 'conn_ghost_xxx', 'test', 'org_test_fixture')
                         """,
                         (ds_id, project_id),
                     )
@@ -216,8 +219,8 @@ class TestDatastreamMappingsConstraint:
                 cur.execute(
                     """
                     INSERT INTO app.datastreams
-                        (id, project_id, name, module_name, created_by)
-                    VALUES (%s, %s, 'Mapping Test', 'ga', 'test')
+                        (id, project_id, name, module_name, created_by, org_id)
+                    VALUES (%s, %s, 'Mapping Test', 'ga', 'test', 'org_test_fixture')
                     """,
                     (ds_id, project_id),
                 )
@@ -260,8 +263,8 @@ class TestDatastreamMappingsConstraint:
                 cur.execute(
                     """
                     INSERT INTO app.datastreams
-                        (id, project_id, name, module_name, created_by)
-                    VALUES (%s, %s, 'FK Test', 'ga', 'test')
+                        (id, project_id, name, module_name, created_by, org_id)
+                    VALUES (%s, %s, 'FK Test', 'ga', 'test', 'org_test_fixture')
                     """,
                     (ds_id, project_id),
                 )
@@ -293,8 +296,14 @@ class TestTargetFieldsSeeded:
         """After migration 023, canonical metrics must exist in app.target_fields."""
         conn = live_postgres
         expected_metrics = {
-            "sessions", "active_users", "conversions", "clicks",
-            "impressions", "cost", "revenue", "average_position",
+            "sessions",
+            "active_users",
+            "conversions",
+            "clicks",
+            "impressions",
+            "cost",
+            "revenue",
+            "average_position",
         }
         with conn.cursor() as cur:
             cur.execute(
@@ -326,9 +335,7 @@ class TestTargetFieldsSeeded:
         """average_position has measure='average' (non-additive via weighted avg semantics)."""
         conn = live_postgres
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT measure FROM app.target_fields WHERE name = 'average_position'"
-            )
+            cur.execute("SELECT measure FROM app.target_fields WHERE name = 'average_position'")
             row = cur.fetchone()
         assert row is not None, "average_position not found in target_fields"
         assert row[0] == "average"
@@ -382,8 +389,9 @@ class TestBackfillIdempotence:
                     """
                     INSERT INTO app.datastreams
                         (id, project_id, name, module_name, connection_ref_id,
-                         report_profile_id, created_by)
-                    VALUES (%s, %s, %s, 'google-analytics', %s, 'standard_daily', 'system')
+                         report_profile_id, created_by, org_id)
+                    VALUES (%s, %s, %s, 'google-analytics', %s, 'standard_daily', 'system',
+                        'org_test_fixture')
                     ON CONFLICT (project_id, name) DO NOTHING
                     """,
                     (ds_id, project_id, ds_name, conn_id),
@@ -397,8 +405,9 @@ class TestBackfillIdempotence:
                     """
                     INSERT INTO app.datastreams
                         (id, project_id, name, module_name, connection_ref_id,
-                         report_profile_id, created_by)
-                    VALUES (%s, %s, %s, 'google-analytics', %s, 'standard_daily', 'system')
+                         report_profile_id, created_by, org_id)
+                    VALUES (%s, %s, %s, 'google-analytics', %s, 'standard_daily', 'system',
+                        'org_test_fixture')
                     ON CONFLICT (project_id, name) DO NOTHING
                     """,
                     (ds_id2, project_id, ds_name, conn_id),

@@ -1,73 +1,129 @@
-/**
- * Story 12.13 — the wizard's thin API helper.
- *
- * Reuses the EXACT fetch + Bearer-header convention proven across the Epic-36
- * datastream cards (PremierRapportCard / RapportPretCard / ConfigurationHoteCard):
- * a bearer token, `cache: "no-store"`, an `Idempotency-Key` on every mutation,
- * and stable French error messages. Every mutation goes through the governed
- * server API only (12.14 AC5) — nothing writes client-side.
- *
- * Where a create route is only partially wired (Phase B), the caller degrades
- * gracefully (disabled control + honest copy) rather than fabricating a call —
- * this module never invents a response.
- */
+/** Thin, source-agnostic API client for the canonical Datastream wizard. */
 import type {
   ConnectionSummary,
   ImportPreview,
   SourceCapabilities,
 } from "./wizardTypes";
+import { apiFetch } from "../../lib/apiFetch";
 
 export interface WizardApiConfig {
   apiBase: string;
-  apiToken: string;
   projectId: string;
 }
 
-function authHeaders(token: string): HeadersInit {
-  return token ? { Authorization: `Bearer ${token}` } : {};
+export interface ServerValidationIssue {
+  code: string;
+  path?: string;
+  message: string;
+  repair?: Record<string, unknown>;
+  details?: Record<string, unknown>;
 }
 
-function jsonHeaders(token: string, idempotent: boolean): HeadersInit {
+export interface IntentValidationResponse {
+  normalized_intent: Record<string, unknown>;
+  content_hash: string;
+  executable: boolean;
+  issues: ServerValidationIssue[];
+  capability_contract_version: string | null;
+  capability_fingerprint: string | null;
+}
+
+export interface DatastreamPlanVersion {
+  id: string;
+  executable: boolean;
+  content_hash?: string;
+  capability_contract_version?: string | null;
+  capability_fingerprint?: string | null;
+  normalized_payload?: Record<string, unknown>;
+  validation_issues?: ServerValidationIssue[];
+  idempotent_replay?: boolean;
+}
+
+export interface DatastreamMutationResult {
+  id: string;
+  plan_version?: DatastreamPlanVersion;
+  enabled?: boolean;
+}
+
+export class WizardApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly issues: ServerValidationIssue[];
+
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    issues: ServerValidationIssue[] = [],
+  ) {
+    super(message);
+    this.name = "WizardApiError";
+    this.status = status;
+    this.code = code;
+    this.issues = issues;
+  }
+}
+
+function jsonHeaders(idempotencyKey?: string): HeadersInit {
   return {
-    ...authHeaders(token),
     "Content-Type": "application/json",
-    ...(idempotent ? { "Idempotency-Key": crypto.randomUUID() } : {}),
+    ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
   };
 }
 
-/** A stable, French, HTTP-status-aware error. */
-export function httpError(status: number, fallback: string): Error {
+function fallbackMessage(status: number, fallback: string): string {
   if (status === 401 || status === 403) {
-    return new Error("Accès refusé : vos droits ne permettent pas cette action.");
+    return "Access denied: your permissions do not allow this action.";
   }
-  if (status === 404) {
-    return new Error("Ressource introuvable ou hors de votre périmètre.");
-  }
-  if (status === 409) {
-    return new Error("Conflit : cette opération a déjà été enregistrée ou est en cours.");
-  }
-  if (status === 422) {
-    return new Error("Validation refusée : corrigez la configuration avant de continuer.");
-  }
-  return new Error(`${fallback} (HTTP ${status}).`);
+  if (status === 404) return "Resource not found or outside the active project.";
+  if (status === 409) return "This request conflicts with an existing operation.";
+  if (status === 422) return "Validation failed. Review the configuration and try again.";
+  return `${fallback} (HTTP ${status}).`;
 }
 
-/** GET /api/connections — project-owned connections for the Source stage. */
+async function responseError(response: Response, fallback: string): Promise<WizardApiError> {
+  let code = "unavailable";
+  let message = fallbackMessage(response.status, fallback);
+  let issues: ServerValidationIssue[] = [];
+  try {
+    const body = (await response.json()) as {
+      code?: string;
+      message?: string;
+      issues?: ServerValidationIssue[];
+      errors?: ServerValidationIssue[];
+    };
+    code = body.code ?? code;
+    message = body.message ?? message;
+    issues = body.issues ?? body.errors ?? [];
+    if (issues.length > 0) {
+      const details = issues
+        .map((issue) => `${issue.message}${issue.path ? ` (${issue.path})` : ""}`)
+        .join(" ");
+      message = body.message ? `${body.message} ${details}` : details;
+    }
+  } catch {
+    // The HTTP status and stable fallback remain authoritative.
+  }
+  return new WizardApiError(response.status, code, message, issues);
+}
+
+/** Project/org-scoped provider accounts usable by the active operator. */
 export async function listConnections(
   cfg: WizardApiConfig,
 ): Promise<ConnectionSummary[]> {
   const qs = `project_id=${encodeURIComponent(cfg.projectId)}`;
-  const response = await fetch(`${cfg.apiBase}/api/connections?${qs}`, {
+  const response = await apiFetch(`${cfg.apiBase}/api/connections?${qs}`, {
     method: "GET",
-    headers: authHeaders(cfg.apiToken),
     cache: "no-store",
   });
-  if (!response.ok) throw httpError(response.status, "Connexions indisponibles");
-  const data = (await response.json()) as { connections?: ConnectionSummary[] } | ConnectionSummary[];
+  if (!response.ok) throw await responseError(response, "Provider accounts are unavailable");
+  const data = (await response.json()) as
+    | { connections?: ConnectionSummary[] }
+    | ConnectionSummary[];
   return Array.isArray(data) ? data : data.connections ?? [];
 }
 
-/** GET /api/source-capabilities — the governed connector capability catalog (12.1). */
+/** Governed, project-scoped connector capability catalog. */
 export async function getSourceCapabilities(
   cfg: WizardApiConfig,
   connectionRefId: string,
@@ -75,31 +131,28 @@ export async function getSourceCapabilities(
   const qs =
     `project_id=${encodeURIComponent(cfg.projectId)}` +
     `&connection_ref_id=${encodeURIComponent(connectionRefId)}`;
-  const response = await fetch(`${cfg.apiBase}/api/source-capabilities?${qs}`, {
+  const response = await apiFetch(`${cfg.apiBase}/api/source-capabilities?${qs}`, {
     method: "GET",
-    headers: authHeaders(cfg.apiToken),
     cache: "no-store",
   });
-  if (!response.ok) throw httpError(response.status, "Capacités de la source indisponibles");
+  if (!response.ok) {
+    throw await responseError(response, "Source capabilities are unavailable");
+  }
   return (await response.json()) as SourceCapabilities;
 }
 
-/**
- * POST /api/datastreams/{id}/imports/preview — bounded CSV/Excel preview, NO
- * publish (12.9). The file is sent base64 in the JSON body (the wired route
- * accepts `file_base64`).
- */
+/** Bounded CSV/Excel preview; never publishes. */
 export async function previewImport(
   cfg: WizardApiConfig,
   datastreamId: string,
   fileBase64: string,
   filename: string,
 ): Promise<ImportPreview> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${cfg.apiBase}/api/datastreams/${encodeURIComponent(datastreamId)}/imports/preview`,
     {
       method: "POST",
-      headers: jsonHeaders(cfg.apiToken, false),
+      headers: jsonHeaders(),
       body: JSON.stringify({
         project_id: cfg.projectId,
         file_base64: fileBase64,
@@ -107,93 +160,118 @@ export async function previewImport(
       }),
     },
   );
-  if (!response.ok) {
-    // 422 carries a stable parse/contract code the caller surfaces verbatim.
-    let detail = "";
-    try {
-      const body = (await response.json()) as { code?: string; message?: string };
-      detail = body.message || body.code || "";
-    } catch {
-      /* ignore */
-    }
-    if (response.status === 422 && detail) throw new Error(`Fichier refusé : ${detail}`);
-    throw httpError(response.status, "Aperçu du fichier indisponible");
-  }
+  if (!response.ok) throw await responseError(response, "File preview is unavailable");
   return (await response.json()) as ImportPreview;
 }
 
-/**
- * POST /api/datastreams/{datastream_id}/managed-feed/configure — upsert the
- * recurring Google Sheets sync config (12.10). The server (admin_api.py
- * `_configure_managed_feed_sync`) REQUIRES a non-empty `connection_id`,
- * `spreadsheet_id` and `sheet_range` (422 otherwise). The Google connection id
- * must therefore be collected on the Sheets sub-flow BEFORE this call; the shell
- * gates the call when it is missing rather than firing a doomed request.
- */
+/** Persist recurring managed-feed configuration after a draft exists. */
 export async function configureManagedFeed(
   cfg: WizardApiConfig,
   datastreamId: string,
   body: Record<string, unknown>,
+  idempotencyKey: string,
 ): Promise<Record<string, unknown>> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${cfg.apiBase}/api/datastreams/${encodeURIComponent(datastreamId)}/managed-feed/configure`,
     {
       method: "POST",
-      headers: jsonHeaders(cfg.apiToken, false),
+      headers: jsonHeaders(idempotencyKey),
       body: JSON.stringify({ project_id: cfg.projectId, ...body }),
     },
   );
-  if (!response.ok) throw httpError(response.status, "Configuration du flux managé impossible");
+  if (!response.ok) {
+    throw await responseError(response, "Managed-feed configuration could not be saved");
+  }
   return (await response.json()) as Record<string, unknown>;
 }
 
-/**
- * POST /api/datastreams — create (or Save draft) a versioned datastream intent.
- * A versioned create requires an Idempotency-Key and an `intent` object; the
- * server derives writer ownership from source kind (12.2 AC1).
- */
 export async function saveDatastreamDraft(
   cfg: WizardApiConfig,
   body: { name: string; intent: Record<string, unknown>; reason?: string },
-): Promise<{ id: string; plan_version?: unknown }> {
-  const response = await fetch(`${cfg.apiBase}/api/datastreams`, {
+  idempotencyKey: string,
+): Promise<DatastreamMutationResult> {
+  const response = await apiFetch(`${cfg.apiBase}/api/datastreams`, {
     method: "POST",
-    headers: jsonHeaders(cfg.apiToken, true),
+    headers: jsonHeaders(idempotencyKey),
     body: JSON.stringify({ project_id: cfg.projectId, ...body }),
   });
-  if (!response.ok) throw httpError(response.status, "Enregistrement du brouillon impossible");
-  return (await response.json()) as { id: string; plan_version?: unknown };
+  if (!response.ok) throw await responseError(response, "Draft could not be saved");
+  return (await response.json()) as DatastreamMutationResult;
 }
 
-/**
- * PATCH /api/datastreams/{id} — append a NEW immutable version to an EXISTING
- * draft datastream (versioned revise path). Same intent contract + Idempotency-
- * Key as create; the server reads `source.kind` and mints a fresh plan version.
- * Used instead of a second create so an existing draft is versioned in place
- * rather than orphaned by a duplicate row.
- */
 export async function reviseDatastreamDraft(
   cfg: WizardApiConfig,
   datastreamId: string,
   body: { name: string; intent: Record<string, unknown>; reason?: string },
-): Promise<{ id: string; plan_version?: unknown }> {
-  const response = await fetch(
+  idempotencyKey: string,
+): Promise<DatastreamMutationResult> {
+  const response = await apiFetch(
     `${cfg.apiBase}/api/datastreams/${encodeURIComponent(datastreamId)}`,
     {
       method: "PATCH",
-      headers: jsonHeaders(cfg.apiToken, true),
+      headers: jsonHeaders(idempotencyKey),
       body: JSON.stringify({ project_id: cfg.projectId, ...body }),
     },
   );
-  if (!response.ok) throw httpError(response.status, "Mise à jour du brouillon impossible");
-  return (await response.json()) as { id: string; plan_version?: unknown };
+  if (!response.ok) throw await responseError(response, "Draft could not be updated");
+  return (await response.json()) as DatastreamMutationResult;
 }
 
-/** Read a File as a base64 string (no data: prefix). */
+/** Server-side validation against current scoped capabilities and schedule policy. */
+export async function validateDatastreamDraft(
+  cfg: WizardApiConfig,
+  datastreamId: string,
+  intent: Record<string, unknown>,
+): Promise<IntentValidationResponse> {
+  const response = await apiFetch(
+    `${cfg.apiBase}/api/datastreams/${encodeURIComponent(datastreamId)}/validate`,
+    {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ project_id: cfg.projectId, intent }),
+    },
+  );
+  if (response.ok || response.status === 422) {
+    const body = (await response.json()) as IntentValidationResponse & { code?: string };
+    if (typeof body.executable === "boolean" && Array.isArray(body.issues)) return body;
+    throw new WizardApiError(
+      response.status,
+      body.code ?? "invalid_validation_response",
+      "The server returned incomplete validation evidence.",
+      body.issues ?? [],
+    );
+  }
+  throw await responseError(response, "Plan validation is unavailable");
+}
+
+/** Enable the exact current executable plan version. */
+export async function activateDatastream(
+  cfg: WizardApiConfig,
+  datastreamId: string,
+  planVersionId: string,
+  idempotencyKey: string,
+): Promise<DatastreamMutationResult> {
+  const response = await apiFetch(
+    `${cfg.apiBase}/api/datastreams/${encodeURIComponent(datastreamId)}`,
+    {
+      method: "PATCH",
+      headers: jsonHeaders(idempotencyKey),
+      body: JSON.stringify({
+        project_id: cfg.projectId,
+        enabled: true,
+        plan_version_id: planVersionId,
+      }),
+    },
+  );
+  if (!response.ok) throw await responseError(response, "Datastream activation failed");
+  return (await response.json()) as DatastreamMutationResult;
+}
+
+/** Read a File as a base64 string (without the data: prefix). */
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Lecture du fichier impossible."));
+    reader.onerror = () => reject(new Error("The selected file could not be read."));
     reader.onload = () => {
       const result = String(reader.result ?? "");
       const comma = result.indexOf(",");

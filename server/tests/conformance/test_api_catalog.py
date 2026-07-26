@@ -73,7 +73,11 @@ class _ModuleReport:
         if self.missing:
             return f"  [{self.name}] catalog=MISSING"
         counts_str = ", ".join(f"{k}={v}" for k, v in sorted(self.counts.items()))
-        status = "OK" if not self.has_issues() else f"ISSUES({len(self.schema_issues) + len(self.diff_issues)})"
+        status = (
+            "OK"
+            if not self.has_issues()
+            else f"ISSUES({len(self.schema_issues) + len(self.diff_issues)})"
+        )
         return f"  [{self.name}] catalog=PRESENT {counts_str} status={status}"
 
 
@@ -99,16 +103,12 @@ def _build_module_report(module_dir: Path, manifest: dict) -> _ModuleReport:
 
     # Schema validation
     schema_issues = validate_catalog_schema(catalog)
-    report.schema_issues = [
-        f"{i.path}: [{i.code}] {i.message}" for i in schema_issues
-    ]
+    report.schema_issues = [f"{i.path}: [{i.code}] {i.message}" for i in schema_issues]
 
     # Diff against manifest (only when schema is clean)
     if not schema_issues:
         diff_issues = diff_catalog_manifest(catalog, manifest)
-        report.diff_issues = [
-            f"{i.path}: [{i.code}] {i.message}" for i in diff_issues
-        ]
+        report.diff_issues = [f"{i.path}: [{i.code}] {i.message}" for i in diff_issues]
 
     return report
 
@@ -122,14 +122,11 @@ def test_api_catalog_conformance_gate() -> None:
     In fail mode: asserts zero issues across all modules.
     """
     mode = _gate_mode()
-    assert mode in {"warn", "fail"}, (
-        f"CATALOG_GATE_MODE must be 'warn' or 'fail', got {mode!r}"
-    )
+    assert mode in {"warn", "fail"}, f"CATALOG_GATE_MODE must be 'warn' or 'fail', got {mode!r}"
 
     manifests = _all_manifests()
     assert len(manifests) >= EXPECTED_MODULE_COUNT_MIN, (
-        f"Expected at least {EXPECTED_MODULE_COUNT_MIN} module manifests, "
-        f"found {len(manifests)}."
+        f"Expected at least {EXPECTED_MODULE_COUNT_MIN} module manifests, found {len(manifests)}."
     )
 
     reports: list[_ModuleReport] = []
@@ -169,11 +166,8 @@ def test_api_catalog_conformance_gate() -> None:
         for rep in reports:
             if rep.missing:
                 all_issues.append(f"{rep.name}: missing api_catalog.json")
-            all_issues.extend(
-                f"{rep.name}: {line}" for line in rep.schema_issues + rep.diff_issues
-            )
-        assert all_issues == [], (
-            "CATALOG_GATE_MODE=fail: found catalog issues:\n"
-            + "\n".join(all_issues)
+            all_issues.extend(f"{rep.name}: {line}" for line in rep.schema_issues + rep.diff_issues)
+        assert all_issues == [], "CATALOG_GATE_MODE=fail: found catalog issues:\n" + "\n".join(
+            all_issues
         )
     # In warn mode the test always passes after printing the report.

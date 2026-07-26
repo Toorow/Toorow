@@ -128,21 +128,23 @@ def _seed_ledger_project(conn):
 
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO app.projects (id, name, slug, created_by) "
-            "VALUES (%s,%s,%s,'test') ON CONFLICT DO NOTHING",
+            "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
+            "VALUES (%s,%s,%s,'test', 'org_test_fixture') ON CONFLICT DO NOTHING",
             (project_id, project_id, project_id),
         )
         cur.execute(
             "INSERT INTO app.connection_ref "
-            "(id, nango_connection_id, provider, project_id, status, enabled) "
-            "VALUES (%s,%s,'google-analytics',%s,'active',TRUE)",
+            "(id, nango_connection_id, provider, project_id, status, enabled, owner_org_id, "
+            "owner_identity) "
+            "VALUES (%s,%s,'google-analytics',%s,'active',TRUE, 'org_test_fixture', "
+            "'tester@example.com')",
             (conn_ref_id, f"nango-{conn_ref_id[-8:]}", project_id),
         )
         cur.execute(
             "INSERT INTO app.datastreams "
             "(id, project_id, name, module_name, connection_ref_id, "
-            " report_profile_id, enabled) "
-            "VALUES (%s,%s,%s,'google-analytics',%s,'standard_daily',TRUE)",
+            " report_profile_id, enabled, org_id) "
+            "VALUES (%s,%s,%s,'google-analytics',%s,'standard_daily',TRUE, 'org_test_fixture')",
             (ds_id, project_id, f"stream-{ds_id[-6:]}", conn_ref_id),
         )
         # pull_A: 2026-06-01..2026-06-05, done/ok
@@ -192,8 +194,11 @@ def _seed_ledger_project(conn):
 def _cleanup_ledger(conn, project_id, conn_ref_id, ds_id):
     """Delete seeded rows in FK-safe order."""
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM app.pull_verifications WHERE pull_id IN "
-                    "(SELECT pull_id FROM app.pull_jobs WHERE datastream_id=%s)", (ds_id,))
+        cur.execute(
+            "DELETE FROM app.pull_verifications WHERE pull_id IN "
+            "(SELECT pull_id FROM app.pull_jobs WHERE datastream_id=%s)",
+            (ds_id,),
+        )
         cur.execute("DELETE FROM app.pull_jobs WHERE datastream_id=%s", (ds_id,))
         cur.execute("DELETE FROM app.datastreams WHERE id=%s", (ds_id,))
         cur.execute("DELETE FROM app.connection_ref WHERE id=%s", (conn_ref_id,))
@@ -212,11 +217,12 @@ def test_ledger_multi_day_multi_range_correct_statuses_through_build_asgi_app():
     with _live_conn() as pg:
         project_id, conn_ref_id, ds_id, _jobs = _seed_ledger_project(pg)
         try:
-            with patch(
-                "core.admin_api._check_auth",
-                new=AsyncMock(return_value=(True, "test@test")),
-            ), patch(
-                "core.project_access.identity_has_project_access", return_value=True
+            with (
+                patch(
+                    "core.admin_api._check_auth",
+                    new=AsyncMock(return_value=(True, "test@test")),
+                ),
+                patch("core.project_access.identity_has_project_access", return_value=True),
             ):
                 client = _build_client()
                 resp = client.get(
@@ -231,9 +237,7 @@ def test_ledger_multi_day_multi_range_correct_statuses_through_build_asgi_app():
             by_date = {row["date"]: row["status"] for row in body["ledger"]}
 
             # 16-day window must be fully present.
-            assert len(body["ledger"]) == 16, (
-                f"Expected 16 ledger rows, got {len(body['ledger'])}"
-            )
+            assert len(body["ledger"]) == 16, f"Expected 16 ledger rows, got {len(body['ledger'])}"
 
             # pull_A days (2026-06-01..2026-06-05) -- verdict=ok -> status='ok'
             for d in ("2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05"):
@@ -250,9 +254,7 @@ def test_ledger_multi_day_multi_range_correct_statuses_through_build_asgi_app():
 
             # pull_C days (2026-06-12..2026-06-16) -- verdict=partial -> status='partial'
             for d in ("2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16"):
-                assert by_date[d] == "partial", (
-                    f"{d}: expected 'partial', got {by_date[d]!r}"
-                )
+                assert by_date[d] == "partial", f"{d}: expected 'partial', got {by_date[d]!r}"
         finally:
             _cleanup_ledger(pg, project_id, conn_ref_id, ds_id)
 
@@ -273,21 +275,23 @@ def test_ledger_running_and_failed_pull_statuses_through_build_asgi_app():
 
         with pg.cursor() as cur:
             cur.execute(
-                "INSERT INTO app.projects (id, name, slug, created_by) "
-                "VALUES (%s,%s,%s,'test') ON CONFLICT DO NOTHING",
+                "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
+                "VALUES (%s,%s,%s,'test', 'org_test_fixture') ON CONFLICT DO NOTHING",
                 (project_id, project_id, project_id),
             )
             cur.execute(
                 "INSERT INTO app.connection_ref "
-                "(id, nango_connection_id, provider, project_id, status, enabled) "
-                "VALUES (%s,%s,'google-analytics',%s,'active',TRUE)",
+                "(id, nango_connection_id, provider, project_id, status, enabled, owner_org_id, "
+                "owner_identity) "
+                "VALUES (%s,%s,'google-analytics',%s,'active',TRUE, 'org_test_fixture', "
+                "'tester@example.com')",
                 (conn_ref_id, f"nango-{conn_ref_id[-8:]}", project_id),
             )
             cur.execute(
                 "INSERT INTO app.datastreams "
                 "(id, project_id, name, module_name, connection_ref_id, "
-                " report_profile_id, enabled) "
-                "VALUES (%s,%s,%s,'google-analytics',%s,'standard_daily',TRUE)",
+                " report_profile_id, enabled, org_id) "
+                "VALUES (%s,%s,%s,'google-analytics',%s,'standard_daily',TRUE, 'org_test_fixture')",
                 (ds_id, project_id, f"stream-{ds_id[-6:]}", conn_ref_id),
             )
             # failed pull seeded first (earlier enqueued_at via explicit NOW()-10min)
@@ -314,11 +318,12 @@ def test_ledger_running_and_failed_pull_statuses_through_build_asgi_app():
         pg.commit()
 
         try:
-            with patch(
-                "core.admin_api._check_auth",
-                new=AsyncMock(return_value=(True, "test@test")),
-            ), patch(
-                "core.project_access.identity_has_project_access", return_value=True
+            with (
+                patch(
+                    "core.admin_api._check_auth",
+                    new=AsyncMock(return_value=(True, "test@test")),
+                ),
+                patch("core.project_access.identity_has_project_access", return_value=True),
             ):
                 client = _build_client()
                 resp = client.get(
@@ -331,14 +336,10 @@ def test_ledger_running_and_failed_pull_statuses_through_build_asgi_app():
 
             # running pull is latest for 01-05 -> running
             for d in ("2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"):
-                assert by_date[d] == "running", (
-                    f"{d}: expected 'running', got {by_date[d]!r}"
-                )
+                assert by_date[d] == "running", f"{d}: expected 'running', got {by_date[d]!r}"
             # failed pull is the ONLY pull covering 06-07 -> failed
             for d in ("2026-07-06", "2026-07-07"):
-                assert by_date[d] == "failed", (
-                    f"{d}: expected 'failed', got {by_date[d]!r}"
-                )
+                assert by_date[d] == "failed", f"{d}: expected 'failed', got {by_date[d]!r}"
         finally:
             with pg.cursor() as cur:
                 cur.execute("DELETE FROM app.pull_jobs WHERE datastream_id=%s", (ds_id,))
@@ -376,22 +377,25 @@ def _seed_chain_project(conn):
 
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO app.projects (id, name, slug, created_by) "
-            "VALUES (%s,%s,%s,'test') ON CONFLICT DO NOTHING",
+            "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
+            "VALUES (%s,%s,%s,'test', 'org_test_fixture') ON CONFLICT DO NOTHING",
             (project_id, project_id, project_id),
         )
         cur.execute(
             "INSERT INTO app.connection_ref "
-            "(id, nango_connection_id, provider, project_id, status, enabled) "
-            "VALUES (%s,%s,'google-analytics',%s,'active',TRUE)",
+            "(id, nango_connection_id, provider, project_id, status, enabled, owner_org_id, "
+            "owner_identity) "
+            "VALUES (%s,%s,'google-analytics',%s,'active',TRUE, 'org_test_fixture', "
+            "'tester@example.com')",
             (conn_ref_id, f"nango-{conn_ref_id[-8:]}", project_id),
         )
         # ds_sessions: maps sessions -> sessions
         cur.execute(
             "INSERT INTO app.datastreams "
             "(id, project_id, name, module_name, connection_ref_id, "
-            " report_profile_id, enabled) "
-            "VALUES (%s,%s,'ds-sessions','google-analytics',%s,'standard_daily',TRUE)",
+            " report_profile_id, enabled, org_id) "
+            "VALUES (%s,%s,'ds-sessions','google-analytics',%s,'standard_daily',TRUE, "
+            "'org_test_fixture')",
             (ds_sess_id, project_id, conn_ref_id),
         )
         cur.execute(
@@ -404,8 +408,9 @@ def _seed_chain_project(conn):
         cur.execute(
             "INSERT INTO app.datastreams "
             "(id, project_id, name, module_name, connection_ref_id, "
-            " report_profile_id, enabled) "
-            "VALUES (%s,%s,'ds-clicks','google-analytics',%s,'standard_daily',TRUE)",
+            " report_profile_id, enabled, org_id) "
+            "VALUES (%s,%s,'ds-clicks','google-analytics',%s,'standard_daily',TRUE, "
+            "'org_test_fixture')",
             (ds_clk_id, project_id, conn_ref_id),
         )
         cur.execute(
@@ -421,9 +426,7 @@ def _seed_chain_project(conn):
 def _cleanup_chain(conn, project_id, conn_ref_id, ds_ids):
     with conn.cursor() as cur:
         for ds_id in ds_ids:
-            cur.execute(
-                "DELETE FROM app.datastream_mappings WHERE datastream_id=%s", (ds_id,)
-            )
+            cur.execute("DELETE FROM app.datastream_mappings WHERE datastream_id=%s", (ds_id,))
             cur.execute("DELETE FROM app.datastreams WHERE id=%s", (ds_id,))
         cur.execute("DELETE FROM app.connection_ref WHERE id=%s", (conn_ref_id,))
         cur.execute("DELETE FROM app.projects WHERE id=%s", (project_id,))
@@ -452,27 +455,22 @@ def test_report_chain_multi_metric_multi_datastream_statuses_through_build_asgi_
                 "llm_commentary_guidelines": None,
             }
 
-            with patch(
-                "core.admin_api._check_auth",
-                new=AsyncMock(return_value=(True, "test@test")),
-            ), patch(
-                "core.project_access.identity_has_project_access", return_value=True
-            ), patch(
-                "core.flows._base_report_doc", return_value=merged_doc
-            ), patch(
-                "core.flows._fetch_report_override", return_value=None
-            ), patch(
-                "core.flows._merge_report", return_value=merged_doc
+            with (
+                patch(
+                    "core.admin_api._check_auth",
+                    new=AsyncMock(return_value=(True, "test@test")),
+                ),
+                patch("core.project_access.identity_has_project_access", return_value=True),
+                patch("core.flows._base_report_doc", return_value=merged_doc),
+                patch("core.flows._fetch_report_override", return_value=None),
+                patch("core.flows._merge_report", return_value=merged_doc),
             ):
                 client = _build_client()
                 resp = client.get(
-                    "/api/reports/google-analytics/overview_daily/chain"
-                    f"?project_id={project_id}",
+                    f"/api/reports/google-analytics/overview_daily/chain?project_id={project_id}",
                 )
 
-            assert resp.status_code == 200, (
-                f"Unexpected status {resp.status_code}: {resp.text}"
-            )
+            assert resp.status_code == 200, f"Unexpected status {resp.status_code}: {resp.text}"
             body = resp.json()
 
             # Validation block
@@ -481,8 +479,7 @@ def test_report_chain_multi_metric_multi_datastream_statuses_through_build_asgi_
                 f"Expected ok_count=2, got {body['validation']['ok_count']}"
             )
             assert len(body["validation"]["warnings"]) == 1, (
-                f"Expected 1 warning (impressions no_stream), got "
-                f"{body['validation']['warnings']}"
+                f"Expected 1 warning (impressions no_stream), got {body['validation']['warnings']}"
             )
 
             # Per-metric statuses
@@ -521,22 +518,19 @@ def test_report_chain_all_not_in_dictionary_when_no_target_fields_match():
                 "llm_commentary_guidelines": None,
             }
 
-            with patch(
-                "core.admin_api._check_auth",
-                new=AsyncMock(return_value=(True, "test@test")),
-            ), patch(
-                "core.project_access.identity_has_project_access", return_value=True
-            ), patch(
-                "core.flows._base_report_doc", return_value=merged_doc
-            ), patch(
-                "core.flows._fetch_report_override", return_value=None
-            ), patch(
-                "core.flows._merge_report", return_value=merged_doc
+            with (
+                patch(
+                    "core.admin_api._check_auth",
+                    new=AsyncMock(return_value=(True, "test@test")),
+                ),
+                patch("core.project_access.identity_has_project_access", return_value=True),
+                patch("core.flows._base_report_doc", return_value=merged_doc),
+                patch("core.flows._fetch_report_override", return_value=None),
+                patch("core.flows._merge_report", return_value=merged_doc),
             ):
                 client = _build_client()
                 resp = client.get(
-                    "/api/reports/test-mod/ghost_report/chain"
-                    f"?project_id={project_id}",
+                    f"/api/reports/test-mod/ghost_report/chain?project_id={project_id}",
                 )
 
             assert resp.status_code == 200
@@ -577,8 +571,8 @@ def _seed_dq_project(conn):
     with conn.cursor() as cur:
         for pid in (project_id, other_project_id):
             cur.execute(
-                "INSERT INTO app.projects (id, name, slug, created_by) "
-                "VALUES (%s,%s,%s,'test') ON CONFLICT DO NOTHING",
+                "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
+                "VALUES (%s,%s,%s,'test', 'org_test_fixture') ON CONFLICT DO NOTHING",
                 (pid, pid, pid),
             )
 
@@ -590,9 +584,11 @@ def _seed_dq_project(conn):
                 "INSERT INTO app.alert_firings "
                 "(id, definition_id, type, project_id, metric, fired_at, "
                 " observed_value, threshold, pull_ids, window_date, severity, message"
-                + (", acknowledged_at" if acked else "") + ") "
+                + (", acknowledged_at" if acked else "")
+                + ") "
                 "VALUES (%s,NULL,%s,%s,'row_count',%s,0,0,'{}', %s,'warning',%s"
-                + (",%s" if acked else "") + ")",
+                + (",%s" if acked else "")
+                + ")",
                 (fid, ftype, proj, fired_at, window, f"Test firing {fid}")
                 + ((ack_val,) if acked else ()),
             )
@@ -601,15 +597,15 @@ def _seed_dq_project(conn):
         fire_v1 = _uid("fire_")
         fire_v2 = _uid("fire_")
         fire_v3 = _uid("fire_")
-        _insert_firing(fire_v1, project_id, "dq_volume", 0)          # today, open
-        _insert_firing(fire_v2, project_id, "dq_volume", 1)          # yesterday, open
+        _insert_firing(fire_v1, project_id, "dq_volume", 0)  # today, open
+        _insert_firing(fire_v2, project_id, "dq_volume", 1)  # yesterday, open
         _insert_firing(fire_v3, project_id, "dq_volume", 2, acked=True)  # 2 days ago, acked
 
         # 2 dq_timeliness firings for our project
         fire_t1 = _uid("fire_")
         fire_t2 = _uid("fire_")
-        _insert_firing(fire_t1, project_id, "dq_timeliness", 0)      # today, open
-        _insert_firing(fire_t2, project_id, "dq_timeliness", 1)      # yesterday, open
+        _insert_firing(fire_t1, project_id, "dq_timeliness", 0)  # today, open
+        _insert_firing(fire_t2, project_id, "dq_timeliness", 1)  # yesterday, open
 
         # 1 decoy firing for OTHER project (must not appear in our queries)
         fire_decoy = _uid("fire_")
@@ -651,40 +647,32 @@ def test_dq_issues_multi_day_multi_monitor_counts_and_ack_state_through_build_as
                     f"No-filter returned {resp_all.status_code}: {resp_all.text}"
                 )
                 body_all = resp_all.json()
-                assert body_all["total"] == 5, (
-                    f"Expected total=5, got {body_all['total']}"
-                )
+                assert body_all["total"] == 5, f"Expected total=5, got {body_all['total']}"
 
                 # 2. monitor=dq_volume -> 3 firings
-                resp_vol = client.get(
-                    f"/api/dq/issues?project_id={project_id}&monitor=dq_volume"
-                )
+                resp_vol = client.get(f"/api/dq/issues?project_id={project_id}&monitor=dq_volume")
                 assert resp_vol.status_code == 200
                 body_vol = resp_vol.json()
                 assert body_vol["total"] == 3, (
                     f"Expected dq_volume total=3, got {body_vol['total']}"
                 )
-                assert all(
-                    iss["type"] == "dq_volume" for iss in body_vol["issues"]
-                ), "Non-dq_volume issue leaked through monitor filter"
+                assert all(iss["type"] == "dq_volume" for iss in body_vol["issues"]), (
+                    "Non-dq_volume issue leaked through monitor filter"
+                )
 
                 # 3. status=open -> 4 firings (vol_1, vol_2, til_1, til_2)
-                resp_open = client.get(
-                    f"/api/dq/issues?project_id={project_id}&status=open"
-                )
+                resp_open = client.get(f"/api/dq/issues?project_id={project_id}&status=open")
                 assert resp_open.status_code == 200
                 body_open = resp_open.json()
                 assert body_open["total"] == 4, (
                     f"Expected status=open total=4, got {body_open['total']}"
                 )
-                assert all(
-                    not iss["acknowledged"] for iss in body_open["issues"]
-                ), "Acknowledged issue leaked through status=open filter"
+                assert all(not iss["acknowledged"] for iss in body_open["issues"]), (
+                    "Acknowledged issue leaked through status=open filter"
+                )
 
                 # 4. status=acknowledged -> 1 firing (vol_3)
-                resp_ack = client.get(
-                    f"/api/dq/issues?project_id={project_id}&status=acknowledged"
-                )
+                resp_ack = client.get(f"/api/dq/issues?project_id={project_id}&status=acknowledged")
                 assert resp_ack.status_code == 200
                 body_ack = resp_ack.json()
                 assert body_ack["total"] == 1, (
@@ -698,9 +686,7 @@ def test_dq_issues_multi_day_multi_monitor_counts_and_ack_state_through_build_as
                 )
 
                 # 5. Cross-project isolation: other_project_id must return 0 results
-                resp_other = client.get(
-                    f"/api/dq/issues?project_id={other_project_id}"
-                )
+                resp_other = client.get(f"/api/dq/issues?project_id={other_project_id}")
                 # The decoy firing is for other_project_id but our assertions must
                 # confirm cross-project leakage is impossible.
                 # (The 'other' project has 1 firing; we only check it doesn't appear
@@ -730,8 +716,8 @@ def test_dq_issues_acknowledge_endpoint_marks_firing_and_reflects_in_issues_list
 
         with pg.cursor() as cur:
             cur.execute(
-                "INSERT INTO app.projects (id, name, slug, created_by) "
-                "VALUES (%s,%s,%s,'test') ON CONFLICT DO NOTHING",
+                "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
+                "VALUES (%s,%s,%s,'test', 'org_test_fixture') ON CONFLICT DO NOTHING",
                 (project_id, project_id, project_id),
             )
             cur.execute(
@@ -751,16 +737,13 @@ def test_dq_issues_acknowledge_endpoint_marks_firing_and_reflects_in_issues_list
                 client = _build_client()
 
                 # Confirm it starts open
-                resp_before = client.get(
-                    f"/api/dq/issues?project_id={project_id}&status=open"
-                )
+                resp_before = client.get(f"/api/dq/issues?project_id={project_id}&status=open")
                 assert resp_before.status_code == 200
                 assert resp_before.json()["total"] == 1, "Expected 1 open before ack"
 
                 # Acknowledge it
                 resp_ack = client.post(
-                    f"/api/dq/issues/{fire_id}/acknowledge"
-                    f"?project_id={project_id}",
+                    f"/api/dq/issues/{fire_id}/acknowledge?project_id={project_id}",
                 )
                 assert resp_ack.status_code == 200, (
                     f"Acknowledge returned {resp_ack.status_code}: {resp_ack.text}"
@@ -770,9 +753,7 @@ def test_dq_issues_acknowledge_endpoint_marks_firing_and_reflects_in_issues_list
                 assert ack_body["acknowledged_at"] is not None
 
                 # Confirm it no longer appears in open issues
-                resp_after = client.get(
-                    f"/api/dq/issues?project_id={project_id}&status=open"
-                )
+                resp_after = client.get(f"/api/dq/issues?project_id={project_id}&status=open")
                 assert resp_after.status_code == 200
                 assert resp_after.json()["total"] == 0, (
                     "Acked firing should not appear in status=open"
@@ -786,10 +767,6 @@ def test_dq_issues_acknowledge_endpoint_marks_firing_and_reflects_in_issues_list
                 assert resp_acked.json()["total"] == 1
         finally:
             with pg.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM app.alert_firings WHERE id=%s", (fire_id,)
-                )
-                cur.execute(
-                    "DELETE FROM app.projects WHERE id=%s", (project_id,)
-                )
+                cur.execute("DELETE FROM app.alert_firings WHERE id=%s", (fire_id,))
+                cur.execute("DELETE FROM app.projects WHERE id=%s", (project_id,))
             pg.commit()

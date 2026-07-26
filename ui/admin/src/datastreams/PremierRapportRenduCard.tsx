@@ -15,6 +15,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { apiFetch } from "../lib/apiFetch";
 
 // Story 36.15 / UX-DR31: render, VALIDATE and REPRODUCE the first correct answer.
 // The read-only starter request renders the final report UI when the host supports
@@ -120,7 +121,7 @@ export default function PremierRapportRenduCard({
   projectId,
   datastreamId,
   apiBase = "",
-  apiToken = import.meta.env.VITE_ADMIN_API_TOKEN ?? "",
+  apiToken = "",
 }: Props) {
   const [render, setRender] = useState<RenderedFirstReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,7 +143,7 @@ export default function PremierRapportRenduCard({
   useEffect(() => {
     mounted.current = true;
     setLoading(true);
-    fetch(`${base}/render`, { method: "GET", headers: headers(), cache: "no-store" })
+    apiFetch(`${base}/render`, { method: "GET", headers: headers(), cache: "no-store" })
       .then(async (response) => {
         if (!mounted.current) return;
         if (response.status === 409) {
@@ -178,7 +179,7 @@ export default function PremierRapportRenduCard({
   const runReproduction = useCallback(async () => {
     setRepro({ kind: "loading" });
     try {
-      const response = await fetch(`${base}/reproduce`, {
+      const response = await apiFetch(`${base}/reproduce`, {
         method: "POST",
         headers: { ...headers(), "Content-Type": "application/json" },
         body: JSON.stringify({}),

@@ -103,8 +103,7 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     client = bigquery.Client(project=project or None)
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
-            bigquery.ScalarQueryParameter(name, "STRING", value)
-            for name, value in params.items()
+            bigquery.ScalarQueryParameter(name, "STRING", value) for name, value in params.items()
         ]
     )
     result = client.query(sql, job_config=job_config).result()
@@ -317,10 +316,11 @@ def _load_error_map() -> dict[str, str]:
         manifest_path = Path(__file__).parent / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         _ERROR_MAP = {
-            k: v for k, v in manifest.get("error_map", {}).items()
-            if not k.startswith("_")
+            k: v for k, v in manifest.get("error_map", {}).items() if not k.startswith("_")
         }
     return _ERROR_MAP
+
+
 _CHARGES_PATH = "/charges"
 
 # Stripe pagination: curseur "starting_after" (id du dernier objet). has_more indique
@@ -335,8 +335,22 @@ _PAGE_LIMIT = 100
 # La liste est declaree ici d'apres la doc ; a confirmer exhaustive en passe live.
 _ZERO_DECIMAL_CURRENCIES = frozenset(
     {
-        "bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf",
-        "ugx", "vnd", "vuv", "xaf", "xof", "xpf",
+        "bif",
+        "clp",
+        "djf",
+        "gnf",
+        "jpy",
+        "kmf",
+        "krw",
+        "mga",
+        "pyg",
+        "rwf",
+        "ugx",
+        "vnd",
+        "vuv",
+        "xaf",
+        "xof",
+        "xpf",
     }
 )
 
@@ -412,8 +426,7 @@ def _insert_raw_rows(
             "revenue_source_currency VARCHAR DEFAULT 'EUR'"
         )
         con.execute(
-            "ALTER TABLE raw_stripe_payments ADD COLUMN IF NOT EXISTS "
-            "client_reference_id VARCHAR"
+            "ALTER TABLE raw_stripe_payments ADD COLUMN IF NOT EXISTS client_reference_id VARCHAR"
         )
         values = [
             (
@@ -526,9 +539,7 @@ def _parse_charge(api_charge: dict) -> dict:
     date_str = ""
     if created not in (None, ""):
         try:
-            date_str = datetime.fromtimestamp(
-                int(created), tz=timezone.utc
-            ).date().isoformat()
+            date_str = datetime.fromtimestamp(int(created), tz=timezone.utc).date().isoformat()
         except (ValueError, TypeError, OSError):
             date_str = ""
 
@@ -605,9 +616,7 @@ def pull(
     from datetime import date as _date  # noqa: PLC0415
 
     gte = int(
-        datetime(
-            *_date.fromisoformat(date_from).timetuple()[:3], tzinfo=timezone.utc
-        ).timestamp()
+        datetime(*_date.fromisoformat(date_from).timetuple()[:3], tzinfo=timezone.utc).timestamp()
     )
     # created[lte] = fin de journee inclusive (23:59:59 UTC du date_to).
     lte = int(
@@ -632,8 +641,9 @@ def pull(
         # bloquer le worker. Borne _MAX_PAGES + garde sur curseur deja vu.
         if starting_after is not None and starting_after in seen_cursors:
             logger.warning(
-                "stripe_pull: non-progressing cursor detected, stopping "
-                "(pull_id=%s pages=%d)", pull_id, pages,
+                "stripe_pull: non-progressing cursor detected, stopping (pull_id=%s pages=%d)",
+                pull_id,
+                pages,
             )
             break
         if starting_after is not None:
@@ -641,7 +651,8 @@ def pull(
         if pages >= _MAX_PAGES:
             logger.warning(
                 "stripe_pull: page cap %d reached, stopping (pull_id=%s)",
-                _MAX_PAGES, pull_id,
+                _MAX_PAGES,
+                pull_id,
             )
             break
         pages += 1
@@ -752,9 +763,7 @@ def transform(raw_rows: list[dict]) -> list[dict]:
 
     # F-2: parse API-shaped Charge rows to the canonical source-name record first
     # (centimes->units conversion happens in _parse_charge). Already-parsed rows pass through.
-    parsed_rows = [
-        _parse_charge(row) if _is_api_shaped(row) else row for row in raw_rows
-    ]
+    parsed_rows = [_parse_charge(row) if _is_api_shaped(row) else row for row in raw_rows]
 
     result: list[dict] = []
     for row in parsed_rows:
@@ -775,7 +784,10 @@ def transform(raw_rows: list[dict]) -> list[dict]:
 
 
 def _extract_dotted(obj: dict, path: str):
-    """Extract from *obj* via a dotted *path* (e.g. 'outcome.risk_score'). Returns None if absent."""
+    """Extract from *obj* via a dotted *path* (e.g. 'outcome.risk_score').
+
+    Returns None if absent.
+    """
     parts = path.split(".")
     current = obj
     for part in parts:
@@ -827,7 +839,15 @@ def _project_charge(api_charge: dict, selection: dict) -> list[dict]:
             value = parsed.get(src)
             if value is None:
                 value = _extract_dotted(api_charge, src)
-        rows.append({"row_type": "metric", "field_id": field_id, "value": value, "date": charge_date, "charge_id": charge_id})  # noqa: E501
+        rows.append(
+            {
+                "row_type": "metric",
+                "field_id": field_id,
+                "value": value,
+                "date": charge_date,
+                "charge_id": charge_id,
+            }
+        )  # noqa: E501
 
     for field_id in selected_dimensions:
         if field_id == "date":
@@ -844,7 +864,15 @@ def _project_charge(api_charge: dict, selection: dict) -> list[dict]:
                 value = parsed.get(field_id)
             if value is None:
                 value = _extract_dotted(api_charge, src)
-        rows.append({"row_type": "dimension", "field_id": field_id, "value": value, "date": charge_date, "charge_id": charge_id})  # noqa: E501
+        rows.append(
+            {
+                "row_type": "dimension",
+                "field_id": field_id,
+                "value": value,
+                "date": charge_date,
+                "charge_id": charge_id,
+            }
+        )  # noqa: E501
 
     return rows
 
@@ -864,7 +892,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
-def _insert_catalog_rows(rows: list[dict], pull_id: str, loaded_at: str, project_id: str, db_mode: str, duckdb_path: str) -> int:  # noqa: E501
+def _insert_catalog_rows(
+    rows: list[dict], pull_id: str, loaded_at: str, project_id: str, db_mode: str, duckdb_path: str
+) -> int:  # noqa: E501
     """Land projected rows into raw_stripe_catalog_daily (DuckDB only at P-dev)."""
     if db_mode != "duckdb":
         raise ValueError(f"_insert_catalog_rows: unsupported db_mode {db_mode!r}")
@@ -872,7 +902,19 @@ def _insert_catalog_rows(rows: list[dict], pull_id: str, loaded_at: str, project
 
     con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
     con.execute(_CATALOG_RAW_CREATE_DDL)
-    values = [(r.get("date", ""), r.get("charge_id", ""), r.get("field_id", ""), r.get("row_type", ""), str(r["value"]) if r.get("value") is not None else None, pull_id, loaded_at, project_id) for r in rows]  # noqa: E501
+    values = [
+        (
+            r.get("date", ""),
+            r.get("charge_id", ""),
+            r.get("field_id", ""),
+            r.get("row_type", ""),
+            str(r["value"]) if r.get("value") is not None else None,
+            pull_id,
+            loaded_at,
+            project_id,
+        )
+        for r in rows
+    ]  # noqa: E501
     if values:
         con.executemany(_CATALOG_RAW_INSERT_SQL, values)
     con.close()
@@ -896,13 +938,18 @@ def pull_catalog_daily(  # noqa: PLR0912
     from core import nango_client  # noqa: PLC0415
 
     if selection is None:
-        from core.catalog_contract import catalog_default_selection, validate_selection  # noqa: PLC0415
+        from core.catalog_contract import (  # noqa: PLC0415
+            catalog_default_selection,
+            validate_selection,
+        )
 
         _cat = json.loads((Path(__file__).parent / "api_catalog.json").read_text(encoding="utf-8"))
         selection, _ = validate_selection(_cat, catalog_default_selection(_cat))
 
     if "_catalog_fields" not in selection:
-        _cat_raw = json.loads((Path(__file__).parent / "api_catalog.json").read_text(encoding="utf-8"))
+        _cat_raw = json.loads(
+            (Path(__file__).parent / "api_catalog.json").read_text(encoding="utf-8")
+        )
         selection = dict(selection)
         selection["_catalog_fields"] = {f["field_id"]: f for f in _cat_raw.get("fields", [])}
 
@@ -914,9 +961,20 @@ def pull_catalog_daily(  # noqa: PLR0912
 
     from datetime import date as _date  # noqa: PLC0415
 
-    gte = int(datetime(*_date.fromisoformat(date_from).timetuple()[:3], tzinfo=timezone.utc).timestamp())
-    lte = int(datetime(*_date.fromisoformat(date_to).timetuple()[:3], 23, 59, 59, tzinfo=timezone.utc).timestamp())
-    params: dict = {"created[gte]": gte, "created[lte]": lte, "limit": _PAGE_LIMIT, "expand[]": "data.balance_transaction"}
+    gte = int(
+        datetime(*_date.fromisoformat(date_from).timetuple()[:3], tzinfo=timezone.utc).timestamp()
+    )
+    lte = int(
+        datetime(
+            *_date.fromisoformat(date_to).timetuple()[:3], 23, 59, 59, tzinfo=timezone.utc
+        ).timestamp()
+    )
+    params: dict = {
+        "created[gte]": gte,
+        "created[lte]": lte,
+        "limit": _PAGE_LIMIT,
+        "expand[]": "data.balance_transaction",
+    }
 
     all_charges: list[dict] = []
     seen_cursors: set[str] = set()
@@ -924,12 +982,16 @@ def pull_catalog_daily(  # noqa: PLR0912
     starting_after: str | None = None
     while True:
         if starting_after is not None and starting_after in seen_cursors:
-            logger.warning("stripe_catalog_pull: non-progressing cursor (pull_id=%s pages=%d)", pull_id, pages)
+            logger.warning(
+                "stripe_catalog_pull: non-progressing cursor (pull_id=%s pages=%d)", pull_id, pages
+            )
             break
         if starting_after is not None:
             seen_cursors.add(starting_after)
         if pages >= _MAX_PAGES:
-            logger.warning("stripe_catalog_pull: page cap %d reached (pull_id=%s)", _MAX_PAGES, pull_id)
+            logger.warning(
+                "stripe_catalog_pull: page cap %d reached (pull_id=%s)", _MAX_PAGES, pull_id
+            )
             break
         pages += 1
         page_params = dict(params)
@@ -968,8 +1030,18 @@ def pull_catalog_daily(  # noqa: PLR0912
         projected_rows.extend(_project_charge(api_charge, selection))
 
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
-    row_count = _insert_catalog_rows(projected_rows, pull_id, loaded_at, project_id, db_mode, duckdb_path)
-    logger.info("stripe_catalog_pull_completed: pull_id=%s row_count=%d charges=%d metrics=%d dimensions=%d", pull_id, row_count, len(all_charges), len(selection.get("metrics", [])), len(selection.get("dimensions", [])))
+    row_count = _insert_catalog_rows(
+        projected_rows, pull_id, loaded_at, project_id, db_mode, duckdb_path
+    )
+    logger.info(
+        "stripe_catalog_pull_completed: pull_id=%s row_count=%d "
+        "charges=%d metrics=%d dimensions=%d",
+        pull_id,
+        row_count,
+        len(all_charges),
+        len(selection.get("metrics", [])),
+        len(selection.get("dimensions", [])),
+    )
     return {"pull_id": pull_id, "row_count": row_count, "date_from": date_from, "date_to": date_to}
 
 

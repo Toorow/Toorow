@@ -1,413 +1,535 @@
-/**
- * DatastreamRecovery — faithful React port of the validated Datastream run
- * recovery mockup.
- *
- * Source of visual truth:
- *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
- *     mockups/datastream-recovery.html   (+ workflow-surfaces.css)
- *
- * The datastream "Runs" tab body: an execution-history table where each row
- * carries a run state (Failed / Complete) alongside its Started time+duration,
- * Rows, and Publication (last-known-good preservation). The FAILED run is
- * selected and opens a recovery drawer that states the failed scope
- * (datastream, partition, stage, authorization, run id), the recommended
- * bounded action, the evidence, and the retry/technical-events actions.
- *
- * The application shell (ApplicationShell.tsx) already renders the frame,
- * sidebar, topbar, and <main className="main">. This component renders ONLY the
- * page content that lives inside <main>: the recovery-stage grid (run-content +
- * recovery-drawer). The object header + local "Runs" tab belong to the
- * datastream-object shell, not this page (same split as ProjectMapping, which
- * omits the topbar/tabs the mockup shows).
- *
- * Styling: application.css (global, via the shell) for shell/layout classes
- * (page-header, signal-label, signal-mark, selector, quiet/primary/secondary-
- * button, event, number, field-control) + datastream-recovery.css for the
- * recovery-surface classes (recovery-stage, run-content, run-table, recovery-
- * drawer, drawer-meta, recovery-card, drawer-actions). Colours come exclusively
- * from the application.css CSS variables; run ids use the JetBrains Mono `event`
- * class, counts/durations use the Geist tabular `number` class.
- *
- * ── Data ──────────────────────────────────────────────────────────────────────
- * The recovery MUTATIONS map to the governed ops API through the SAME seam the
- * MUI RecoveryActionsDialog uses (opsApi + the 12.11/12.12 routes):
- *   - "Prepare retry"        -> POST /api/datastreams/{id}/bounded/prepare
- *                               (kind:"reload" — reload the failed partition).
- *   - the rollback-preview / bounded-confirm / append / replace routes exist on
- *     the same seam and are surfaced by RecoveryActionsDialog; this faithful
- *     port keeps the mockup's single "Prepare retry" primary action and defers
- *     the full multi-action matrix to that dialog.
- *
- * The run-history GRID itself has NO read model that returns a per-run
- * state+publication row list (see GAP LIST): the read-model exposes
- * publication_log + recent_imports, not a unified run table with the mockup's
- * state/partition/last-known-good semantics. So the four rows and the drawer
- * scope are the mockup's literals, flagged // TODO(api). The surface renders
- * finished with no backend.
- */
-import { useEffect, useState } from "react";
-import { OpsApiError, opsPost, type OpsApiCtx } from "../../datastreams/ops/opsApi";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import type {
+  BoundedConfirmResult,
   BoundedPreparation,
-  ImportLedgerRow,
-  PublicationLogEntry,
+  DatastreamReadModel,
+  DatastreamRun,
 } from "../../datastreams/ops/opsTypes";
+import { apiFetch } from "../../lib/apiFetch";
 import "../application.css";
 import "./datastream-recovery.css";
 
-// ---------------------------------------------------------------------------
-// View model — one execution-history row.
-// TODO(api): no read model returns this per-run state+publication shape today.
-// ---------------------------------------------------------------------------
-
-type RunState = "error" | "success";
-
-interface RunRow {
-  /** signal-label state class (error = Failed, success = Complete). */
-  state: RunState;
-  stateLabel: string;
-  /** Sub-note under the state (only the failed row has one in the mockup). */
-  stateNote?: string;
-  started: string; // "22 Jul · 03:00"
-  duration: string; // "12m 14s"
-  rows: string; // "0" / "18,420"
-  rowsNote: string; // "No new rows" / "Published"
-  publication: string; // "Last-known-good kept" / "21 Jul published"
-  publicationNote: string; // "21 Jul remains available" / "All checks passed"
-  selected?: boolean;
-}
-
-// Mockup literal rows — the validated source of truth. TODO(api): a per-run
-// state / rows / publication / last-known-good read model does not exist.
-const MOCK_RUNS: RunRow[] = [
-  {
-    state: "error",
-    stateLabel: "Failed",
-    stateNote: "Provider timeout",
-    started: "22 Jul · 03:00",
-    duration: "12m 14s",
-    rows: "0",
-    rowsNote: "No new rows",
-    publication: "Last-known-good kept",
-    publicationNote: "21 Jul remains available",
-    selected: true,
-  },
-  {
-    state: "success",
-    stateLabel: "Complete",
-    started: "21 Jul · 03:00",
-    duration: "4m 08s",
-    rows: "18,420",
-    rowsNote: "Published",
-    publication: "21 Jul published",
-    publicationNote: "All checks passed",
-  },
-  {
-    state: "success",
-    stateLabel: "Complete",
-    started: "20 Jul · 03:00",
-    duration: "4m 21s",
-    rows: "17,992",
-    rowsNote: "Published",
-    publication: "20 Jul published",
-    publicationNote: "All checks passed",
-  },
-  {
-    state: "success",
-    stateLabel: "Complete",
-    started: "19 Jul · 03:00",
-    duration: "4m 02s",
-    rows: "18,106",
-    rowsNote: "Published",
-    publication: "19 Jul published",
-    publicationNote: "All checks passed",
-  },
-];
-
-// Epic 42: build the run history from the real read-model (recent_imports joined
-// with publication_log) — was mockup literals. Falls back to MOCK_RUNS when the
-// read-model is unavailable so the surface still renders finished.
-function fmtStarted(iso?: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const day = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-  return `${day} · ${time}`;
-}
-function fmtDay(iso?: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
-function runsFromReadModel(
-  imports: ImportLedgerRow[],
-  pub: PublicationLogEntry[],
-): RunRow[] {
-  const pubByExec = new Map<string, PublicationLogEntry>();
-  for (const p of pub) if (p.execution_id) pubByExec.set(p.execution_id, p);
-  return imports.map((imp, i) => {
-    const st = (imp.status || "").toLowerCase();
-    const failed = ["failed", "invalid", "error", "rejected", "empty"].includes(st);
-    const rows = imp.row_count ?? 0;
-    const published = imp.execution_id ? pubByExec.get(imp.execution_id) : undefined;
-    const pubDay = fmtDay(published?.published_at);
-    return {
-      state: failed ? "error" : "success",
-      stateLabel: failed ? "Failed" : "Complete",
-      stateNote: failed ? imp.status || undefined : undefined,
-      started: fmtStarted(imp.loaded_at || imp.date),
-      duration: "—", // TODO(api): no per-run duration on the ledger row
-      rows: Number(rows).toLocaleString("en-US"),
-      rowsNote: failed ? "No new rows" : "Published",
-      publication: published ? `${pubDay} published` : "Last-known-good kept",
-      publicationNote: published
-        ? published.reason || "All checks passed"
-        : "prior version remains available",
-      selected: i === 0 && failed,
-    };
-  });
-}
-
-// Recovery-drawer literals for the selected failed run. TODO(api): the failed
-// scope (partition, stage, authorization health, run id) is not returned by a
-// recovery read model — the drawer is the mockup's validated content.
-const FAILED_SCOPE = {
-  datastream: "Campaign performance",
-  partition: "22 Jul 2026",
-  stage: "Extraction",
-  authorization: "Healthy",
-  runId: "run_01J3…8H",
-} as const;
+type Tab = "overview" | "data" | "mapping" | "runs";
+type LoadState =
+  | { status: "loading"; key: string }
+  | { status: "ok"; key: string; model: DatastreamReadModel }
+  | { status: "denied"; key: string; message: string }
+  | { status: "error"; key: string; message: string };
+type RecoveryState =
+  | { status: "idle" }
+  | { status: "preparing" }
+  | { status: "review"; preparation: BoundedPreparation }
+  | { status: "confirming"; preparation: BoundedPreparation }
+  | { status: "confirmed"; result: BoundedConfirmResult }
+  | { status: "outcome_unknown"; message: string }
+  | { status: "error"; message: string };
 
 interface DatastreamRecoveryProps {
-  projectId?: string;
-  datastreamId?: string;
+  projectId: string;
+  datastreamId: string;
+  onNavigateTab?: (tab: Tab) => void;
+}
+
+type JsonRecord = Record<string, unknown>;
+const FAILED_STATES = new Set(["failed", "error"]);
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function nullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+function parseRun(value: unknown): DatastreamRun {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.state !== "string" ||
+    !nullableString(value.created_at) ||
+    !nullableString(value.state_changed_at) ||
+    !nullableString(value.error_code) ||
+    !nullableString(value.plan_version_id) ||
+    !nullableString(value.mapping_version_id) ||
+    !(value.row_count === null || typeof value.row_count === "number") ||
+    !(value.duration_seconds === null || typeof value.duration_seconds === "number") ||
+    !["current", "previously_published", "unpublished"].includes(String(value.publication_state))
+  ) {
+    throw new Error("The run evidence contract was invalid.");
+  }
+  if (value.recovery_interval !== null) {
+    if (
+      !isRecord(value.recovery_interval) ||
+      typeof value.recovery_interval.from !== "string" ||
+      typeof value.recovery_interval.to_exclusive !== "string"
+    ) {
+      throw new Error("The run interval contract was invalid.");
+    }
+  }
+  return value as unknown as DatastreamRun;
+}
+function parseReadModel(value: unknown, projectId: string, datastreamId: string): DatastreamReadModel {
+  if (
+    !isRecord(value) ||
+    value.project_id !== projectId ||
+    typeof value.data_project_id !== "string" ||
+    value.datastream_id !== datastreamId ||
+    !isRecord(value.datastream) ||
+    value.datastream.id !== datastreamId ||
+    !Array.isArray(value.runs) ||
+    !nullableString(value.current_published_execution_id) ||
+    !(
+      value.published_execution === null ||
+      (isRecord(value.published_execution) && typeof value.published_execution.id === "string")
+    )
+  ) {
+    throw new Error("The runs response did not match the requested project and Datastream.");
+  }
+  return { ...value, runs: value.runs.map(parseRun) } as unknown as DatastreamReadModel;
+}
+function formatDateTime(value: string | null): string {
+  if (!value) return "Unknown";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? "Unknown"
+    : parsed.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+function formatDuration(seconds: number | null): string {
+  if (seconds === null) return "Unknown duration";
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}m ${rest}s`;
+}
+function titleCase(value: string): string {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+function tabHref(projectId: string, datastreamId: string, tab: Tab): string {
+  return `/p/${encodeURIComponent(projectId)}/data/datastreams/o/datastream/${encodeURIComponent(datastreamId)}/${tab}`;
+}
+async function responseMessage(response: Response, fallback: string): Promise<string> {
+  const body = (await response.json().catch(() => null)) as { message?: string } | null;
+  return body?.message || fallback;
+}
+
+function parsePreparation(
+  value: unknown,
+  dataProjectId: string,
+  datastreamId: string,
+  interval: { from: string; to_exclusive: string },
+): BoundedPreparation {
+  if (
+    !isRecord(value) ||
+    typeof value.preparation_id !== "string" ||
+    value.kind !== "reload" ||
+    !isRecord(value.target) ||
+    value.target.project_id !== dataProjectId ||
+    value.target.datastream_id !== datastreamId ||
+    !isRecord(value.target_versions) ||
+    !nullableString(value.target_versions.plan_version_id) ||
+    !nullableString(value.target_versions.mapping_version_id) ||
+    typeof value.target_versions.policy_version !== "string" ||
+    !isRecord(value.interval) ||
+    value.interval.from !== interval.from ||
+    value.interval.to_exclusive !== interval.to_exclusive ||
+    !isRecord(value.impact) ||
+    !isRecord(value.quota) ||
+    typeof value.quota.platform_known !== "boolean" ||
+    typeof value.quota.estimated_points !== "number" ||
+    typeof value.quota.verdict !== "string" ||
+    typeof value.quota.can_proceed !== "boolean" ||
+    !nullableString(value.lock_ref) ||
+    !nullableString(value.rollback_ref) ||
+    !nullableString(value.reason) ||
+    typeof value.expires_in_seconds !== "number"
+  ) {
+    throw new Error("The prepared recovery contract was invalid or did not match the selected run scope.");
+  }
+  return value as unknown as BoundedPreparation;
 }
 
 export default function DatastreamRecovery({
-  projectId = "default",
-  datastreamId = "campaign-performance",
+  projectId,
+  datastreamId,
+  onNavigateTab,
 }: DatastreamRecoveryProps) {
-  // "Prepare retry" goes through the governed ops seam (12.11 bounded prepare).
-  const [prepareState, setPrepareState] = useState<
-    | { status: "idle" }
-    | { status: "preparing" }
-    | { status: "prepared"; preparation: BoundedPreparation }
-    | { status: "error"; message: string }
-  >({ status: "idle" });
+  const [reload, setReload] = useState(0);
+  const key = `${projectId}\u0000${datastreamId}\u0000${reload}`;
+  const [state, setState] = useState<LoadState>({ status: "loading", key });
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState<RecoveryState>({ status: "idle" });
+  const visibleState = state.key === key ? state : ({ status: "loading", key } as LoadState);
 
-  // Run history from the real read-model; MOCK_RUNS is the finished fallback.
-  const [runs, setRuns] = useState<RunRow[]>(MOCK_RUNS);
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const headers: Record<string, string> = {};
-        const token = localStorage.getItem("api_token");
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const resp = await fetch(`/api/datastreams/${datastreamId}/read-model`, { headers });
-        if (!resp.ok) return;
-        const rm = (await resp.json()) as {
-          recent_imports?: ImportLedgerRow[];
-          publication_log?: PublicationLogEntry[];
-        };
-        const rows = runsFromReadModel(rm.recent_imports ?? [], rm.publication_log ?? []);
-        if (!cancelled && rows.length) setRuns(rows);
-      } catch {
-        /* keep the finished fallback */
-      }
-    })();
+    setState({ status: "loading", key });
+    setSelectedRunId(null);
+    setRecovery({ status: "idle" });
+    const query = new URLSearchParams({ project_id: projectId });
+    void apiFetch(
+      `/api/datastreams/${encodeURIComponent(datastreamId)}/read-model?${query.toString()}`,
+      { cache: "no-store" },
+    )
+      .then(async (response) => {
+        if (!response.ok) {
+          const error = new Error(
+            await responseMessage(response, `Run evidence could not be loaded (HTTP ${response.status}).`),
+          );
+          if ([401, 403, 404].includes(response.status)) Object.assign(error, { denied: true });
+          throw error;
+        }
+        return parseReadModel(await response.json(), projectId, datastreamId);
+      })
+      .then((model) => {
+        if (!cancelled) setState({ status: "ok", key, model });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "Run evidence could not be loaded.";
+        setState({
+          status: isRecord(error) && error.denied === true ? "denied" : "error",
+          key,
+          message,
+        });
+      });
     return () => {
       cancelled = true;
     };
-  }, [datastreamId]);
+  }, [datastreamId, key, projectId]);
 
-  async function handlePrepareRetry() {
-    // Governed API seam (same as RecoveryActionsDialog): reload the failed
-    // partition — reuse the published configuration, request only the failed day.
-    const ctx: OpsApiCtx = {
-      apiBase: "",
-      apiToken: localStorage.getItem("api_token") || "",
-      projectId,
-    };
-    setPrepareState({ status: "preparing" });
+  const model = visibleState.status === "ok" ? visibleState.model : null;
+  const runs = model?.runs ?? [];
+  const selectedRun = useMemo(
+    () =>
+      runs.find((run) => run.id === selectedRunId) ??
+      runs.find((run) => FAILED_STATES.has(run.state.toLowerCase())) ??
+      runs[0] ??
+      null,
+    [runs, selectedRunId],
+  );
+  const name = model?.datastream.name?.trim() || datastreamId;
+  const source =
+    model?.datastream.module_name?.trim() ||
+    model?.datastream.source_kind?.trim() ||
+    "Source unavailable";
+  const currentPublishedId = model?.current_published_execution_id ?? null;
+  const recoveryAvailable = Boolean(
+    selectedRun &&
+      FAILED_STATES.has(selectedRun.state.toLowerCase()) &&
+      selectedRun.recovery_interval,
+  );
+
+  const navigate = (event: MouseEvent<HTMLAnchorElement>, tab: Tab) => {
+    if (
+      !onNavigateTab ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    onNavigateTab(tab);
+  };
+  const chooseRun = (runId: string) => {
+    setSelectedRunId(runId);
+    setRecovery({ status: "idle" });
+  };
+
+  async function prepareRecovery() {
+    if (!selectedRun?.recovery_interval || !FAILED_STATES.has(selectedRun.state.toLowerCase())) return;
+    setRecovery({ status: "preparing" });
     try {
-      const preparation = await opsPost<BoundedPreparation>(
-        ctx,
-        `/api/datastreams/${datastreamId}/bounded/prepare`,
-        { kind: "reload" }
+      const response = await apiFetch(
+        `/api/datastreams/${encodeURIComponent(datastreamId)}/bounded/prepare`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project_id: projectId,
+            kind: "reload",
+            date_from: selectedRun.recovery_interval.from,
+            date_to_exclusive: selectedRun.recovery_interval.to_exclusive,
+            reason: `Retry failed run ${selectedRun.id}`,
+          }),
+        },
       );
-      setPrepareState({ status: "prepared", preparation });
-    } catch (e) {
-      const message =
-        e instanceof OpsApiError ? e.message : e instanceof Error ? e.message : String(e);
-      setPrepareState({ status: "error", message });
+      if (!response.ok) {
+        throw new Error(await responseMessage(response, `Recovery could not be prepared (HTTP ${response.status}).`));
+      }
+      const preparation = parsePreparation(
+        await response.json(),
+        model?.data_project_id ?? "",
+        datastreamId,
+        selectedRun.recovery_interval,
+      );
+      setRecovery({ status: "review", preparation });
+    } catch (error) {
+      setRecovery({
+        status: "error",
+        message: error instanceof Error ? error.message : "Recovery could not be prepared.",
+      });
+    }
+  }
+
+  async function confirmRecovery(preparation: BoundedPreparation) {
+    setRecovery({ status: "confirming", preparation });
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 30_000);
+    try {
+      const response = await apiFetch(
+        `/api/datastreams/${encodeURIComponent(datastreamId)}/bounded/confirm`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_id: projectId, preparation_id: preparation.preparation_id }),
+          signal: controller.signal,
+        },
+      );
+      const body = (await response.json().catch(() => null)) as
+        | (Partial<BoundedConfirmResult> & { message?: string; code?: string })
+        | null;
+      if (!response.ok) {
+        if (body?.outcome === "outcome_unknown" || body?.code === "outcome_unknown") {
+          setRecovery({
+            status: "outcome_unknown",
+            message: body.message || "The durable recovery outcome could not be confirmed.",
+          });
+          return;
+        }
+        const message = body?.message || `Recovery confirmation failed (HTTP ${response.status}).`;
+        if (response.status >= 400 && response.status < 500) {
+          setRecovery({ status: "error", message });
+          return;
+        }
+        throw new Error(message);
+      }
+      if (
+        !body ||
+        body.preparation_id !== preparation.preparation_id ||
+        typeof body.operation_id !== "string" ||
+        typeof body.trace_id !== "string" ||
+        typeof body.replayed !== "boolean" ||
+        !["succeeded", "failed", "outcome_unknown"].includes(String(body.outcome))
+      ) {
+        throw new Error("The recovery confirmation response was invalid.");
+      }
+      if (body.outcome === "outcome_unknown") {
+        setRecovery({ status: "outcome_unknown", message: "The durable recovery outcome is unknown." });
+        return;
+      }
+      setRecovery({ status: "confirmed", result: body as BoundedConfirmResult });
+    } catch (error) {
+      setRecovery({
+        status: "outcome_unknown",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The confirmation response was lost before its durable outcome could be verified.",
+      });
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   }
 
   return (
-    <div className="recovery-stage">
-      <section className="run-content">
-        <div className="page-header">
-          <div>
-            <h1>Runs</h1>
-            <p>
-              Inspect execution history and recover only the failed scope while published
-              data remains available.
-            </p>
-          </div>
-          <div className="header-actions">
-            {/* TODO(api): date-range selector wiring */}
-            <button className="selector">Last 30 days</button>
-          </div>
+    <div className="workflow-main">
+      <div className="object">
+        <div className="object-logo provider-logo" aria-hidden="true">
+          {name.slice(0, 1).toUpperCase()}
         </div>
-
-        <div className="mapping-panel">
-          <div className="mapping-toolbar">
-            <div>
-              <h2>Run history</h2>
-            </div>
-            <div className="mapping-filters">
-              {/* TODO(api): status filter wiring */}
-              <button className="selector">Status: All</button>
-              {/* TODO(api): run search wiring */}
-              <div className="field-control mapping-search">Search runs</div>
-            </div>
-          </div>
-          <table className="run-table">
-            <thead>
-              <tr>
-                <th style={{ width: "26%" }}>Status</th>
-                <th style={{ width: "22%" }}>Started</th>
-                <th style={{ width: "18%" }}>Rows</th>
-                <th>Publication</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((run, i) => (
-                <tr key={i} className={run.selected ? "selected" : undefined}>
-                  <td>
-                    {run.stateNote ? (
-                      <div className="run-name">
-                        <div>
-                          <span className={`signal-label ${run.state}`}>
-                            <span className="signal-mark" />
-                            {run.stateLabel}
-                          </span>
-                          <small>{run.stateNote}</small>
-                        </div>
-                      </div>
-                    ) : (
-                      <span className={`signal-label ${run.state}`}>
-                        <span className="signal-mark" />
-                        {run.stateLabel}
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <strong>{run.started}</strong>
-                    <small className="number">{run.duration}</small>
-                  </td>
-                  <td>
-                    <strong className="number">{run.rows}</strong>
-                    <small>{run.rowsNote}</small>
-                  </td>
-                  <td>
-                    <strong>{run.publication}</strong>
-                    <small>{run.publicationNote}</small>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div>
+          <strong>{name}</strong>
+          <span>{source}</span>
         </div>
-      </section>
+      </div>
+      <nav className="local-tabs" aria-label="Datastream">
+        {(["overview", "data", "mapping", "runs"] as const).map((tab) => (
+          <a
+            key={tab}
+            className={`local-tab${tab === "runs" ? " active" : ""}`}
+            aria-current={tab === "runs" ? "page" : undefined}
+            href={tabHref(projectId, datastreamId, tab)}
+            onClick={(event) => navigate(event, tab)}
+          >
+            {titleCase(tab)}
+          </a>
+        ))}
+        <span className="local-tab" aria-disabled="true">Processing unavailable</span>
+        <span className="local-tab" aria-disabled="true">Outputs unavailable</span>
+      </nav>
 
-      <aside className="recovery-drawer" aria-label="Recovery details">
-        <div className="drawer-header">
-          <h2>Recover failed run</h2>
-          <button className="quiet-button" aria-label="Close">
-            ×
+      {visibleState.status === "loading" && (
+        <section className="panel" role="status">
+          <h2>Loading run evidence...</h2>
+          <p>No execution or recovery evidence is shown until the scoped read completes.</p>
+        </section>
+      )}
+      {visibleState.status === "denied" && (
+        <section className="panel" role="alert">
+          <h2>Run access unavailable</h2>
+          <p>{visibleState.message}</p>
+        </section>
+      )}
+      {visibleState.status === "error" && (
+        <section className="panel" role="alert">
+          <h2>Run evidence unavailable</h2>
+          <p>{visibleState.message}</p>
+          <button className="secondary-button" type="button" onClick={() => setReload((value) => value + 1)}>
+            Retry
           </button>
-        </div>
-        <div className="drawer-body">
-          <section className="drawer-section">
-            <span className="signal-label error">
-              <span className="signal-mark" />
-              Failed
-            </span>
-            {/* TODO(api): last-known-good preservation message */}
-            <p>
-              No data was replaced. The 21 Jul publication remains available to downstream
-              consumers.
-            </p>
-          </section>
+        </section>
+      )}
+      {model && runs.length === 0 && (
+        <section className="panel" data-testid="runs-empty">
+          <h2>No runs</h2>
+          <p>No execution has been persisted for this Datastream.</p>
+        </section>
+      )}
 
-          <section className="drawer-section">
-            <h3>Failed scope</h3>
-            {/* TODO(api): failed scope (partition/stage/auth/run id) not in a read model */}
-            <dl className="drawer-meta">
-              <dt>Datastream</dt>
-              <dd>{FAILED_SCOPE.datastream}</dd>
-              <dt>Partition</dt>
-              <dd>{FAILED_SCOPE.partition}</dd>
-              <dt>Stage</dt>
-              <dd>{FAILED_SCOPE.stage}</dd>
-              <dt>Authorization</dt>
-              <dd>{FAILED_SCOPE.authorization}</dd>
-              <dt>Run ID</dt>
-              <dd className="event">{FAILED_SCOPE.runId}</dd>
-            </dl>
-          </section>
-
-          <section className="drawer-section">
-            <h3>Recommended action</h3>
-            <div className="recovery-card">
-              <strong>Retry this partition</strong>
-              <p>Reuse the published configuration and request only the failed day from Meta Ads.</p>
+      {model && runs.length > 0 && (
+        <div className="recovery-stage">
+          <section className="run-content">
+            <div className="page-header">
+              <div>
+                <h1>Runs</h1>
+                <p>Universal execution history from persisted Datastream executions.</p>
+              </div>
+            </div>
+            <div className="mapping-panel">
+              <div className="mapping-toolbar">
+                <h2>Run history</h2>
+                <span>{runs.length} persisted execution{runs.length === 1 ? "" : "s"}</span>
+              </div>
+              <table className="run-table">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Rows</th>
+                    <th>Publication</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runs.map((run) => {
+                    const selected = run.id === selectedRun?.id;
+                    const failed = FAILED_STATES.has(run.state.toLowerCase());
+                    return (
+                      <tr
+                        key={run.id}
+                        className={selected ? "selected" : undefined}
+                        onClick={() => chooseRun(run.id)}
+                        aria-selected={selected}
+                        data-testid={`run-${run.id}`}
+                      >
+                        <td>
+                          <span className={`signal-label ${failed ? "error" : "success"}`}>
+                            <span className="signal-mark" />
+                            {titleCase(run.state)}
+                          </span>
+                          <small className="event">{run.error_code || run.id}</small>
+                        </td>
+                        <td>
+                          <strong>{formatDateTime(run.created_at)}</strong>
+                          <small className="number">{formatDuration(run.duration_seconds)}</small>
+                        </td>
+                        <td>
+                          <strong className="number">{run.row_count === null ? "Unknown" : run.row_count.toLocaleString("en-US")}</strong>
+                          <small>{run.import_evidence ? `Ledger: ${run.import_evidence.outcome || "unknown"}` : "No ledger enrichment"}</small>
+                        </td>
+                        <td>
+                          <strong>{titleCase(run.publication_state)}</strong>
+                          <small>{run.id === currentPublishedId ? "Last-known-good pointer" : "Published pointer unchanged"}</small>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </section>
 
-          <section className="drawer-section">
-            <h3>Evidence</h3>
-            {/* TODO(api): evidence (timeout + authorization/mapping checks) not in a read model */}
-            <p>
-              The provider did not respond before the extraction timeout. Authorization health
-              and mapping checks both passed.
-            </p>
-          </section>
+          <aside className="recovery-drawer" aria-label="Recovery details">
+            <div className="drawer-header"><h2>Bounded recovery</h2></div>
+            <div className="drawer-body">
+              <section className="drawer-section">
+                <h3>Selected execution</h3>
+                <dl className="drawer-meta">
+                  <dt>Run ID</dt><dd className="event">{selectedRun?.id}</dd>
+                  <dt>State</dt><dd>{selectedRun ? titleCase(selectedRun.state) : "Unknown"}</dd>
+                  <dt>Plan</dt><dd className="event">{selectedRun?.plan_version_id || "Unknown"}</dd>
+                  <dt>Mapping</dt><dd className="event">{selectedRun?.mapping_version_id || "Unknown"}</dd>
+                  <dt>Interval</dt><dd>{selectedRun?.recovery_interval ? `${selectedRun.recovery_interval.from} to ${selectedRun.recovery_interval.to_exclusive} (exclusive)` : "Unavailable"}</dd>
+                </dl>
+              </section>
+              <section className="drawer-section">
+                <h3>Last-known-good</h3>
+                <p>{currentPublishedId ? <>Published execution <span className="event">{currentPublishedId}</span> remains authoritative.</> : "No published execution pointer is available."}</p>
+              </section>
 
-          {/* Governed-seam feedback: the mockup shows only the two buttons; the
-              prepare result is surfaced inline without altering the layout. */}
-          {prepareState.status === "prepared" && (
-            <section className="drawer-section" aria-live="polite">
-              <p>
-                Retry prepared — reload of {FAILED_SCOPE.partition} is ready to confirm
-                (proposal <span className="event">{prepareState.preparation.preparation_id}</span>).
-              </p>
-            </section>
-          )}
-          {prepareState.status === "error" && (
-            <section className="drawer-section" role="alert">
-              <p>Could not prepare the retry: {prepareState.message}</p>
-            </section>
-          )}
+              {recovery.status === "review" || recovery.status === "confirming" ? (
+                <section className="drawer-section" aria-live="polite">
+                  <h3>Review immutable proposal</h3>
+                  <dl className="drawer-meta">
+                    <dt>Proposal</dt><dd className="event">{recovery.preparation.preparation_id}</dd>
+                    <dt>Interval</dt><dd>{recovery.preparation.interval ? `${recovery.preparation.interval.from} to ${recovery.preparation.interval.to_exclusive} (exclusive)` : "Unavailable"}</dd>
+                    <dt>Quota</dt><dd>{recovery.preparation.quota.estimated_points} points - {recovery.preparation.quota.verdict}</dd>
+                    <dt>Impact</dt><dd><code>{JSON.stringify(recovery.preparation.impact)}</code></dd>
+                    <dt>Lock</dt><dd className="event">{recovery.preparation.lock_ref || "None"}</dd>
+                    <dt>Rollback</dt><dd className="event">{recovery.preparation.rollback_ref || "None"}</dd>
+                  </dl>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={recovery.status === "confirming"}
+                    onClick={() => void confirmRecovery(recovery.preparation)}
+                  >
+                    {recovery.status === "confirming" ? "Confirming..." : "Confirm exact recovery"}
+                  </button>
+                </section>
+              ) : null}
+              {recovery.status === "confirmed" && (
+                <section className="drawer-section" aria-live="polite" data-testid="recovery-result">
+                  <h3>Durable recovery outcome</h3>
+                  <dl className="drawer-meta">
+                    <dt>Outcome</dt><dd>{titleCase(recovery.result.outcome)}</dd>
+                    <dt>Replayed</dt><dd>{recovery.result.replayed ? "Yes" : "No"}</dd>
+                    <dt>Operation</dt><dd className="event">{recovery.result.operation_id}</dd>
+                    <dt>Trace</dt><dd className="event">{recovery.result.trace_id || "Unavailable"}</dd>
+                  </dl>
+                </section>
+              )}
+              {recovery.status === "outcome_unknown" && (
+                <section className="drawer-section" role="alert" data-testid="outcome-unknown">
+                  <h3>Outcome unknown</h3>
+                  <p>{recovery.message} Reload this scoped run history before attempting another action.</p>
+                </section>
+              )}
+              {recovery.status === "error" && <section className="drawer-section" role="alert"><p>{recovery.message}</p></section>}
 
-          <div className="drawer-actions">
-            {/* Real map: prepare-retry -> governed 12.11 bounded prepare (reload). */}
-            <button
-              className="primary-button"
-              onClick={handlePrepareRetry}
-              disabled={prepareState.status === "preparing"}
-            >
-              {prepareState.status === "preparing" ? "Preparing…" : "Prepare retry"}
-            </button>
-            {/* TODO(api): technical-events / trace view */}
-            <button className="secondary-button">View technical events</button>
-          </div>
+              <div className="drawer-actions">
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={!recoveryAvailable || recovery.status === "preparing" || recovery.status === "confirming" || recovery.status === "review"}
+                  title={!recoveryAvailable ? "Recovery requires a failed run with an exact persisted half-open interval." : undefined}
+                  onClick={() => void prepareRecovery()}
+                >
+                  {recovery.status === "preparing" ? "Preparing..." : "Prepare exact retry"}
+                </button>
+                <button className="secondary-button" type="button" disabled title="No governed technical-events route is available for this execution.">
+                  Technical events unavailable
+                </button>
+              </div>
+            </div>
+          </aside>
         </div>
-      </aside>
+      )}
     </div>
   );
 }

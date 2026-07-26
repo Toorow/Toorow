@@ -114,15 +114,17 @@ def _count_active_datastreams(org_id: str, conn) -> int:
 
 
 def _resolve_org_for_connection(connection_ref_id: str, conn) -> str | None:
-    """Return the owning org_id for a connection_ref via its project."""
+    """Return the owning org_id of a credential.
+
+    Lu DIRECTEMENT sur le credential : `owner_org_id` porte l'organisation ou il
+    est utilisable (architecture-org-tenancy 3.5). Le detour par le projet etait
+    un vestige d'avant cette colonne -- il donnait la mauvaise reponse des que le
+    credential servait un autre projet de la meme org, et se serait mis a rendre
+    NULL le jour ou `connection_ref.project_id` sera retire.
+    """
     with conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT p.org_id
-            FROM app.connection_ref r
-            JOIN app.projects p ON p.id = r.project_id
-            WHERE r.id = %s
-            """,
+            "SELECT owner_org_id FROM app.connection_ref WHERE id = %s",
             (connection_ref_id,),
         )
         row = cur.fetchone()

@@ -1,543 +1,254 @@
-/**
- * DatastreamData — faithful React port of the validated "Data sample" mockup.
- *
- * Source of visual truth:
- *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
- *     mockups/datastream-data.html
- *
- * The application shell (ApplicationShell.tsx) renders the frame, sidebar,
- * topbar, and <main>. This component renders the datastream-detail MAIN content
- * as a fragment: the object header (provider logo + name + source line), the
- * per-datastream local-tabs (Overview / Data / Mapping / Processing / Runs /
- * Outputs), and the daily-sample timeline — the toolbar (date range, stage
- * selector, campaign filter, columns, Export Excel, Load sample), the evidence
- * note with the masking count, and the vertical timeline of sample-day cards.
- *
- * Styling: application.css (global, via the shell) already owns the shell/layout
- * classes AND most of the sample-timeline system (.sample-day, .sample-days,
- * .sample-day-header, .sample-toolbar, .sample-note, .mask-note, .signal-label,
- * .object, .object-logo, .local-tabs, .full-main). datastream-data.css adds only
- * the mockup's inline extras: the toolbar right-cluster and the fixed-layout
- * wide sample table. Colors come exclusively from the CSS variables; numbers use
- * the .number (Geist tabular) class and technical ids use .event/.mono
- * (JetBrains Mono) exactly where the mockup does.
- *
- * ── Data ──────────────────────────────────────────────────────────────────────
- * Wired to the real sample-preview endpoint (Epic — datastream data sample):
- *   GET /api/datastreams/{datastreamId}/sample
- *       ?stage={collected|mapped|processed|published}
- *       &date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&limit=5
- *   Authorization: Bearer <localStorage api_token>
- * On mount and whenever the stage selector changes, the bounded sample is
- * fetched (default stage "published", last-7-days range ending today, limit 5).
- * The response's `days` drive the timeline (per-day row_count/rejection_count/
- * field_count + the first-N eligible rows as a dynamic-column table). Values are
- * already masked server-side ([MASKED]) and rendered as-is; `masked_fields`
- * drives the "N sensitive fields masked" note; `stage_note` (served_stage !=
- * requested) is surfaced next to the selector; provenance is composed from the
- * real fields where present.
- *
- * The screen keeps a graceful fallback to the mockup's SAMPLE_DAYS literals when
- * the fetch fails or returns no days, so it still renders finished with no
- * backend.
- */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { apiFetch } from "../../lib/apiFetch";
 import "../application.css";
 import "./datastream-data.css";
 
-// ---------------------------------------------------------------------------
-// The four pipeline stages the sample can be drawn from. The mockup's toolbar
-// shows "Stage: Published"; the sample-preview API exposes one collected /
-// mapped / processed / published extract per stage. The selector displays the
-// capitalized label; the API takes the lowercased token.
-// ---------------------------------------------------------------------------
-const STAGES = ["Collected", "Mapped", "Processed", "Published"] as const;
-type Stage = (typeof STAGES)[number];
-type StageToken = "collected" | "mapped" | "processed" | "published";
-
-function stageToken(stage: Stage): StageToken {
-  return stage.toLowerCase() as StageToken;
-}
-function stageLabel(token: string): Stage {
-  const lower = token.toLowerCase();
-  const match = STAGES.find((s) => s.toLowerCase() === lower);
-  return match ?? "Published";
-}
-
-// Per-datastream local navigation. Mirrors the mockup's <nav class="local-tabs">
-// order exactly: Overview · Data (active) · Mapping · Processing · Runs · Outputs.
-const LOCAL_TABS = [
-  "Overview",
-  "Data",
-  "Mapping",
-  "Processing",
-  "Runs",
-  "Outputs",
-] as const;
-
-// ---------------------------------------------------------------------------
-// Response contract of GET /api/datastreams/{id}/sample.
-// ---------------------------------------------------------------------------
+type Stage = "collected" | "mapped" | "processed" | "published";
+type Tab = "overview" | "data" | "mapping" | "runs";
 type SampleCell = string | number | boolean | null;
 
-interface SampleApiDay {
+interface SampleDay {
   date: string;
-  row_count: number;
-  rejection_count: number;
+  sampled_row_count: number;
+  rejection_count: number | null;
   field_count: number;
   rows: Record<string, SampleCell>[];
 }
 
-interface SampleApiResponse {
+interface SampleResponse {
   datastream_id: string;
   project_id: string;
-  stage: string;
-  served_stage: string;
+  datastream: { id: string; name?: string | null; module_name?: string | null; source_kind?: string | null };
+  stage: Stage;
+  served_stage: Stage;
   stage_note: string | null;
+  collection_expected: boolean;
+  materialization_available: boolean;
+  sample_watermark: string | null;
   date_from: string;
   date_to: string;
   limit: number;
   masked_fields: string[];
-  published_execution_id?: string | null;
-  mapping_version_id?: string | null;
-  days: SampleApiDay[];
+  masked_value_count: number;
+  version_binding_available: boolean;
+  days: SampleDay[];
 }
 
-// ---------------------------------------------------------------------------
-// View model — one day in the vertical timeline. When drawn from the API, the
-// expanded day carries dynamic-column rows (a union of row keys) plus the real
-// row_count / rejection_count / field_count. The fallback literal shape (below)
-// keeps the mockup's finished-with-no-backend rendering.
-// ---------------------------------------------------------------------------
-interface SampleDay {
-  date: string;
-  summary: string;
-  expanded: boolean;
-  stats?: { rows?: string; rejected?: string; fields?: string; label?: string };
-  /** Ordered column keys for the expanded day's table (union of row keys). */
-  columns?: string[];
-  /** Dynamic row maps; values already masked server-side. */
-  rows?: Record<string, SampleCell>[];
-}
-
-// The evidence note + provenance line, derived from the real response where
-// available, or the mockup literals in the finished fallback.
-interface SampleMeta {
-  provenance: string;
-  maskedCount: number;
-  stageNote: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Mockup literals — the validated finished fallback. Used verbatim when the
-// sample fetch fails or returns no days so the surface still renders complete.
-// ---------------------------------------------------------------------------
-const FALLBACK_COLUMNS = [
-  "date",
-  "campaign",
-  "impressions",
-  "clicks",
-  "conversions",
-  "spend",
-  "revenue",
-  "roas",
-];
-
-const SAMPLE_DAYS: SampleDay[] = [
-  {
-    date: "22 Jul 2026",
-    summary: "Complete day · first 5 eligible rows",
-    expanded: true,
-    stats: { rows: "18,420", rejected: "0", fields: "48" },
-    columns: FALLBACK_COLUMNS,
-    rows: [
-      { date: "22 Jul", campaign: "Search · Brand", impressions: "184,209", clicks: "8,342", conversions: "412", spend: "€4,208.91", revenue: "€18,204.80", roas: "4.33" },
-      { date: "22 Jul", campaign: "Social · Prospecting", impressions: "912,730", clicks: "14,905", conversions: "284", spend: "€8,932.40", revenue: "€24,762.10", roas: "2.77" },
-      { date: "22 Jul", campaign: "Video · Summer", impressions: "634,122", clicks: "6,015", conversions: "96", spend: "€3,485.18", revenue: "€10,834.06", roas: "3.11" },
-      { date: "22 Jul", campaign: "Retargeting · All", impressions: "92,882", clicks: "3,741", conversions: "359", spend: "€2,809.77", revenue: "€14,084.42", roas: "5.01" },
-      { date: "22 Jul", campaign: "Shopping · Core", impressions: "241,554", clicks: "12,084", conversions: "628", spend: "€6,942.05", revenue: "€29,102.18", roas: "4.19" },
-    ],
-  },
-  {
-    date: "21 Jul 2026",
-    summary: "17,908 published rows · 5 samples available",
-    expanded: false,
-    stats: { label: "Complete" },
-  },
-  {
-    date: "20 Jul 2026",
-    summary: "18,114 published rows · 5 samples available",
-    expanded: false,
-    stats: { label: "Complete" },
-  },
-];
-
-const FALLBACK_META: SampleMeta = {
-  provenance: "Published through 22 Jul 2026 · mapping v12 · processing v4",
-  maskedCount: 2,
-  stageNote: null,
-};
-
-// ---------------------------------------------------------------------------
-// Formatting helpers.
-// ---------------------------------------------------------------------------
-const NUM_FMT = new Intl.NumberFormat("en-US");
-
-function fmtCount(n: number): string {
-  return Number.isFinite(n) ? NUM_FMT.format(n) : "—";
-}
-
-function fmtDayHeader(date: string): string {
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return date;
-  return d.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-// Numeric columns render with the Geist tabular `number` class + right-aligned
-// `amount` (mockup parity). A cell is numeric when its raw value is a number or
-// a numeric-looking string (allowing thousands separators / currency glyphs).
-// Masked cells ([MASKED]) render as-is, left-aligned.
-function isNumericCell(v: SampleCell): boolean {
-  if (typeof v === "number") return true;
-  if (typeof v !== "string") return false;
-  const trimmed = v.trim();
-  if (!trimmed || trimmed === "[MASKED]") return false;
-  return /^[€$£¥]?\s?-?[\d.,]+%?$/.test(trimmed);
-}
-
-function renderCell(v: SampleCell): string {
-  if (v === null || v === undefined) return "—";
-  if (typeof v === "boolean") return v ? "true" : "false";
-  if (typeof v === "number") return NUM_FMT.format(v);
-  return v;
-}
-
-// A stable, human column label from a raw key (snake_case → Title Case).
-function columnLabel(key: string): string {
-  return key
-    .replace(/[_-]+/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-// ---------------------------------------------------------------------------
-// Response → view model.
-// ---------------------------------------------------------------------------
-
-// Stable union of column keys for a day: first row's keys in order, then any
-// additional keys from later rows appended in first-seen order.
-function unionColumns(rows: Record<string, SampleCell>[]): string[] {
-  const seen = new Set<string>();
-  const cols: string[] = [];
-  for (const row of rows) {
-    for (const key of Object.keys(row)) {
-      if (!seen.has(key)) {
-        seen.add(key);
-        cols.push(key);
-      }
-    }
-  }
-  return cols;
-}
-
-function daysFromResponse(resp: SampleApiResponse): SampleDay[] {
-  return resp.days.map((day, i) => {
-    const hasRows = Array.isArray(day.rows) && day.rows.length > 0;
-    const columns = hasRows ? unionColumns(day.rows) : undefined;
-    // The first (most recent) day is expanded, matching the mockup timeline.
-    const expanded = i === 0 && hasRows;
-    if (expanded) {
-      return {
-        date: fmtDayHeader(day.date),
-        summary: `Complete day · first ${day.rows.length} eligible rows`,
-        expanded: true,
-        stats: {
-          rows: fmtCount(day.row_count),
-          rejected: fmtCount(day.rejection_count),
-          fields: fmtCount(day.field_count),
-        },
-        columns,
-        rows: day.rows,
-      };
-    }
-    return {
-      date: fmtDayHeader(day.date),
-      summary: `${fmtCount(day.row_count)} rows · ${fmtCount(day.rows?.length ?? 0)} samples available`,
-      expanded: false,
-      stats: { label: day.rejection_count > 0 ? `${fmtCount(day.rejection_count)} rejected` : "Complete" },
-    };
-  });
-}
-
-// Provenance line from the real response fields where available:
-// "Published through <last date> · mapping v<id> · processing v<execution>".
-// Only the parts the response actually carries are shown.
-function metaFromResponse(resp: SampleApiResponse): SampleMeta {
-  const parts: string[] = [];
-  const lastDate = resp.days[0]?.date ?? resp.date_to;
-  const served = stageLabel(resp.served_stage);
-  if (lastDate) parts.push(`${served} through ${fmtDayHeader(lastDate)}`);
-  if (resp.mapping_version_id) parts.push(`mapping ${resp.mapping_version_id}`);
-  if (resp.published_execution_id) parts.push(`processing ${resp.published_execution_id}`);
-  return {
-    provenance: parts.join(" · "),
-    maskedCount: resp.masked_fields?.length ?? 0,
-    stageNote: resp.stage_note ?? null,
-  };
-}
+type LoadState =
+  | { status: "loading"; key: string }
+  | { status: "ok"; key: string; data: SampleResponse }
+  | { status: "error"; key: string; message: string };
 
 interface DatastreamDataProps {
-  projectId?: string;
-  datastreamId?: string;
+  projectId: string;
+  datastreamId: string;
+  onNavigateTab?: (tab: Tab) => void;
 }
 
-export default function DatastreamData({
-  projectId: _projectId = "default",
-  datastreamId = "campaign-performance",
-}: DatastreamDataProps) {
-  // The active pipeline stage the sample is drawn from. Defaults to Published,
-  // matching the mockup's "Stage: Published" selector.
-  const [stage, setStage] = useState<Stage>("Published");
-  // The active per-datastream tab. "Data" is current on this screen.
-  const activeTab: (typeof LOCAL_TABS)[number] = "Data";
+const STAGES: readonly Stage[] = ["collected", "mapped", "processed", "published"];
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-  // Sample timeline + evidence meta. Seeded with the finished fallback so the
-  // surface renders complete before the first response (or if it never lands).
-  const [days, setDays] = useState<SampleDay[]>(SAMPLE_DAYS);
-  const [meta, setMeta] = useState<SampleMeta>(FALLBACK_META);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isStage(value: unknown): value is Stage { return typeof value === "string" && STAGES.includes(value as Stage); }
+function isNullableString(value: unknown): value is string | null { return value === null || typeof value === "string"; }
+function isNonNegativeInteger(value: unknown): value is number { return Number.isInteger(value) && Number(value) >= 0; }
+function isSampleCell(value: unknown): value is SampleCell {
+  return value === null || ["string", "number", "boolean"].includes(typeof value);
+}
+function isIsoDay(value: unknown): value is string {
+  if (typeof value !== "string" || !DATE_PATTERN.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 
-  // Last-7-days range ending today (inclusive), computed once per mount.
-  const range = useMemo(() => {
+function validateSampleResponse(
+  value: unknown,
+  expected: { projectId: string; datastreamId: string; stage: Stage; from: string; to: string; limit: number },
+): SampleResponse {
+  if (!isRecord(value) || value.project_id !== expected.projectId || value.datastream_id !== expected.datastreamId) {
+    throw new Error("The sample response did not match the requested project and Datastream.");
+  }
+  if (value.stage !== expected.stage || value.date_from !== expected.from || value.date_to !== expected.to || value.limit !== expected.limit) {
+    throw new Error("The sample response did not match the requested stage and interval.");
+  }
+  if (!isStage(value.stage) || !isStage(value.served_stage) || !isRecord(value.datastream) || value.datastream.id !== expected.datastreamId) {
+    throw new Error("The sample response contract was invalid.");
+  }
+  if (!isNullableString(value.stage_note) || typeof value.collection_expected !== "boolean" || typeof value.materialization_available !== "boolean" || !isNullableString(value.sample_watermark) || (value.sample_watermark !== null && !isIsoDay(value.sample_watermark)) || typeof value.version_binding_available !== "boolean") {
+    throw new Error("The sample response contract was invalid.");
+  }
+  if (!Array.isArray(value.masked_fields) || !value.masked_fields.every((field) => typeof field === "string") || !isNonNegativeInteger(value.masked_value_count) || !Array.isArray(value.days)) {
+    throw new Error("The sample response contract was invalid.");
+  }
+  for (const day of value.days) {
+    if (!isRecord(day) || !isIsoDay(day.date) || !isNonNegativeInteger(day.sampled_row_count) || !(day.rejection_count === null || isNonNegativeInteger(day.rejection_count)) || !isNonNegativeInteger(day.field_count) || !Array.isArray(day.rows)) {
+      throw new Error("The sample response contained invalid daily evidence.");
+    }
+    for (const row of day.rows) {
+      if (!isRecord(row) || !Object.values(row).every(isSampleCell)) {
+        throw new Error("The sample response contained invalid row evidence.");
+      }
+    }
+    if (day.sampled_row_count !== day.rows.length || day.sampled_row_count > expected.limit) {
+      throw new Error("The sample response exceeded its bounded row contract.");
+    }
+  }
+  return value as unknown as SampleResponse;
+}
+
+function localIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function formatDay(value: string | null | undefined): string {
+  if (!value || !isIsoDay(value)) return "Unknown";
+  const date = new Date(`${value}T00:00:00`);
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+function titleCase(value: string): string { return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()); }
+function renderCell(value: SampleCell): string {
+  if (value == null) return "—";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return value.toLocaleString("en-US");
+  return value;
+}
+function columnsFor(rows: Record<string, SampleCell>[]): string[] {
+  const seen = new Set<string>();
+  for (const row of rows) for (const key of Object.keys(row)) seen.add(key);
+  return [...seen];
+}
+function tabHref(projectId: string, datastreamId: string, tab: Tab): string {
+  return `/p/${encodeURIComponent(projectId)}/data/datastreams/o/datastream/${encodeURIComponent(datastreamId)}/${tab}`;
+}
+function requestKey(projectId: string, datastreamId: string, request: { stage: Stage; from: string; to: string; sequence: number }): string {
+  return [projectId, datastreamId, request.stage, request.from, request.to, request.sequence].join("\u0000");
+}
+
+export default function DatastreamData({ projectId, datastreamId, onNavigateTab }: DatastreamDataProps) {
+  const initialRange = useMemo(() => {
     const to = new Date();
-    const from = new Date();
+    const from = new Date(to);
     from.setDate(to.getDate() - 6);
-    return { from: isoDate(from), to: isoDate(to) };
+    return { from: localIsoDate(from), to: localIsoDate(to) };
   }, []);
+  const [stage, setStage] = useState<Stage>("published");
+  const [dateFrom, setDateFrom] = useState(initialRange.from);
+  const [dateTo, setDateTo] = useState(initialRange.to);
+  const [request, setRequest] = useState({ stage: "published" as Stage, ...initialRange, sequence: 0 });
+  const key = requestKey(projectId, datastreamId, request);
+  const [state, setState] = useState<LoadState>({ status: "loading", key });
+  const visibleState: LoadState = state.key === key ? state : { status: "loading", key };
 
-  // Fetch on mount and whenever the stage selector changes.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const headers: Record<string, string> = {};
-        const token = localStorage.getItem("api_token");
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const qs = new URLSearchParams({
-          stage: stageToken(stage),
-          date_from: range.from,
-          date_to: range.to,
-          limit: "5",
-        });
-        const resp = await fetch(
-          `/api/datastreams/${datastreamId}/sample?${qs.toString()}`,
-          { headers }
-        );
-        if (!resp.ok) return; // keep the finished fallback
-        const body = (await resp.json()) as SampleApiResponse;
-        const mapped = daysFromResponse(body);
-        if (cancelled) return;
-        if (mapped.length) {
-          setDays(mapped);
-          setMeta(metaFromResponse(body));
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    setState({ status: "loading", key });
+    const query = new URLSearchParams({
+      project_id: projectId,
+      stage: request.stage,
+      date_from: request.from,
+      date_to: request.to,
+      limit: "5",
+    });
+    void apiFetch(`/api/datastreams/${encodeURIComponent(datastreamId)}/sample?${query.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          const body = await response.json().catch(() => null) as { message?: string } | null;
+          throw new Error(body?.message || `Bounded sample could not be loaded (HTTP ${response.status}).`);
         }
-        // Reflect the actually-served stage in the selector when it differs
-        // (so the surfaced stage_note and the label stay consistent).
-        if (body.served_stage) {
-          const served = stageLabel(body.served_stage);
-          if (served !== stage) setStage(served);
-        }
-      } catch {
-        /* keep the finished fallback */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [datastreamId, stage, range.from, range.to]);
+        const body: unknown = await response.json();
+        return validateSampleResponse(body, { projectId, datastreamId, stage: request.stage, from: request.from, to: request.to, limit: 5 });
+      })
+      .then((data) => { if (!cancelled) setState({ status: "ok", key, data }); })
+      .catch((error: unknown) => {
+        if (!cancelled) setState({ status: "error", key, message: error instanceof Error ? error.message : "Bounded sample could not be loaded." });
+      })
+      .finally(() => window.clearTimeout(timeout));
+    return () => { cancelled = true; controller.abort(); window.clearTimeout(timeout); };
+  }, [datastreamId, key, projectId, request]);
 
-  function cycleStage() {
-    // The selector advances through the four stages on click; the effect above
-    // refetches the bounded sample for the newly selected stage.
-    const i = STAGES.indexOf(stage);
-    setStage(STAGES[(i + 1) % STAGES.length]);
-  }
+  const data = visibleState.status === "ok" ? visibleState.data : null;
+  const name = data?.datastream.name?.trim() || datastreamId;
+  const source = data?.datastream.module_name?.trim() || data?.datastream.source_kind?.trim() || "Source unavailable";
+  const totalSamples = data?.days.reduce((sum, day) => sum + day.sampled_row_count, 0) ?? 0;
+  const navigate = (event: MouseEvent<HTMLAnchorElement>, tab: Tab) => {
+    if (!onNavigateTab || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    onNavigateTab(tab);
+  };
+  const load = () => {
+    if (!isIsoDay(dateFrom) || !isIsoDay(dateTo)) {
+      setState({ status: "error", key, message: "Both interval dates are required and must be valid." });
+      return;
+    }
+    if (dateFrom > dateTo) {
+      setState({ status: "error", key, message: "The interval start must not be after its end." });
+      return;
+    }
+    setRequest({ stage, from: dateFrom, to: dateTo, sequence: request.sequence + 1 });
+  };
 
   return (
     <>
-      {/* Object header — provider logo + datastream name + source line.
-          Real logo image at /connectors/meta.svg (no hand-drawn SVG). */}
       <div className="object" style={{ marginBottom: 22 }}>
-        <div className="object-logo provider-logo">
-          {/* TODO(api): resolve provider logo from the datastream's source. */}
-          <img src="/connectors/meta.svg" alt="Meta" />
-        </div>
-        <div>
-          <strong>Campaign performance</strong>
-          <span>Meta Ads · Spend</span>
-        </div>
+        <div className="object-logo provider-logo"><span aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span></div>
+        <div><strong>{name}</strong><span>{source}</span></div>
       </div>
 
-      {/* Per-datastream local tabs. Non-active tabs are inert here (the router
-          owns cross-tab navigation); wiring is a // TODO(api) once the detail
-          routes land. */}
       <nav className="local-tabs" aria-label="Datastream">
-        {LOCAL_TABS.map((label) =>
-          label === activeTab ? (
-            <div key={label} className="local-tab active" aria-current="page">
-              {label}
-            </div>
-          ) : (
-            // TODO(api): route to the sibling datastream tab.
-            <div key={label} className="local-tab">
-              {label}
-            </div>
-          )
-        )}
+        {(["overview", "data", "mapping", "runs"] as const).map((tab) => (
+          <a key={tab} className={`local-tab${tab === "data" ? " active" : ""}`} href={tabHref(projectId, datastreamId, tab)} aria-current={tab === "data" ? "page" : undefined} onClick={(event) => navigate(event, tab)}>{titleCase(tab)}</a>
+        ))}
+        <span className="local-tab" aria-disabled="true">Processing unavailable</span>
+        <span className="local-tab" aria-disabled="true">Outputs unavailable</span>
       </nav>
 
       <div className="full-main">
-        <div className="page-header">
-          <div>
-            <h1>Data sample</h1>
-            <p>
-              The first five eligible published rows for each day. Samples are
-              evidence, not statistical summaries.
-            </p>
-          </div>
-        </div>
+        <div className="page-header"><div><h1>Data sample</h1><p>Deterministic first-N evidence per day. Samples are not published-volume totals.</p></div></div>
 
-        {/* Toolbar: date range, stage, campaign filter, columns; Export Excel +
-            Load sample on the right. */}
         <div className="sample-toolbar">
-          {/* TODO(api): date-range picker wiring */}
-          <button className="selector" type="button">
-            {fmtDayHeader(range.from)} – {fmtDayHeader(range.to)}
-          </button>
-          {/* Stage selector — Collected / Mapped / Processed / Published. */}
-          <button className="selector" type="button" onClick={cycleStage}>
-            Stage: {stage}
-          </button>
-          {/* When the served stage differs from the requested one, the API
-              returns a stage_note; surface it next to the selector. */}
-          {meta.stageNote && (
-            <span className="signal-label" role="status">
-              <span className="signal-mark" />
-              {meta.stageNote}
-            </span>
-          )}
-          {/* TODO(api): campaign filter */}
-          <button className="selector" type="button">All campaigns</button>
-          {/* TODO(api): column chooser */}
-          <button className="selector" type="button">Columns</button>
+          <label>Date from <input aria-label="Date from" type="date" required value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
+          <label>Date to <input aria-label="Date to" type="date" required value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
+          <label>Stage <select aria-label="Stage" value={stage} onChange={(event) => setStage(event.target.value as Stage)}>{STAGES.map((value) => <option key={value} value={value}>{titleCase(value)}</option>)}</select></label>
           <div className="right">
-            {/* TODO(api): governed async Excel export (see GAP note). */}
-            <button className="secondary-button" type="button">Export Excel</button>
-            {/* TODO(api): fetch the bounded sample for the selected stage/range. */}
-            <button className="primary-button" type="button">Load sample</button>
+            <button className="secondary-button" type="button" disabled title="A durable governed export job is not available yet.">Export Excel unavailable</button>
+            <button className="primary-button" type="button" onClick={load}>Load sample</button>
           </div>
         </div>
+        <p className="mask-note">Excel export stays unavailable until a durable authorized job can bind the project, Datastream, stage, interval, filters and publication version.</p>
 
-        {/* Evidence note: coverage/version provenance + masking count. */}
-        <div className="sample-note">
-          {meta.provenance && (
-            <>
-              <span className="signal-label success">
-                <span className="signal-mark" />
-                {meta.provenance}
-              </span>{" "}
-            </>
-          )}
-          {/* Masking policy — count of fields masked server-side in this sample. */}
-          <span className="mask-note">
-            <b>
-              {meta.maskedCount} sensitive field{meta.maskedCount === 1 ? "" : "s"} masked
-            </b>
-          </span>
-        </div>
+        {visibleState.status === "loading" && <section className="panel" role="status"><h2>Loading bounded sample…</h2><p>No sample evidence is substituted while the request is pending.</p></section>}
+        {visibleState.status === "error" && <section className="panel" role="alert"><h2>Sample evidence unavailable</h2><p>{visibleState.message}</p><button className="secondary-button" type="button" onClick={load}>Retry</button></section>}
 
-        {/* Vertical timeline of sample-day cards. */}
-        <div className="sample-days">
-          {days.map((day) => (
-            <section
-              key={day.date}
-              className={day.expanded ? "sample-day" : "sample-day collapsed"}
-            >
-              <div className="sample-day-header">
-                <strong>{day.date}</strong>
-                <span className="summary">{day.summary}</span>
-                <div className="day-stats">
-                  {day.stats?.rows != null && (
-                    <span>
-                      <b className="number">{day.stats.rows}</b> rows
-                    </span>
-                  )}
-                  {day.stats?.rejected != null && (
-                    <span>
-                      <b className="number">{day.stats.rejected}</b> rejected
-                    </span>
-                  )}
-                  {day.stats?.fields != null && (
-                    <span>
-                      <b className="number">{day.stats.fields}</b> fields
-                    </span>
-                  )}
-                  {day.stats?.label != null && <span>{day.stats.label}</span>}
-                </div>
-                <span>{day.expanded ? "⌃" : "⌄"}</span>
-              </div>
+        {data && (
+          <>
+            {data.stage_note && <div className="sample-note" role="status"><b>Requested {titleCase(data.stage)}.</b> {data.stage_note}</div>}
+            {!data.collection_expected && <section className="panel" data-testid="collection-not-expected"><h2>Collection is not enabled</h2><p>Historical evidence may remain inspectable, but no new collection is currently expected.</p></section>}
+            {data.collection_expected && !data.materialization_available && <section className="panel" data-testid="materialization-missing"><h2>Sample materialisation unavailable</h2><p>The Datastream is enabled, but no readable governed materialisation exists for this interval.</p></section>}
+            {data.collection_expected && data.materialization_available && totalSamples === 0 && <section className="panel" data-testid="zero-sample-rows"><h2>No eligible rows</h2><p>The materialisation exists, but the selected stage and interval returned zero sample rows.</p></section>}
 
-              {day.expanded && day.rows && day.columns && (
-                <table className="table sample-table">
-                  <thead>
-                    <tr>
-                      {day.columns.map((col) => {
-                        // Header alignment tracks the first row's cell type so
-                        // numeric columns get the mockup's right-aligned amount.
-                        const numeric = isNumericCell(day.rows?.[0]?.[col] ?? null);
-                        return (
-                          <th key={col} className={numeric ? "amount" : undefined}>
-                            {columnLabel(col)}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {day.rows.map((row, i) => (
-                      <tr key={i}>
-                        {day.columns?.map((col) => {
-                          const value = row[col] ?? null;
-                          const numeric = isNumericCell(value);
-                          return (
-                            <td
-                              key={col}
-                              className={
-                                numeric
-                                  ? "number amount"
-                                  : col === "campaign"
-                                    ? "campaign"
-                                    : undefined
-                              }
-                            >
-                              {renderCell(value)}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </section>
-          ))}
-        </div>
+            <div className="sample-note">
+              <span className="signal-label"><span className="signal-mark" />Sample watermark (last day with sampled rows): {formatDay(data.sample_watermark)}</span>{" "}
+              <span>{data.version_binding_available ? "Version-bound sample" : "No version-bound sample available"}</span>{" "}
+              <span className="mask-note"><b>{data.masked_value_count.toLocaleString("en-US")} values masked across {data.masked_fields.length} sensitive fields</b></span>
+            </div>
+
+            {data.materialization_available && totalSamples > 0 && <div className="sample-days">
+              {data.days.map((day) => {
+                const columns = columnsFor(day.rows);
+                return <section key={day.date} className="sample-day">
+                  <div className="sample-day-header"><strong>{formatDay(day.date)}</strong><span className="summary">First {day.sampled_row_count} eligible rows</span><div className="day-stats"><span><b className="number">{day.sampled_row_count}</b> sampled</span><span><b className="number">{day.rejection_count == null ? "Unknown" : day.rejection_count}</b> rejected</span><span><b className="number">{day.field_count}</b> fields</span></div></div>
+                  {day.rows.length === 0 ? <p>No eligible rows on this day.</p> : <div className="table-scroll"><table className="table sample-table"><thead><tr>{columns.map((column) => <th key={column}>{titleCase(column)}</th>)}</tr></thead><tbody>{day.rows.map((row, rowIndex) => <tr key={rowIndex}>{columns.map((column) => <td key={column}>{renderCell(row[column] ?? null)}</td>)}</tr>)}</tbody></table></div>}
+                </section>;
+              })}
+            </div>}
+          </>
+        )}
       </div>
     </>
   );

@@ -66,7 +66,9 @@ def test_persist_render_envelope_inserts_and_purges():
 
     conn, cur = _make_conn()
     execute_calls = []
-    cur.execute = MagicMock(side_effect=lambda sql, params=None: execute_calls.append((sql, params)))
+    cur.execute = MagicMock(
+        side_effect=lambda sql, params=None: execute_calls.append((sql, params))
+    )
 
     result = persist_render_envelope(
         project_id="proj_a",
@@ -88,9 +90,9 @@ def test_persist_render_envelope_inserts_and_purges():
     assert len(execute_calls) == 2
     insert_sql, insert_params = execute_calls[0]
     assert "INSERT INTO app.render_snapshots" in insert_sql
-    assert insert_params[0] == result          # id
-    assert insert_params[1] == "proj_a"        # project_id
-    assert insert_params[2] == "get_card"      # tool_name
+    assert insert_params[0] == result  # id
+    assert insert_params[1] == "proj_a"  # project_id
+    assert insert_params[2] == "get_card"  # tool_name
 
     delete_sql, delete_params = execute_calls[1]
     assert "DELETE FROM app.render_snapshots" in delete_sql
@@ -159,15 +161,15 @@ def test_persist_render_envelope_question_extracted_from_tool_args():
 def _snapshot_row(snap_id="rsn_1", project_id="proj_a", tool_name="get_card"):
     """Retourner une ligne de résultat DB simulée."""
     return (
-        snap_id,                      # id
-        project_id,                   # project_id
-        tool_name,                    # tool_name
+        snap_id,  # id
+        project_id,  # project_id
+        tool_name,  # tool_name
         json.dumps({"template": "kpi"}),  # tool_args (JSONB retourné en str par psycopg mock)
-        "mcp://widget/kpi",           # widget_uri
-        "résumé tronqué",             # summary_snippet
-        "kpi",                        # question
-        "user_1",                     # identity
-        "abc",                        # trace_id
+        "mcp://widget/kpi",  # widget_uri
+        "résumé tronqué",  # summary_snippet
+        "kpi",  # question
+        "user_1",  # identity
+        "abc",  # trace_id
         datetime(2026, 7, 21, 10, 0, tzinfo=timezone.utc),  # created_at
         json.dumps({"freshness": "live"}),  # meta (JSONB)
     )
@@ -179,11 +181,21 @@ def test_list_render_snapshots_returns_rows():
 
     row = _snapshot_row()
     conn, cur = _make_conn(fetchall_return=[row])
-    cur.description = _col_desc([
-        "id", "project_id", "tool_name", "tool_args",
-        "widget_uri", "summary_snippet", "question",
-        "identity", "trace_id", "created_at", "meta",
-    ])
+    cur.description = _col_desc(
+        [
+            "id",
+            "project_id",
+            "tool_name",
+            "tool_args",
+            "widget_uri",
+            "summary_snippet",
+            "question",
+            "identity",
+            "trace_id",
+            "created_at",
+            "meta",
+        ]
+    )
 
     result = list_render_snapshots("proj_a", conn)
 
@@ -202,11 +214,21 @@ def test_list_render_snapshots_empty():
     from core.snapshots import list_render_snapshots
 
     conn, cur = _make_conn(fetchall_return=[])
-    cur.description = _col_desc([
-        "id", "project_id", "tool_name", "tool_args",
-        "widget_uri", "summary_snippet", "question",
-        "identity", "trace_id", "created_at", "meta",
-    ])
+    cur.description = _col_desc(
+        [
+            "id",
+            "project_id",
+            "tool_name",
+            "tool_args",
+            "widget_uri",
+            "summary_snippet",
+            "question",
+            "identity",
+            "trace_id",
+            "created_at",
+            "meta",
+        ]
+    )
 
     result = list_render_snapshots("proj_vide", conn)
     assert result == []
@@ -217,13 +239,25 @@ def test_list_render_snapshots_tool_name_filter():
     from core.snapshots import list_render_snapshots
 
     conn, cur = _make_conn(fetchall_return=[])
-    cur.description = _col_desc([
-        "id", "project_id", "tool_name", "tool_args",
-        "widget_uri", "summary_snippet", "question",
-        "identity", "trace_id", "created_at", "meta",
-    ])
+    cur.description = _col_desc(
+        [
+            "id",
+            "project_id",
+            "tool_name",
+            "tool_args",
+            "widget_uri",
+            "summary_snippet",
+            "question",
+            "identity",
+            "trace_id",
+            "created_at",
+            "meta",
+        ]
+    )
     execute_calls = []
-    cur.execute = MagicMock(side_effect=lambda sql, params=None: execute_calls.append((sql, params)) or None)
+    cur.execute = MagicMock(
+        side_effect=lambda sql, params=None: execute_calls.append((sql, params)) or None
+    )
     cur.fetchall = MagicMock(return_value=[])
 
     list_render_snapshots("proj_a", conn, tool_name="get_report")
@@ -258,11 +292,21 @@ def test_get_render_snapshot_found():
         datetime(2026, 7, 21, 10, 0, tzinfo=timezone.utc),
     )
     conn, cur = _make_conn(fetchone_return=row)
-    cur.description = _col_desc([
-        "id", "project_id", "tool_name", "tool_args", "envelope",
-        "widget_uri", "summary_snippet", "question",
-        "identity", "trace_id", "created_at",
-    ])
+    cur.description = _col_desc(
+        [
+            "id",
+            "project_id",
+            "tool_name",
+            "tool_args",
+            "envelope",
+            "widget_uri",
+            "summary_snippet",
+            "question",
+            "identity",
+            "trace_id",
+            "created_at",
+        ]
+    )
 
     result = get_render_snapshot("rsn_1", "proj_a", conn)
 
@@ -277,11 +321,21 @@ def test_get_render_snapshot_not_found():
     from core.snapshots import get_render_snapshot
 
     conn, cur = _make_conn(fetchone_return=None)
-    cur.description = _col_desc([
-        "id", "project_id", "tool_name", "tool_args", "envelope",
-        "widget_uri", "summary_snippet", "question",
-        "identity", "trace_id", "created_at",
-    ])
+    cur.description = _col_desc(
+        [
+            "id",
+            "project_id",
+            "tool_name",
+            "tool_args",
+            "envelope",
+            "widget_uri",
+            "summary_snippet",
+            "question",
+            "identity",
+            "trace_id",
+            "created_at",
+        ]
+    )
 
     result = get_render_snapshot("rsn_inexistant", "proj_a", conn)
     assert result is None
@@ -297,11 +351,21 @@ def test_get_render_snapshot_ad5_cross_project():
 
     # Simuler : la requête ne retourne rien quand project_id ne correspond pas
     conn, cur = _make_conn(fetchone_return=None)
-    cur.description = _col_desc([
-        "id", "project_id", "tool_name", "tool_args", "envelope",
-        "widget_uri", "summary_snippet", "question",
-        "identity", "trace_id", "created_at",
-    ])
+    cur.description = _col_desc(
+        [
+            "id",
+            "project_id",
+            "tool_name",
+            "tool_args",
+            "envelope",
+            "widget_uri",
+            "summary_snippet",
+            "question",
+            "identity",
+            "trace_id",
+            "created_at",
+        ]
+    )
 
     # Snapshot appartenant au projet A, demandé depuis le projet B
     result = get_render_snapshot("rsn_projet_a", "proj_b", conn)
@@ -395,6 +459,7 @@ def _make_rendus_app(auth_ok: bool = True, identity: str = "test_user"):
         return auth_ok, identity
 
     import core.rendus_api as rendus_mod
+
     rendus_mod._check_auth = mock_check_auth  # type: ignore[assignment]
 
     return Starlette(routes=RENDUS_ROUTES)
@@ -438,7 +503,7 @@ def test_list_snapshots_ok():
 
     with (
         patch("core.db.get_connection", return_value=mock_conn_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch("core.snapshots.list_render_snapshots", return_value=fake_snapshots),
     ):
         resp = client.get("/api/rendus/snapshots?project_id=proj_a")
@@ -463,7 +528,7 @@ def test_list_snapshots_ad5_denied():
 
     with (
         patch("core.db.get_connection", return_value=mock_conn_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=False),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=False),
     ):
         resp = client.get("/api/rendus/snapshots?project_id=proj_autre")
 
@@ -490,7 +555,7 @@ def test_get_snapshot_ok():
 
     with (
         patch("core.db.get_connection", return_value=mock_conn_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch("core.snapshots.get_render_snapshot", return_value=fake_snap),
     ):
         resp = client.get("/api/rendus/snapshots/rsn_1?project_id=proj_a")
@@ -513,7 +578,7 @@ def test_get_snapshot_not_found():
 
     with (
         patch("core.db.get_connection", return_value=mock_conn_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch("core.snapshots.get_render_snapshot", return_value=None),
     ):
         resp = client.get("/api/rendus/snapshots/rsn_inexistant?project_id=proj_a")
@@ -535,7 +600,7 @@ def test_delete_snapshot_ok():
 
     with (
         patch("core.db.get_connection", return_value=mock_conn_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch("core.snapshots.delete_render_snapshot", return_value=True),
     ):
         resp = client.delete("/api/rendus/snapshots/rsn_1?project_id=proj_a")
@@ -557,9 +622,103 @@ def test_delete_snapshot_not_found():
 
     with (
         patch("core.db.get_connection", return_value=mock_conn_ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.rendus_api._authorize_snapshot_project", return_value=True),
         patch("core.snapshots.delete_render_snapshot", return_value=False),
     ):
         resp = client.delete("/api/rendus/snapshots/rsn_inexistant?project_id=proj_a")
 
     assert resp.status_code == 404
+
+
+def test_snapshot_project_access_disabled_mode_allows_only_anonymous():
+    """Disabled self-host mode never grants a named bearer implicitly."""
+    from core.rendus_api import _authorize_snapshot_project
+
+    conn = MagicMock()
+    with patch.dict(os.environ, {"TOOROW_AUTH_MODE": "disabled"}):
+        assert _authorize_snapshot_project(
+            "anonymous",
+            "proj_local",
+            conn,
+            minimum_capability="view",
+        )
+        assert not _authorize_snapshot_project(
+            "bearer_without_grant",
+            "proj_local",
+            conn,
+            minimum_capability="view",
+        )
+
+
+def test_list_snapshots_strict_bearer_without_grant_is_denied():
+    """A bearer without org membership/grant cannot read a project."""
+    from starlette.testclient import TestClient
+
+    app = _make_rendus_app(identity="bearer_without_grant")
+    client = TestClient(app, raise_server_exceptions=False)
+    mock_conn_ctx = MagicMock()
+    mock_conn = MagicMock()
+    mock_conn_ctx.__enter__ = MagicMock(return_value=mock_conn)
+    mock_conn_ctx.__exit__ = MagicMock(return_value=False)
+
+    with (
+        patch.dict(os.environ, {"TOOROW_AUTH_MODE": "oauth"}),
+        patch("core.db.get_connection", return_value=mock_conn_ctx),
+        patch("core.db.set_local_access_context") as set_access_context,
+        patch(
+            "core.project_access.resolve_strict_resource_access",
+            return_value=MagicMock(allowed=False),
+        ) as resolve_access,
+        patch("core.snapshots.list_render_snapshots") as list_snapshots,
+    ):
+        resp = client.get(
+            "/api/rendus/snapshots?project_id=proj_without_legacy_membership"
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "not_found"
+    set_access_context.assert_called_once_with(
+        mock_conn,
+        "bearer_without_grant",
+        enforce_epic36=True,
+    )
+    resolve_access.assert_called_once_with(
+        "bearer_without_grant",
+        mock_conn,
+        project_id="proj_without_legacy_membership",
+        minimum_capability="view",
+        auth_mode="oauth",
+    )
+    list_snapshots.assert_not_called()
+
+
+def test_delete_snapshot_strict_bearer_without_grant_is_denied():
+    """A bearer without org membership/grant cannot mutate a project."""
+    from starlette.testclient import TestClient
+
+    app = _make_rendus_app(identity="bearer_without_grant")
+    client = TestClient(app, raise_server_exceptions=False)
+    mock_conn_ctx = MagicMock()
+    mock_conn = MagicMock()
+    mock_conn_ctx.__enter__ = MagicMock(return_value=mock_conn)
+    mock_conn_ctx.__exit__ = MagicMock(return_value=False)
+
+    with (
+        patch.dict(os.environ, {"TOOROW_AUTH_MODE": "oauth"}),
+        patch("core.db.get_connection", return_value=mock_conn_ctx),
+        patch("core.db.set_local_access_context"),
+        patch(
+            "core.project_access.resolve_strict_resource_access",
+            return_value=MagicMock(allowed=False),
+        ) as resolve_access,
+        patch("core.snapshots.delete_render_snapshot") as delete_snapshot,
+    ):
+        resp = client.delete(
+            "/api/rendus/snapshots/rsn_foreign"
+            "?project_id=proj_without_legacy_membership"
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "not_found"
+    assert resolve_access.call_args.kwargs["minimum_capability"] == "manage"
+    delete_snapshot.assert_not_called()

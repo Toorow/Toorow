@@ -224,3 +224,14 @@
   .mapping-search { flex: 1; min-width: 180px; width: auto; }
   .mapping-footer { gap: 12px; flex-wrap: wrap; padding-block: 10px; }
 }
+.mapping-version-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.mapping-version-picker label { font-weight: 700; }
+.mapping-version-picker span { color: var(--muted); font-size: 12px; }
+.field-table tbody tr { cursor: pointer; }
+.field-table tbody tr:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.code-box { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

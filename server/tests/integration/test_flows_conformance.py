@@ -55,16 +55,18 @@ def seeded(monkeypatch):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO app.projects (id, name, slug, created_by)
-                VALUES (%s, %s, %s, 'test') ON CONFLICT DO NOTHING
+                INSERT INTO app.projects (id, name, slug, created_by, org_id)
+                VALUES (%s, %s, %s, 'test', 'org_test_fixture') ON CONFLICT DO NOTHING
                 """,
                 (project_id, project_id, project_id),
             )
             cur.execute(
                 """
                 INSERT INTO app.connection_ref
-                    (id, nango_connection_id, provider, project_id, status)
-                VALUES (%s, %s, 'google-analytics', %s, 'active')
+                    (id, nango_connection_id, provider, project_id, status, owner_org_id,
+                        owner_identity)
+                VALUES (%s, %s, 'google-analytics', %s, 'active', 'org_test_fixture',
+                    'tester@example.com')
                 ON CONFLICT DO NOTHING
                 """,
                 (conn_ref_id, f"nango-flow-{conn_ref_id[-8:]}", project_id),
@@ -74,15 +76,9 @@ def seeded(monkeypatch):
     finally:
         # Cleanup (order respects FKs: mappings cascade from datastreams).
         with conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM app.datastreams WHERE project_id = %s", (project_id,)
-            )
-            cur.execute(
-                "DELETE FROM app.report_overrides WHERE project_id = %s", (project_id,)
-            )
-            cur.execute(
-                "DELETE FROM app.connection_ref WHERE id = %s", (conn_ref_id,)
-            )
+            cur.execute("DELETE FROM app.datastreams WHERE project_id = %s", (project_id,))
+            cur.execute("DELETE FROM app.report_overrides WHERE project_id = %s", (project_id,))
+            cur.execute("DELETE FROM app.connection_ref WHERE id = %s", (conn_ref_id,))
             cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
         conn.commit()
         conn.close()
@@ -260,5 +256,6 @@ def test_smuggled_secret_rejected_via_mcp(seeded):
 
     data = _run(scenario())
     assert data["ok"] is False
-    assert any("non autorise" in e["message"] or "secret" in e["message"].lower()
-               for e in data["errors"])
+    assert any(
+        "non autorise" in e["message"] or "secret" in e["message"].lower() for e in data["errors"]
+    )

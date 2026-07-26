@@ -75,7 +75,8 @@ sources:
           Contains team-authored knowledge topics (platform scope when project_id IS NULL,
           project scope otherwise -- AD-5). AD-8: Postgres is the sole writer; only
           mirror_sync.py may populate this table in DuckDB/BigQuery.
-          Columns: id, project_id, title, body_md, status, created_by, created_at, updated_at.
+          Columns: id, project_id, title, body_md, status, created_by, created_at,
+          updated_at, owner (44.11 -- nullable explicit human owner).
 
       - name: procedures
         description: >
@@ -84,7 +85,8 @@ sources:
           Platform scope when project_id IS NULL, project scope otherwise (AD-5).
           AD-8: Postgres is the sole writer.
           Columns: id, project_id, name, description, frontmatter_yaml, body_md,
-                   status, created_by, created_at, updated_at.
+                   status, created_by, created_at, updated_at,
+                   owner (44.11 -- nullable explicit human owner).
 
       - name: context_graph
         description: >

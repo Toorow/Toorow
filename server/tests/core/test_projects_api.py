@@ -106,9 +106,110 @@ def _drop_by_slug(slug: str) -> None:
         conn.commit()
 
 
+@pytest.fixture(autouse=True)
+def caller_org():
+    """L'identité de test appartient à une organisation, comme un vrai utilisateur.
+
+    Sans ce contexte, ces tests créaient des projets ORPHELINS : sans org_id, un
+    projet n'a pas d'entrepôt où atterrir (warehouse_tenancy retombe sur le
+    nommage legacy) et échappe au cloisonnement. La création de projet refuse
+    désormais de fabriquer cet objet incohérent, et le harnais doit refléter le
+    parcours réel — on crée son organisation, PUIS son premier projet.
+    """
+    if not _pg_reachable():
+        yield None
+        return
+
+    from core.db import get_connection
+
+    org_id = f"org_test_{uuid.uuid4().hex[:12]}"
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO app.organizations (id, name, slug, status, created_by) "
+                "VALUES (%s, %s, %s, 'active', %s)",
+                (org_id, f"Test {org_id}", org_id.replace("_", "-"), _AUTH[1][1]),
+            )
+            cur.execute(
+                "INSERT INTO app.org_members (id, org_id, identity, role, status, joined_at) "
+                "VALUES (%s, %s, %s, 'owner', 'active', NOW())",
+                (f"omem_test_{uuid.uuid4().hex[:12]}", org_id, _AUTH[1][1]),
+            )
+        conn.commit()
+    try:
+        yield org_id
+    finally:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM app.org_members WHERE org_id = %s", (org_id,))
+                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+            conn.commit()
+
+
 # ---------------------------------------------------------------------------
 # Create
 # ---------------------------------------------------------------------------
+
+
+@pg_available
+@pytest.mark.anyio
+async def test_create_project_attaches_org_and_enrols_owner(caller_org):
+    """Un projet naît rattaché à son org, avec son créateur propriétaire.
+
+    Les deux moitiés comptent autant : sans org_id les datasets provisionnés à
+    la création de l'organisation ne serviraient jamais ; sans ligne dans
+    project_members, resolve_project_role ne trouve aucun rôle et le créateur
+    perd l'accès à son propre projet dans la seconde qui suit (404 sur ses
+    datastreams juste après un 201).
+    """
+    from core.admin_api import _create_project
+    from core.db import get_connection
+
+    slug = f"attach-{uuid.uuid4().hex[:8]}"
+    _drop_by_slug(slug)
+    try:
+        with patch(_AUTH[0], return_value=_AUTH[1]):
+            resp = await _create_project(_post_request({"name": "Attach", "slug": slug}))
+        assert resp.status_code == 201
+        project_id = json.loads(resp.body)["id"]
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT org_id FROM app.projects WHERE id = %s", (project_id,))
+            assert cur.fetchone()[0] == caller_org
+            cur.execute(
+                "SELECT role FROM app.project_members WHERE project_id = %s AND identity = %s",
+                (project_id, _AUTH[1][1]),
+            )
+            assert cur.fetchone()[0] == "owner"
+    finally:
+        _drop_by_slug(slug)
+
+
+@pg_available
+@pytest.mark.anyio
+async def test_create_project_without_org_is_refused(caller_org):
+    """Sans organisation, la création est REFUSÉE — pas dégradée en orphelin."""
+    from core.admin_api import _create_project
+    from core.db import get_connection
+
+    # Retirer l'appartenance le temps de l'appel : l'identité n'a plus d'org.
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM app.org_members WHERE identity = %s", (_AUTH[1][1],))
+        conn.commit()
+
+    slug = f"noorg-{uuid.uuid4().hex[:8]}"
+    _drop_by_slug(slug)
+    try:
+        with patch(_AUTH[0], return_value=_AUTH[1]):
+            resp = await _create_project(_post_request({"name": "NoOrg", "slug": slug}))
+        assert resp.status_code == 422
+        assert json.loads(resp.body)["code"] == "org_required"
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM app.projects WHERE slug = %s", (slug,))
+            assert cur.fetchone() is None, "un projet a été créé malgré le refus"
+    finally:
+        _drop_by_slug(slug)
 
 
 @pg_available
@@ -277,8 +378,9 @@ async def test_delete_project_archives_and_revokes():
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO app.connection_ref "
-                    "(id, provider, nango_connection_id, project_id) "
-                    "VALUES (%s, 'google-analytics', %s, %s)",
+                    "(id, provider, nango_connection_id, project_id, owner_org_id, owner_identity) "
+                    "VALUES (%s, 'google-analytics', %s, %s, 'org_test_fixture', "
+                    "'tester@example.com')",
                     (conn_id, conn_id, pid),
                 )
             conn.commit()

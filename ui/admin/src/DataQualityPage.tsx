@@ -2,11 +2,25 @@
  * DataQualityPage — Governance › Data quality surface, restyled onto the v3
  * design system (Sources.tsx / ProjectMapping.tsx vocabulary).
  *
- * Behavior is unchanged from the previous version: same /api/dq/* endpoints,
- * same summary → monitors → issues → freshness → definitions → cache layout,
- * same monitor filtering, acknowledge, and manual-evaluate flows. Only the
- * chrome (page-header + panels via application.css / data-quality.css) and the
- * copy (English) changed.
+ * Endpoints (all verified against server/core/dq_api.py DQ_ROUTES):
+ *   GET  /api/dq/summary
+ *   GET  /api/dq/issues
+ *   POST /api/dq/issues/{firing_id}/acknowledge
+ *   GET  /api/dq/datastream-freshness
+ *   POST /api/dq/evaluate
+ *
+ * HONESTY CONTRACT (this file used to break it):
+ *   A failed /api/dq/issues call used to `setIssues([])`, which the table renders
+ *   as "No issues detected — all of your monitors are green". An outage read as a
+ *   clean bill of health. Same for freshness. Every load now carries its own
+ *   error state and a FAILURE IS SAID: the panel shows "Could not load …" and NO
+ *   table at all. An empty list returned by the API is still shown as empty —
+ *   that is a truth, not a fallback.
+ *
+ *   The monitor-definition strip likewise no longer asserts "Five universal
+ *   monitors" with hard-coded thresholds as if they were this project's
+ *   configuration: it is derived from the monitors the API actually returned and
+ *   is labelled as platform defaults.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Alert, CircularProgress, Skeleton, Snackbar } from "@mui/material";
@@ -19,24 +33,14 @@ import {
   DQIssue,
   DQSummaryResponse,
   MonitorSummary,
+  MONITOR_META,
 } from "./qualite/types";
+import { apiFetch } from "./lib/apiFetch";
 import "./shell/application.css";
 import "./data-quality.css";
 
-function _authHeader(): Record<string, string> {
-  const token =
-    typeof window !== "undefined"
-      ? (window as Window & { __TOOROW_API_KEY__?: string }).__TOOROW_API_KEY__ ??
-        localStorage.getItem("api_token") ??
-        ""
-      : "";
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 async function fetchSummary(projectId: string): Promise<DQSummaryResponse> {
-  const res = await fetch(`/api/dq/summary?project_id=${encodeURIComponent(projectId)}`, {
-    headers: _authHeader(),
-  });
+  const res = await apiFetch(`/api/dq/summary?project_id=${encodeURIComponent(projectId)}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<DQSummaryResponse>;
 }
@@ -44,26 +48,23 @@ async function fetchSummary(projectId: string): Promise<DQSummaryResponse> {
 async function fetchIssues(projectId: string, monitor?: string | null): Promise<DQIssue[]> {
   const params = new URLSearchParams({ project_id: projectId });
   if (monitor) params.set("monitor", monitor);
-  const res = await fetch(`/api/dq/issues?${params.toString()}`, {
-    headers: _authHeader(),
-  });
+  const res = await apiFetch(`/api/dq/issues?${params.toString()}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   return (data as { issues: DQIssue[] }).issues ?? [];
 }
 
 async function acknowledgeIssue(projectId: string, firingId: string): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/dq/issues/${encodeURIComponent(firingId)}/acknowledge?project_id=${encodeURIComponent(projectId)}`,
-    { method: "POST", headers: _authHeader() }
+    { method: "POST" }
   );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
 async function fetchFreshness(projectId: string): Promise<DatastreamFreshness[]> {
-  const res = await fetch(
-    `/api/dq/datastream-freshness?project_id=${encodeURIComponent(projectId)}`,
-    { headers: _authHeader() }
+  const res = await apiFetch(
+    `/api/dq/datastream-freshness?project_id=${encodeURIComponent(projectId)}`
   );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
@@ -71,15 +72,25 @@ async function fetchFreshness(projectId: string): Promise<DatastreamFreshness[]>
 }
 
 async function triggerEvaluate(projectId: string): Promise<void> {
-  const res = await fetch(
-    `/api/dq/evaluate?project_id=${encodeURIComponent(projectId)}`,
-    { method: "POST", headers: _authHeader() }
-  );
+  const res = await apiFetch(`/api/dq/evaluate?project_id=${encodeURIComponent(projectId)}`, {
+    method: "POST",
+  });
   if (res.status === 429) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.message ?? "Rate limit reached.");
   }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+/** A load failure, said out loud — never an empty list standing in for one. */
+function LoadFailure({ what, detail }: { what: string; detail: string | null }) {
+  return (
+    <p className="dq-empty dq-error" role="alert">
+      Could not load {what}. This is a loading failure, not a clean result —
+      nothing is being reported below.
+      {detail ? <span className="dq-error-detail"> ({detail})</span> : null}
+    </p>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -109,9 +120,11 @@ function MonitorCardSkeleton() {
 function FreshnessTable({
   datastreams,
   loading,
+  error,
 }: {
   datastreams: DatastreamFreshness[];
   loading: boolean;
+  error: string | null;
 }) {
   if (loading) {
     return (
@@ -120,6 +133,9 @@ function FreshnessTable({
         <Skeleton variant="text" width="80%" />
       </div>
     );
+  }
+  if (error) {
+    return <LoadFailure what="datastream freshness" detail={error} />;
   }
   if (datastreams.length === 0) {
     return <p className="dq-empty">No datastreams registered yet.</p>;
@@ -181,11 +197,13 @@ export default function DataQualityPage({ projectId }: DataQualityPageProps) {
 
   const [issues, setIssues] = useState<DQIssue[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
+  const [issuesError, setIssuesError] = useState<string | null>(null);
   const [ackError, setAckError] = useState<string | null>(null);
   const [acknowledging, setAcknowledging] = useState<Set<string>>(new Set());
 
   const [freshness, setFreshness] = useState<DatastreamFreshness[]>([]);
   const [freshnessLoading, setFreshnessLoading] = useState(false);
+  const [freshnessError, setFreshnessError] = useState<string | null>(null);
 
   const [evaluating, setEvaluating] = useState(false);
   const [evalSuccess, setEvalSuccess] = useState(false);
@@ -208,11 +226,15 @@ export default function DataQualityPage({ projectId }: DataQualityPageProps) {
   const loadIssues = useCallback(async () => {
     if (!projectId) return;
     setIssuesLoading(true);
+    setIssuesError(null);
     try {
       const data = await fetchIssues(projectId, selectedMonitor);
       setIssues(data);
-    } catch {
+    } catch (err) {
+      // A failed load is NEVER an empty issue list: "no issues" would read as
+      // "quality is fine". Drop the stale rows and say the load failed.
       setIssues([]);
+      setIssuesError(err instanceof Error ? err.message : String(err));
     } finally {
       setIssuesLoading(false);
     }
@@ -221,11 +243,13 @@ export default function DataQualityPage({ projectId }: DataQualityPageProps) {
   const loadFreshness = useCallback(async () => {
     if (!projectId) return;
     setFreshnessLoading(true);
+    setFreshnessError(null);
     try {
       const data = await fetchFreshness(projectId);
       setFreshness(data);
-    } catch {
+    } catch (err) {
       setFreshness([]);
+      setFreshnessError(err instanceof Error ? err.message : String(err));
     } finally {
       setFreshnessLoading(false);
     }
@@ -294,7 +318,7 @@ export default function DataQualityPage({ projectId }: DataQualityPageProps) {
         <div className="page-header">
           <div>
             <h1>Data quality</h1>
-            <p>Universal monitors that watch every datastream — no configuration required.</p>
+            <p>Universal monitors that watch every datastream.</p>
           </div>
         </div>
         <p className="dq-empty">Select a project to view its data quality.</p>
@@ -308,11 +332,12 @@ export default function DataQualityPage({ projectId }: DataQualityPageProps) {
         <div className="page-header">
           <div>
             <h1>Data quality</h1>
-            <p>Universal monitors that watch every datastream — no configuration required.</p>
+            <p>Universal monitors that watch every datastream.</p>
           </div>
         </div>
-        <p className="dq-empty dq-error">
-          Could not load the quality monitors. Try again in a moment.
+        <p className="dq-empty dq-error" role="alert">
+          Could not load the quality monitors ({summaryError}). Nothing below can be
+          reported — this is a loading failure, not a clean result.
         </p>
       </>
     );
@@ -328,8 +353,11 @@ export default function DataQualityPage({ projectId }: DataQualityPageProps) {
         <div>
           <h1>Data quality</h1>
           <p>
-            Five universal monitors — no configuration required. Select a monitor to filter the
-            issues below.
+            {summaryLoading
+              ? "Loading the universal monitors…"
+              : monitors.length === 0
+                ? "No monitors have reported for this project yet."
+                : `${monitors.length} universal monitor${monitors.length === 1 ? "" : "s"} reporting. Select one to filter the issues below.`}
           </p>
         </div>
         <div className="header-actions">
@@ -351,23 +379,30 @@ export default function DataQualityPage({ projectId }: DataQualityPageProps) {
         </div>
       </div>
 
-      <section className="dq-monitors" role="list" aria-label="Quality monitors">
-        {summaryLoading
-          ? Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} role="listitem">
-                <MonitorCardSkeleton />
-              </div>
-            ))
-          : monitors.map((monitor) => (
-              <div key={monitor.type} role="listitem">
-                <MonitorCard
-                  monitor={monitor}
-                  selected={selectedMonitor === monitor.type}
-                  onClick={() => handleMonitorClick(monitor.type)}
-                />
-              </div>
-            ))}
-      </section>
+      {summaryLoading || monitors.length > 0 ? (
+        <section className="dq-monitors" role="list" aria-label="Quality monitors">
+          {summaryLoading
+            ? Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} role="listitem">
+                  <MonitorCardSkeleton />
+                </div>
+              ))
+            : monitors.map((monitor) => (
+                <div key={monitor.type} role="listitem">
+                  <MonitorCard
+                    monitor={monitor}
+                    selected={selectedMonitor === monitor.type}
+                    onClick={() => handleMonitorClick(monitor.type)}
+                  />
+                </div>
+              ))}
+        </section>
+      ) : (
+        <p className="dq-empty">
+          No monitor has reported for this project yet. Monitors report after the first
+          evaluation over an enabled datastream.
+        </p>
+      )}
 
       <section className="panel dq-panel">
         <div className="dq-panel-header">
@@ -381,12 +416,16 @@ export default function DataQualityPage({ projectId }: DataQualityPageProps) {
             </button>
           )}
         </div>
-        <IssuesTable
-          issues={issues}
-          loading={issuesLoading}
-          onAcknowledge={handleAcknowledge}
-          acknowledging={acknowledging}
-        />
+        {issuesError && !issuesLoading ? (
+          <LoadFailure what="the quality issues" detail={issuesError} />
+        ) : (
+          <IssuesTable
+            issues={issues}
+            loading={issuesLoading}
+            onAcknowledge={handleAcknowledge}
+            acknowledging={acknowledging}
+          />
+        )}
       </section>
 
       <section className="panel dq-panel">
@@ -396,38 +435,35 @@ export default function DataQualityPage({ projectId }: DataQualityPageProps) {
             <p>Last pull, last success, and volume for each datastream in this project.</p>
           </div>
         </div>
-        <FreshnessTable datastreams={freshness} loading={freshnessLoading} />
+        <FreshnessTable
+          datastreams={freshness}
+          loading={freshnessLoading}
+          error={freshnessError}
+        />
       </section>
 
-      <section className="dq-definitions">
-        {[
-          {
-            label: "Volume",
-            desc: "Median + 2.6 sigma over 30 days, minimum 10 days of history.",
-          },
-          {
-            label: "Timeliness",
-            desc: "A valid extract before the cutoff (default 09:00, project time zone).",
-          },
-          {
-            label: "Duplicates",
-            desc: "Identical rows in the raw table for the evaluated day.",
-          },
-          {
-            label: "Schema consistency",
-            desc: "Column set vs. reference. Auto-updates after an alert.",
-          },
-          {
-            label: "Rejected rows",
-            desc: "Malformed rows or rows out of date range dropped during extraction.",
-          },
-        ].map(({ label, desc }) => (
-          <div key={label} className="dq-definition">
-            <strong>{label}</strong>
-            <span>{desc}</span>
-          </div>
-        ))}
-      </section>
+      {/* What each REPORTING monitor checks. Derived from the monitors the API
+          actually returned — this strip never claims a monitor that did not
+          report, and it is labelled as a platform definition so it is not read
+          as this project's configuration (the project configures none of it;
+          thresholds are server-side defaults). */}
+      {monitors.length > 0 && (
+        <section className="dq-definitions" aria-label="Monitor definitions">
+          <p className="dq-definitions-note">
+            What each monitor checks. These are platform definitions applied to every
+            project — not settings of this project.
+          </p>
+          {monitors.map((monitor) => {
+            const meta = MONITOR_META[monitor.type];
+            return (
+              <div key={monitor.type} className="dq-definition">
+                <strong>{meta?.label ?? monitor.label}</strong>
+                <span>{meta?.description ?? "No published definition for this monitor."}</span>
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       <section className="dq-cache-section">
         <h2 className="dq-section-title">Data cache</h2>

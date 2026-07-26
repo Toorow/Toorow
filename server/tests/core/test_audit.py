@@ -398,8 +398,9 @@ class TestAuditIntegration:
                     cur.execute(
                         """
                         INSERT INTO app.connection_ref
-                            (id, provider, nango_connection_id, project_id)
-                        VALUES (%s, %s, %s, %s)
+                            (id, provider, nango_connection_id, project_id, owner_org_id,
+                                owner_identity)
+                        VALUES (%s, %s, %s, %s, 'org_test_fixture', 'tester@example.com')
                         ON CONFLICT (id) DO NOTHING
                         """,
                         (

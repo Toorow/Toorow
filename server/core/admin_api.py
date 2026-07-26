@@ -81,17 +81,13 @@ from core.audit import (
     insert_audit_row,
     write_audit_row,
 )
+from core.browser_oidc import BROWSER_AUTH_ROUTES as _BROWSER_AUTH_ROUTES
 from core.cards_api import CARDS_ROUTES as _CARDS_ROUTES
 from core.conflict_resolutions_api import CONFLICT_RESOLUTION_ROUTES as _CONFLICT_RESOLUTION_ROUTES
 
 # Story 38.5: connector activation/deactivation (org-owner) + health layering.
 from core.connector_activation_api import (
     CONNECTOR_ACTIVATION_ROUTES as _CONNECTOR_ACTIVATION_ROUTES,
-)
-
-# Story 38.7: inbound delivery credential lifecycle (issue/rotate/revoke/list).
-from core.inbound_credentials_api import (
-    INBOUND_CREDENTIAL_ROUTES as _INBOUND_CREDENTIAL_ROUTES,
 )
 
 # Story 38.3: connector domain and adapter-route configuration (platform-admin).
@@ -112,18 +108,31 @@ from core.context_api import CONTEXT_ROUTES as _CONTEXT_ROUTES
 from core.country_vocabulary import CountryVocabularyError, get_country_vocabulary
 from core.daily_insights_api import DAILY_INSIGHTS_ROUTES as _DAILY_INSIGHTS_ROUTES
 from core.datamodel_api import DATAMODEL_ROUTES as _DATAMODEL_ROUTES
+
+# Story 27.9: inverse lineage ("what feeds this dimension?") + client-owned labels.
+from core.dimension_lineage_api import (
+    DIMENSION_LINEAGE_ROUTES as _DIMENSION_LINEAGE_ROUTES,
+)
 from core.dq_api import DQ_ROUTES as _DQ_ROUTES
 from core.flows_api import FLOWS_ROUTES as _FLOWS_ROUTES
 from core.geographic_reporting import (
+    GeographicPosture,
     InvalidGeographicPosture,
     fetch_project_geographic_posture,
+    market_diff,
     merge_geographic_patch,
     normalize_geographic_posture,
+    persist_project_geographic_posture,
 )
 
 # Story 38.6: import template catalog + inbound managed-feed Datastream creation.
 from core.import_templates_api import (
     IMPORT_TEMPLATE_ROUTES as _IMPORT_TEMPLATE_ROUTES,
+)
+
+# Story 38.7: inbound delivery credential lifecycle (issue/rotate/revoke/list).
+from core.inbound_credentials_api import (
+    INBOUND_CREDENTIAL_ROUTES as _INBOUND_CREDENTIAL_ROUTES,
 )
 from core.mediaplan_api import MEDIAPLAN_ROUTES as _MEDIAPLAN_ROUTES
 from core.metric_semantics_api import METRIC_SEMANTICS_ROUTES as _METRIC_SEMANTICS_ROUTES
@@ -166,11 +175,34 @@ def _mint_conn_id() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _canonical_identity_enabled() -> bool:
+    return os.environ.get("TOOROW_CANONICAL_IDENTITY_ENABLED", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+async def _check_canonical_principal(request: Request):
+    from core.api_auth import authenticate_canonical_principal  # noqa: PLC0415
+    from core.db import get_connection  # noqa: PLC0415
+
+    with get_connection() as conn:
+        ok, principal = await authenticate_canonical_principal(request, conn)
+        if ok:
+            conn.commit()
+        return ok, principal
+
+
 async def _check_auth(request: Request) -> tuple[bool, str]:
     """Real token verification via the shared api_auth layer (review-2-6 F-01)."""
+    if _canonical_identity_enabled():
+        ok, principal = await _check_canonical_principal(request)
+        return ok, principal.person_id if ok and principal is not None else ""
     from core.api_auth import authenticate_api_request
 
     return await authenticate_api_request(request)
+
 
 async def _check_invitation_identity(request: Request) -> tuple[bool, str]:
     """Require an OAuth-verified email identity for invitation transitions."""
@@ -178,6 +210,15 @@ async def _check_invitation_identity(request: Request) -> tuple[bool, str]:
 
     return await authenticate_invitation_identity(request)
 
+
+async def _check_invitation_principal(request: Request):
+    if _canonical_identity_enabled():
+        ok, principal = await _check_canonical_principal(request)
+        if not ok or principal is None or not principal.verified_email:
+            return False, "", None
+        return True, principal.verified_email, principal
+    ok, email = await _check_invitation_identity(request)
+    return ok, email, None
 
 
 # ---------------------------------------------------------------------------
@@ -278,172 +319,225 @@ def _enforce_notebook_project_scope(
 
 
 async def _list_connections(request: Request) -> Response:
-    """GET /api/connections -- list Nango connections joined with connection_ref.
-
-    Response shape:
-      {"connections": [{"id", "nango_connection_id", "provider",
-                        "project_id", "created_at", "status"}]}
-
-    Steps:
-      1. Auth check.
-      2. Call nango_client.list_connections_async() to get Nango connections.
-      3. Join with app.connection_ref rows from platform Postgres.
-      4. Return enriched list.
-
-    Nango errors are caught and returned as 502.
-    Postgres errors are caught and returned as 500.
-    """
-    authorized, _identity = await _check_auth(request)
+    """List provider accounts usable by the requested project organization."""
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Bearer token required"},
             status_code=401,
         )
 
-    # review-epic-7 F-1: optional project scoping — with the ProjectSwitcher
-    # active, the console requests one project's connections at a time.
-    project_filter = request.query_params.get("project_id") or None
+    project_id = (request.query_params.get("project_id") or "").strip()
+    if not project_id:
+        return JSONResponse(
+            {"code": "missing_project", "message": "project_id is required"},
+            status_code=400,
+        )
 
-    # Story 2.5 design (review-2-5 F-01): health is served from the Postgres
-    # cache -- Nango is only consulted as a FALLBACK when the DB is down.
-    # No Nango call happens on the happy path.
-    conn_ref_rows: list[dict] = []
     try:
-        from core.db import get_connection  # noqa: PLC0415
+        from core.db import get_connection, set_local_access_context  # noqa: PLC0415
+        from core.project_access import (  # noqa: PLC0415
+            epic36_production_access_enabled,
+            identity_can_access_project_in_org,
+            resolve_strict_resource_access,
+        )
 
         with get_connection() as conn:
+            strict_gate = epic36_production_access_enabled()
+            if strict_gate:
+                set_local_access_context(conn, identity, enforce_epic36=True)
+                allowed = resolve_strict_resource_access(
+                    identity, conn, project_id=project_id, minimum_capability="view"
+                ).allowed
+            else:
+                allowed = identity_can_access_project_in_org(
+                    project_id, identity or "anonymous", conn
+                )
+            if not allowed:
+                return JSONResponse(
+                    {"code": "not_found", "message": "Project not found"},
+                    status_code=404 if strict_gate else 403,
+                )
+
             with conn.cursor() as cur:
-                # Epic 42 (Sources screen): surface the ownership + sharing +
-                # expiry model that Epic 21/36 already landed in the schema
-                # (owner_org_id, credential_account_grants, token_expiry) so the
-                # Sources UI stops rendering literals. viewer org = the queried
-                # project's org (po.org_id); exposure is derived per connection.
                 cur.execute(
                     """
+                    WITH viewer AS (
+                        SELECT org_id
+                        FROM app.projects
+                        WHERE id = %s AND status = 'active'
+                    )
                     SELECT
                         r.id,
                         r.provider,
                         r.nango_connection_id,
                         r.project_id,
                         r.created_at,
+                        r.status,
+                        r.auth_path,
                         r.owner_org_id,
                         r.token_expiry,
-                        o.name          AS owner_org_name,
-                        po.org_id       AS viewer_org_id,
-                        h.status        AS health_status,
+                        o.name AS owner_org_name,
+                        v.org_id AS viewer_org_id,
+                        s.account_label,
+                        s.state AS account_state,
+                        h.status AS health_status,
                         h.last_checked_at,
                         h.last_fetched_at,
                         COUNT(ds.id) FILTER (WHERE ds.enabled = TRUE)
                             AS active_datastream_count,
                         EXISTS (
-                            SELECT 1 FROM app.credential_account_grants g
+                            SELECT 1
+                            FROM app.credential_account_grants g
                             WHERE g.credential_id = r.id
                               AND g.status = 'active'
-                              AND g.grantee_org_id = po.org_id
-                        )               AS provided_to_viewer,
+                              AND g.grantee_org_id = v.org_id
+                              AND g.external_account_id = s.account_id
+                        ) AS provided_to_viewer,
                         EXISTS (
-                            SELECT 1 FROM app.credential_account_grants g
+                            SELECT 1
+                            FROM app.credential_account_grants g
                             WHERE g.credential_id = r.id
                               AND g.status = 'active'
-                        )               AS has_outgoing_grant
+                        ) AS has_outgoing_grant,
+                        EXISTS (
+                            SELECT 1
+                            FROM app.org_members m
+                            WHERE m.org_id = r.owner_org_id
+                              AND m.identity = %s
+                              AND m.status = 'active'
+                              AND m.role IN ('owner', 'admin')
+                        ) AS caller_manages_owner,
+                        r.enabled AS connection_enabled
                     FROM app.connection_ref r
+                    CROSS JOIN viewer v
                     LEFT JOIN app.connection_health h ON h.connection_ref_id = r.id
-                    LEFT JOIN app.datastreams ds ON ds.connection_ref_id = r.id
+                    LEFT JOIN app.connection_account_scope s ON s.connection_ref_id = r.id
+                    LEFT JOIN app.datastreams ds
+                      ON ds.connection_ref_id = r.id AND ds.org_id = v.org_id AND ds.project_id = %s
                     LEFT JOIN app.organizations o ON o.id = r.owner_org_id
-                    LEFT JOIN app.projects po ON po.id = r.project_id
-                    WHERE (%s::text IS NULL OR r.project_id = %s)
+                    WHERE r.owner_org_id = v.org_id
+                       OR EXISTS (
+                            SELECT 1
+                            FROM app.credential_account_grants g
+                            WHERE g.credential_id = r.id
+                              AND g.status = 'active'
+                              AND g.grantee_org_id = v.org_id
+                              AND g.external_account_id = s.account_id
+                       )
                     GROUP BY r.id, r.provider, r.nango_connection_id, r.project_id,
-                             r.created_at, r.owner_org_id, r.token_expiry, o.name,
-                             po.org_id, h.status, h.last_checked_at, h.last_fetched_at
+                             r.created_at, r.status, r.auth_path, r.owner_org_id,
+                             r.token_expiry, o.name, v.org_id, s.account_id,
+                             s.account_label, s.state, h.status, h.last_checked_at,
+                             h.last_fetched_at
                     ORDER BY r.created_at DESC
                     """,
-                    (project_filter, project_filter),
+                    (project_id, identity or "anonymous", project_id),
                 )
                 cols = [desc[0] for desc in cur.description]
-                _TS_COLS = {
-                    "created_at",
-                    "last_checked_at",
-                    "last_fetched_at",
-                    "token_expiry",
-                }
-                for row in cur.fetchall():
-                    record: dict = {}
-                    for col, val in zip(cols, row):
-                        if col in _TS_COLS and val is not None:
-                            record[col] = val.isoformat()
-                        else:
-                            record[col] = val
-                    conn_ref_rows.append(record)
+                rows = [dict(zip(cols, row)) for row in cur.fetchall()]
     except Exception as exc:
-        logger.warning("admin_api: db_unavailable: %s -- returning Nango-only list", exc)
-        # Graceful degradation: fall back to a live Nango listing (review-2-5
-        # F-01: the ONLY code path that calls Nango in this endpoint).
-        try:
-            nango_conns = await nango_client._list_connections_async()
-        except Exception as nango_exc:
-            logger.error("admin_api: nango_list_error: %s", nango_exc)
-            return JSONResponse(
-                {"code": "nango_error", "message": f"Nango unavailable: {nango_exc}"},
-                status_code=502,
-            )
-        connections = [
-            {
-                "id": None,
-                "nango_connection_id": c["connection_id"],
-                "provider": c["provider"],
-                "project_id": None,
-                "created_at": c.get("created_at", ""),
-                "health": None,
-            }
-            for c in nango_conns
-        ]
-        return JSONResponse({"connections": connections})
+        logger.error("admin_api: list_connections db_error: %s", exc)
+        return JSONResponse(
+            {"code": "db_error", "message": "Provider accounts are temporarily unavailable"},
+            status_code=503,
+        )
 
-    # Step 4: build response with nested health object + active_datastream_count
-    connections = []
-    for ref in conn_ref_rows:
-        health_status = ref.get("health_status")  # may be None if no health row yet
-        health: dict | None = None
+    timestamp_columns = {
+        "created_at", "last_checked_at", "last_fetched_at", "token_expiry"
+    }
+    connections: list[dict] = []
+    for ref in rows:
+        for column in timestamp_columns:
+            value = ref.get(column)
+            if value is not None and hasattr(value, "isoformat"):
+                ref[column] = value.isoformat()
+        owner_org_id = ref.get("owner_org_id")
+        viewer_org_id = ref.get("viewer_org_id")
+        provided = bool(ref.get("provided_to_viewer"))
+        exposure = (
+            "provided_by_org"
+            if provided and owner_org_id != viewer_org_id
+            else "shared_with_org"
+            if ref.get("has_outgoing_grant")
+            else "owned"
+        )
+        health_status = ref.get("health_status")
+        if ref.get("status") == "revoked":
+            health_status = "revoked"
+        health = None
         if health_status is not None:
             health = {
                 "status": health_status,
                 "last_checked_at": ref.get("last_checked_at"),
                 "last_fetched_at": ref.get("last_fetched_at"),
             }
-        # Epic 42: derive the ownership/exposure state the Sources UI needs.
-        owner_org_id = ref.get("owner_org_id")
-        viewer_org_id = ref.get("viewer_org_id")
-        if owner_org_id is not None and owner_org_id == viewer_org_id:
-            exposure = "shared_with_org" if ref.get("has_outgoing_grant") else "owned"
-        elif ref.get("provided_to_viewer"):
-            exposure = "provided_by_org"
-        else:
-            exposure = "owned"
         connections.append(
             {
                 "id": ref["id"],
                 "nango_connection_id": ref["nango_connection_id"],
                 "provider": ref["provider"],
-                "project_id": ref["project_id"],
+                "project_id": project_id,
                 "created_at": ref["created_at"],
+                "status": ref.get("status"),
+                "enabled": ref.get("connection_enabled") is not False,
+                "auth_path": ref.get("auth_path"),
                 "health": health,
-                # Fix [MEDIUM/spec #10]: count of enabled datastreams for this connection
-                # so the UI can show 'utilise par N flux' (1 auth -> N streams).
                 "active_datastream_count": int(ref.get("active_datastream_count") or 0),
-                # Epic 42 (Sources): ownership, sharing and expiry (Epic 21/36 model).
                 "owner_org_id": owner_org_id,
                 "owner_org_name": ref.get("owner_org_name"),
                 "token_expiry": ref.get("token_expiry"),
+                "account_label": ref.get("account_label"),
+                "account_state": ref.get("account_state"),
                 "exposure": exposure,
+                "can_manage": bool(ref.get("caller_manages_owner")) and not provided,
             }
         )
 
     return JSONResponse({"connections": connections})
 
 
+def _resolve_connection_create_scope(conn, project_id: str, identity: str):
+    """Return ``(owner_org_id, strict_gate)`` only for project managers."""
+    from core.db import set_local_access_context  # noqa: PLC0415
+    from core.project_access import (  # noqa: PLC0415
+        epic36_production_access_enabled,
+        identity_can_manage_org,
+        resolve_strict_resource_access,
+    )
+
+    strict_gate = epic36_production_access_enabled()
+    if strict_gate:
+        set_local_access_context(conn, identity, enforce_epic36=True)
+        allowed = resolve_strict_resource_access(
+            identity,
+            conn,
+            project_id=project_id,
+            minimum_capability="manage",
+        ).allowed
+    else:
+        allowed = True
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT org_id
+            FROM app.projects
+            WHERE id = %s AND status = 'active'
+            """,
+            (project_id,),
+        )
+        row = cur.fetchone()
+    owner_org_id = row[0] if row else None
+    if not owner_org_id:
+        return None, strict_gate
+    if not strict_gate:
+        allowed = identity_can_manage_org(owner_org_id, identity, conn)
+    return (owner_org_id if allowed else None), strict_gate
+
+
 async def _create_connection(request: Request) -> Response:
     """POST /api/connections -- register a new connection_ref row.
-
     Request body (JSON):
       {"nango_connection_id": str, "provider": str, "project_id": str}
 
@@ -471,8 +565,7 @@ async def _create_connection(request: Request) -> Response:
 
     nango_connection_id = (body.get("nango_connection_id") or "").strip()
     provider = (body.get("provider") or "").strip()
-    # Story 7.1 (AC5): no inline 'default' auto-bind. The empty value is resolved
-    # to the active project via the shared resolver inside the DB block below.
+    # Project scope is explicit; empty and legacy placeholder ids fail closed.
     project_id = (body.get("project_id") or "").strip()
 
     if not nango_connection_id:
@@ -483,6 +576,16 @@ async def _create_connection(request: Request) -> Response:
     if not provider:
         return JSONResponse(
             {"code": "missing_field", "message": "provider is required"},
+            status_code=400,
+        )
+    if not project_id:
+        return JSONResponse(
+            {"code": "missing_field", "message": "project_id is required"},
+            status_code=400,
+        )
+    if project_id == "default":
+        return JSONResponse(
+            {"code": "invalid_project", "message": "Select a real project."},
             status_code=400,
         )
 
@@ -498,6 +601,24 @@ async def _create_connection(request: Request) -> Response:
         return JSONResponse(
             {"code": "invalid_field", "message": "provider must match [a-z0-9-]+"},
             status_code=400,
+        )
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            owner_org_id, strict_gate = _resolve_connection_create_scope(
+                conn, project_id, identity or "anonymous"
+            )
+    except Exception as exc:
+        logger.error("admin_api: connection_scope_error: %s", exc)
+        return JSONResponse(
+            {"code": "db_error", "message": "Cannot verify project access"},
+            status_code=503,
+        )
+    if owner_org_id is None:
+        return JSONResponse(
+            {"code": "not_found", "message": "Project not found"},
+            status_code=404 if strict_gate else 403,
         )
 
     # review-2-4 F-01: the popup-closed signal does NOT mean OAuth succeeded.
@@ -524,24 +645,36 @@ async def _create_connection(request: Request) -> Response:
     # Mint ULID
     conn_id = _mint_conn_id()
 
-    # Insert into app.connection_ref
+    # Insert only after re-checking the same manage scope in the write transaction.
     try:
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_resolver import resolve_project_id  # noqa: PLC0415
 
         with get_connection() as conn:
-            # Story 7.1 (AC5): resolve+validate the project on the same connection
-            # (empty -> seeded 'default'; missing/archived -> ToolError -> 422).
-            project_id = resolve_project_id(project_id, conn)
+            owner_org_id, strict_gate = _resolve_connection_create_scope(
+                conn, project_id, identity or "anonymous"
+            )
+            if owner_org_id is None:
+                return JSONResponse(
+                    {"code": "not_found", "message": "Project not found"},
+                    status_code=404 if strict_gate else 403,
+                )
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO app.connection_ref
-                        (id, provider, nango_connection_id, project_id)
-                    VALUES (%s, %s, %s, %s)
+                        (id, provider, nango_connection_id, project_id,
+                         owner_org_id, owner_identity)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id, provider, nango_connection_id, project_id, created_at
                     """,
-                    (conn_id, provider, nango_connection_id, project_id),
+                    (
+                        conn_id,
+                        provider,
+                        nango_connection_id,
+                        project_id,
+                        owner_org_id,
+                        identity or "anonymous",
+                    ),
                 )
                 row = cur.fetchone()
                 if row is None:  # pragma: no cover
@@ -556,15 +689,6 @@ async def _create_connection(request: Request) -> Response:
             conn.commit()
 
     except Exception as exc:
-        # Story 7.1 (AC5): a missing/archived project surfaces as a ToolError from
-        # the resolver -> return 422 (client error), not 500.
-        from fastmcp.exceptions import ToolError  # noqa: PLC0415
-
-        if isinstance(exc, ToolError):
-            return JSONResponse(
-                {"code": "project_not_found", "message": "Project not found or archived."},
-                status_code=422,
-            )
         logger.error("admin_api: db_insert_error: %s", exc)
         return JSONResponse(
             {"code": "db_error", "message": f"Database error: {exc}"},
@@ -592,7 +716,7 @@ async def _refresh_health(request: Request) -> Response:
     Response (200):
       {"id": ..., "health": {"status": ..., "last_checked_at": ..., "last_fetched_at": ...}}
     """
-    authorized, _identity = await _check_auth(request)
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Bearer token required"},
@@ -623,6 +747,9 @@ async def _refresh_health(request: Request) -> Response:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
+            _scope_ref, scope_error = _resolve_conn_project_scoped(conn_ref_id, identity, conn)
+            if scope_error is not None:
+                return scope_error
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -781,30 +908,39 @@ async def _trigger_pull(request: Request) -> Response:
             status_code=422,
         )
 
-    # Verify connection_ref exists before enqueuing
+    # Verify the credential exists AND that the caller may use it.
+    #
+    # L'autorisation se resout sur l'ORGANISATION proprietaire, jamais sur la
+    # personne qui a branche l'acces : c'est precisement ce qui permet a un
+    # collegue de rafraichir un report sans posseder lui-meme l'acces a la
+    # source. Un controle `appelant == owner_identity` bloquerait la sync des
+    # que le proprietaire n'est pas la.
+    #
+    # Avant ce garde-fou, ce handler ne verifiait QUE l'existence : n'importe
+    # quelle identite authentifiee pouvait declencher une sync sur n'importe
+    # quel credential, y compris celui d'une autre organisation.
     try:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id FROM app.connection_ref WHERE id = %s
-                    """,
-                    (conn_ref_id,),
+            denied = _enforce_credential_org_read(conn_ref_id, identity, conn)
+            if denied is not None:
+                write_audit_row(
+                    identity=identity or "anonymous",
+                    action=ACTION_CROSS_SCOPE_ATTEMPT,
+                    provider_account="",
+                    connection_ref=conn_ref_id,
+                    metadata={
+                        "reason": "credential_not_in_caller_org",
+                        "operation": "trigger_pull",
+                    },
                 )
-                row = cur.fetchone()
+                return denied
     except Exception as exc:
         logger.error("admin_api: trigger_pull db_error: %s", exc)
         return JSONResponse(
             {"code": "db_error", "message": f"Database error: {exc}"},
             status_code=500,
-        )
-
-    if row is None:
-        return JSONResponse(
-            {"code": "not_found", "message": f"Connection ref '{conn_ref_id}' not found"},
-            status_code=404,
         )
 
     # Enqueue the pull job (AD-7: pull_id minted inside enqueue_pull)
@@ -831,9 +967,7 @@ async def _trigger_pull(request: Request) -> Response:
         return JSONResponse(
             {
                 "code": result.get("code", "account_not_selected"),
-                "message": result.get(
-                    "message", "Select and verify a reporting account first."
-                ),
+                "message": result.get("message", "Select and verify a reporting account first."),
             },
             status_code=409,
         )
@@ -1164,9 +1298,7 @@ async def _backfill_connection(request: Request) -> Response:
             status_code=422,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "admin_api: backfill error conn=%s: %s", conn_ref_id, type(exc).__name__
-        )
+        logger.error("admin_api: backfill error conn=%s: %s", conn_ref_id, type(exc).__name__)
         return JSONResponse(
             {"code": "backfill_error", "message": "Backfill enqueue failed."},
             status_code=500,
@@ -2433,6 +2565,12 @@ async def _list_knowledge(request: Request) -> Response:
     """GET /api/knowledge?project_id=<id> -- the project's knowledge entries.
 
     Response (200): {"entries": [{"id","title","topic","body","author","updated_at"}]}
+
+    DEPRECATED (Story 44.1): the Knowledge surface now reads/writes the governed
+    context store (GET /api/context/topics et al., server/core/context_api.py).
+    Migration 108 copied every app.knowledge_entries row into app.context_topics.
+    This endpoint stays live (nothing here is dropped) but every response carries
+    a `Deprecation: true` header for any remaining caller.
     """
     project_id = request.query_params.get("project_id") or "default"
     try:
@@ -2460,9 +2598,11 @@ async def _list_knowledge(request: Request) -> Response:
     except Exception as exc:  # noqa: BLE001
         logger.error("admin_api: list_knowledge db_error: %s", exc)
         return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"}, status_code=500
+            {"code": "db_error", "message": f"Database error: {exc}"},
+            status_code=500,
+            headers={"Deprecation": "true"},
         )
-    return JSONResponse({"entries": entries}, status_code=200)
+    return JSONResponse({"entries": entries}, status_code=200, headers={"Deprecation": "true"})
 
 
 async def _list_procedures(request: Request) -> Response:
@@ -2590,73 +2730,41 @@ async def _list_eval_runs(request: Request) -> Response:
 # GET /api/overview/summary?project_id=<id>
 # ---------------------------------------------------------------------------
 async def _overview_summary(request: Request) -> Response:
-    """GET /api/overview/summary?project_id=<id> -- the Overview strip aggregates,
-    computed from real tables (datastreams, target_fields + mappings, eval_runs).
+    """Return the authorized project's evidence-backed Overview summary.
 
-    Response (200):
-        {
-          "active_datastreams": <int>,
-          "canonical_concepts": <int>,
-          "mapping_coverage_pct": <int 0..100>,
-          "published_trust": "trusted" | "attention" | "no_data",
-          "latest_test": {"passed": <int>, "total": <int>, "regressions": <int>} | null
-        }
+    Missing or inaccessible projects are nondisclosing; no default scope is used.
     """
-    project_id = request.query_params.get("project_id") or "default"
+    authorized, identity = await _check_auth(request)
+    if not authorized:
+        return JSONResponse(
+            {"code": "unauthorized", "message": "Authentication required"},
+            status_code=401,
+        )
+    project_id = (request.query_params.get("project_id") or "").strip()
+    if not project_id:
+        return JSONResponse(
+            {"code": "missing_param", "message": "project_id is required"},
+            status_code=400,
+        )
     try:
         from core.db import get_connection  # noqa: PLC0415
+        from core.overview import get_project_overview  # noqa: PLC0415
+        from core.project_overview import authorize_overview_project  # noqa: PLC0415
 
         with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT count(*) FROM app.datastreams WHERE project_id = %s",
-                    (project_id,),
+            if not authorize_overview_project(identity, project_id, conn):
+                return JSONResponse(
+                    {"code": "not_found", "message": "Project not found"}, status_code=404
                 )
-                active = cur.fetchone()[0] or 0
-                cur.execute("SELECT count(*) FROM app.target_fields")
-                total_fields = cur.fetchone()[0] or 0
-                cur.execute(
-                    """
-                    SELECT count(DISTINCT m.target_field)
-                    FROM app.datastream_mappings m
-                    JOIN app.datastreams d ON d.id = m.datastream_id
-                    WHERE d.project_id = %s
-                    """,
-                    (project_id,),
-                )
-                mapped = cur.fetchone()[0] or 0
-                cur.execute(
-                    """
-                    SELECT score_passed, score_total, regressions
-                    FROM app.eval_runs
-                    WHERE project_id = %s
-                    ORDER BY run_at DESC
-                    LIMIT 1
-                    """,
-                    (project_id,),
-                )
-                row = cur.fetchone()
+            summary = get_project_overview(project_id, conn)["summary"]
     except Exception as exc:  # noqa: BLE001
         logger.error("admin_api: overview_summary db_error: %s", exc)
         return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"}, status_code=500
+            {"code": "db_error", "message": "Project overview is unavailable"},
+            status_code=500,
         )
 
-    latest_test = (
-        {"passed": row[0], "total": row[1], "regressions": row[2]} if row else None
-    )
-    coverage = round(100 * mapped / total_fields) if total_fields else 0
-    trust = "no_data" if active == 0 else "trusted"
-    return JSONResponse(
-        {
-            "active_datastreams": active,
-            "canonical_concepts": total_fields,
-            "mapping_coverage_pct": coverage,
-            "published_trust": trust,
-            "latest_test": latest_test,
-        },
-        status_code=200,
-    )
+    return JSONResponse(summary, status_code=200)
 
 
 # ---------------------------------------------------------------------------
@@ -4236,23 +4344,46 @@ async def _google_oauth_authorize(request: Request) -> Response:
             status_code=400,
         )
 
-    # AD-5: the caller MUST have access to the project before we mint a consent
-    # URL bound to it (BLOCKED-18.3 F-1: identity_has_project_access enforced here).
-    from core.project_access import identity_has_project_access  # noqa: PLC0415
+    # Consent can mutate only a Google credential owned by the requested project org.
+    from core.project_access import (  # noqa: PLC0415
+        identity_can_manage_org,
+        identity_has_project_access,
+    )
 
     try:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
             allowed = identity_has_project_access(project_id, identity or "anonymous", conn)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT r.owner_org_id, p.org_id, r.provider
+                    FROM app.connection_ref r
+                    JOIN app.projects p ON p.id = %s AND p.status = 'active'
+                    WHERE r.id = %s
+                    """,
+                    (project_id, connection_ref_id),
+                )
+                connection_row = cur.fetchone()
+            if connection_row is None:
+                return JSONResponse(
+                    {"code": "not_found", "message": "Connexion introuvable."},
+                    status_code=404,
+                )
+            owner_org_id, project_org_id, provider = connection_row
+            owner_managed = (
+                owner_org_id == project_org_id
+                and str(provider or "").lower().startswith("google")
+                and identity_can_manage_org(owner_org_id, identity or "anonymous", conn)
+            )
     except Exception as exc:
         logger.error("admin_api: google_oauth_authorize db_error: %s", exc)
         return JSONResponse(
             {"code": "db_error", "message": "Erreur base de donnees."},
             status_code=500,
         )
-    if not allowed:
-        # 403: the caller is authenticated but not scoped to this project.
+    if not allowed or not owner_managed:
         write_audit_row(
             identity=identity or "anonymous",
             action=ACTION_CROSS_SCOPE_ATTEMPT,
@@ -4261,17 +4392,16 @@ async def _google_oauth_authorize(request: Request) -> Response:
             metadata={
                 "project_id": project_id,
                 "operation": "google_oauth_authorize",
-                "reason": "not_a_member",
+                "reason": "not_owner_manager",
             },
         )
         return JSONResponse(
             {
                 "code": "forbidden",
-                "message": "Acces refuse : vous n'appartenez pas a ce projet.",
+                "message": "Seule l'organisation proprietaire peut reconnecter cet acces.",
             },
             status_code=403,
         )
-
     from core.google_oauth import GoogleOAuthConfigError, build_authorize_url  # noqa: PLC0415
 
     try:
@@ -4700,13 +4830,16 @@ async def _google_revoke(request: Request) -> Response:
     # 1. Verifier l'existence + le projet + l'acces.
     try:
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
+        from core.project_access import (  # noqa: PLC0415
+            identity_can_manage_org,
+            identity_has_project_access,
+        )
 
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT project_id, auth_path, token_expiry, granted_scopes
+                    SELECT project_id, auth_path, token_expiry, granted_scopes, owner_org_id
                       FROM app.connection_ref
                      WHERE id = %s
                     """,
@@ -4723,7 +4856,7 @@ async def _google_revoke(request: Request) -> Response:
                     status_code=404,
                 )
 
-            project_id, auth_path, _expiry, _scopes = row
+            project_id, auth_path, _expiry, _scopes, owner_org_id = row
 
             # AD-5: verifier l'acces au projet AVANT toute operation.
             if not identity_has_project_access(project_id, identity or "anonymous", conn):
@@ -4745,8 +4878,17 @@ async def _google_revoke(request: Request) -> Response:
                     },
                     status_code=403,
                 )
+            if not identity_can_manage_org(owner_org_id, identity or "anonymous", conn):
+                return JSONResponse(
+                    {
+                        "code": "forbidden",
+                        "message": "Seule l'organisation proprietaire peut revoquer cet acces.",
+                    },
+                    status_code=403,
+                )
     except Exception as exc:
         logger.error("admin_api: google_revoke db_error: %s", type(exc).__name__)
+
         return JSONResponse(
             {"code": "db_error", "message": "Erreur base de donnees."},
             status_code=500,
@@ -5002,6 +5144,44 @@ def _enforce_org_manage(org_id: str, identity: str, conn, operation: str) -> Res
     )
 
 
+async def _enforce_platform_admin(
+    request: Request, identity: str, operation: str
+) -> Response | None:
+    """Gate an act that has NO organization in scope behind the platform allow-list.
+
+    An ENTRY invitation (``org_id`` absent) is issued after a waitlist approval:
+    there is no organization to be a manager of, so ``_enforce_org_manage`` has
+    nothing to check. Its issuer is a PLATFORM admin -- the same deny-by-default
+    ``TOOROW_SUPER_ADMINS`` allow-list the CRM control surface uses (story 34.3).
+
+    Both identity keys are considered, exactly like ``_create_org``: the bearer
+    subject (a service token such as the CRM's) and, when the token carries one,
+    the OAuth-verified email (a human platform admin). Refusal is a 404, not a
+    403: we do not reveal that this surface exists to a caller who is not
+    allow-listed. Returns the refusal Response, or None when allowed.
+
+    This changes NOTHING for invitations that name an organization: they keep the
+    membership check.
+    """
+    from core.super_admin import is_super_admin  # noqa: PLC0415
+
+    keys = {identity}
+    _, verified_email = await _check_invitation_identity(request)
+    if verified_email:
+        keys.add(verified_email)
+    if any(is_super_admin(key) for key in keys):
+        return None
+    write_audit_row(
+        identity=identity or "anonymous",
+        action=ACTION_CROSS_SCOPE_ATTEMPT,
+        provider_account="",
+        connection_ref="",
+        metadata={"operation": operation, "reason": "not_platform_admin"},
+    )
+    logger.warning("admin_api: platform_admin_denied identity=%s op=%s", identity, operation)
+    return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
+
+
 def _enforce_role_assignment(
     org_id: str,
     actor_identity: str,
@@ -5061,11 +5241,528 @@ def _enforce_role_assignment(
     return JSONResponse(
         {
             "code": "forbidden",
-            "message": (
-                "Acces refuse : vous ne pouvez pas attribuer un role superieur au votre."
-            ),
+            "message": ("Acces refuse : vous ne pouvez pas attribuer un role superieur au votre."),
         },
         status_code=403,
+    )
+
+
+def _count_active_memberships(keys: set[str]) -> int | None:
+    """Active memberships held by any of *keys*. ``None`` means UNKNOWN.
+
+    None is not zero, and the caller must not treat it as such: an unverifiable
+    count fails closed. Matching is case-insensitive because the two writers of
+    ``app.org_members.identity`` disagree on case as well as on which value they
+    store (token subject vs verified email).
+    """
+    candidates = [k.strip().lower() for k in keys if k and k.strip()]
+    if not candidates:
+        return 0
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM app.org_members "
+                    "WHERE status = 'active' AND LOWER(identity) = ANY(%s)",
+                    (candidates,),
+                )
+                row = cur.fetchone()
+        return int(row[0]) if row else 0
+    except Exception as exc:  # noqa: BLE001
+        logger.error("admin_api: membership_count_failed: %s", exc)
+        return None
+
+
+def _count_instance_organizations() -> int | None:
+    """Organizations existing on THIS instance. ``None`` means UNKNOWN.
+
+    Only consulted on a self-hosted instance, to answer one question: has this
+    instance been claimed yet? Like the membership count, None is not zero and
+    the caller fails closed -- creating an organization we could not justify
+    would provision warehouse datasets nobody asked for.
+    """
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM app.organizations")
+                row = cur.fetchone()
+        return int(row[0]) if row else 0
+    except Exception as exc:  # noqa: BLE001
+        logger.error("admin_api: instance_org_count_failed: %s", exc)
+        return None
+
+
+async def _get_entry_state(request: Request) -> Response:
+    """Return the only valid first-entry transition for this deployment."""
+    from core.deployment_mode import deployment_mode  # noqa: PLC0415
+
+    mode = deployment_mode()
+    auth_mode = os.environ.get("TOOROW_AUTH_MODE", "disabled").strip().lower()
+    if mode == "hosted" and auth_mode == "disabled":
+        try:
+            from core.db import get_connection  # noqa: PLC0415
+
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM app.organizations
+                            WHERE status = 'active'
+                              AND id NOT IN ('org_default', 'org_integ-test-project')
+                        )
+                        """
+                    )
+                    row = cur.fetchone()
+            state = "scoped" if row and row[0] else "local_entry_ready"
+        except Exception as exc:
+            logger.error("admin_api: local_entry_state failed: %s", type(exc).__name__)
+            return _invitation_no_store(
+                JSONResponse(
+                    {
+                        "code": "entry_state_unavailable",
+                        "message": "Entry state unavailable.",
+                    },
+                    status_code=500,
+                )
+            )
+        return _invitation_no_store(JSONResponse({"deployment_mode": mode, "state": state}))
+
+    if not _canonical_identity_enabled():
+        from core.api_auth import authenticate_api_request  # noqa: PLC0415
+
+        authorized, legacy_identity = await authenticate_api_request(request)
+        if not authorized or not legacy_identity:
+            return _invitation_no_store(
+                JSONResponse(
+                    {"code": "unauthorized", "message": "Authentication required"},
+                    status_code=401,
+                )
+            )
+        try:
+            from core.db import get_connection  # noqa: PLC0415
+
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT EXISTS (
+                            SELECT 1 FROM app.org_members
+                            WHERE identity = %s AND status = 'active'
+                        )
+                        """,
+                        (legacy_identity,),
+                    )
+                    row = cur.fetchone()
+            state = "scoped" if row and row[0] else "identity_activation_required"
+        except Exception as exc:
+            logger.error("admin_api: legacy_entry_state failed: %s", type(exc).__name__)
+            return _invitation_no_store(
+                JSONResponse(
+                    {"code": "entry_state_unavailable", "message": "Entry state unavailable."},
+                    status_code=500,
+                )
+            )
+        return _invitation_no_store(JSONResponse({"deployment_mode": mode, "state": state}))
+    authorized, principal = await _check_canonical_principal(request)
+    if not authorized or principal is None:
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "unauthorized", "message": "Authentication required"},
+                status_code=401,
+            )
+        )
+
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                if mode == "self_hosted":
+                    cur.execute(
+                        """
+                        SELECT
+                          EXISTS (SELECT 1 FROM app.instance_claims),
+                          EXISTS (
+                            SELECT 1
+                            FROM app.instance_claims claim
+                            WHERE EXISTS (
+                              SELECT 1
+                              FROM app.instance_members member
+                              WHERE member.person_id = %s
+                                AND member.status = 'active'
+                            )
+                            OR EXISTS (
+                              SELECT 1
+                              FROM app.org_members member
+                              WHERE member.org_id = claim.org_id
+                                AND member.identity = %s
+                                AND member.status = 'active'
+                            )
+                          )
+                        """,
+                        (principal.person_id, principal.person_id),
+                    )
+                    claimed, has_membership = cur.fetchone()
+                    state = (
+                        "setup_required"
+                        if not claimed
+                        else "scoped"
+                        if has_membership
+                        else "invitation_required"
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT
+                          EXISTS (
+                            SELECT 1 FROM app.org_members
+                            WHERE identity = %s AND status = 'active'
+                          ),
+                          EXISTS (
+                            SELECT 1
+                            FROM app.invitations invitation
+                            JOIN app.invitation_exchange_sessions exchange
+                              ON exchange.invitation_id = invitation.id
+                            LEFT JOIN app.hosted_entry_scope_consumptions consumption
+                              ON consumption.invitation_id = invitation.id
+                            WHERE invitation.org_id IS NULL
+                              AND invitation.state = 'accepted'
+                              AND invitation.accepted_at IS NOT NULL
+                              AND exchange.person_id = %s
+                              AND exchange.consumed_at IS NOT NULL
+                              AND exchange.accepted_operation_id IS NOT NULL
+                              AND consumption.id IS NULL
+                          )
+                        """,
+                        (principal.person_id, principal.person_id),
+                    )
+                    has_membership, has_entry = cur.fetchone()
+                    state = (
+                        "scoped"
+                        if has_membership
+                        else "hosted_entry_ready"
+                        if has_entry
+                        else "invitation_required"
+                    )
+    except Exception as exc:
+        logger.error("admin_api: entry_state failed: %s", type(exc).__name__)
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "entry_state_unavailable", "message": "Entry state unavailable."},
+                status_code=500,
+            )
+        )
+
+    return _invitation_no_store(JSONResponse({"deployment_mode": mode, "state": state}))
+
+
+def _first_scope_confirmation_payload(body: dict) -> dict:
+    """Normalize the exact browser-reviewed payload used by both entry commands."""
+    if not isinstance(body, dict):
+        raise ValueError("body must be an object")
+    return {
+        "organization_name": body.get("organization_name"),
+        "organization_slug": body.get("organization_slug"),
+        "project_name": body.get("project_name"),
+        "project_slug": body.get("project_slug"),
+        "currency": body.get("currency", "EUR"),
+        "timezone": body.get("timezone", "Europe/Paris"),
+    }
+
+
+async def _issue_first_scope_confirmation(
+    request: Request, *, expected_mode: str, command_type: str
+) -> Response:
+    """Mint one short-lived console-only confirmation for an exact payload."""
+    from core.deployment_mode import deployment_mode  # noqa: PLC0415
+
+    if deployment_mode() != expected_mode:
+        return _invitation_no_store(
+            JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
+        )
+    if not _canonical_identity_enabled():
+        return _invitation_no_store(
+            JSONResponse(
+                {
+                    "code": "identity_activation_required",
+                    "message": (
+                        "Canonical identity activation is required for "
+                        "first-scope confirmation."
+                    ),
+                },
+                status_code=503,
+            )
+        )
+
+    authorized, principal = await _check_canonical_principal(request)
+    if not authorized or principal is None:
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "unauthorized", "message": "Authentication required"},
+                status_code=401,
+            )
+        )
+
+    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
+    if not idempotency_key:
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required."},
+                status_code=422,
+            )
+        )
+    workspace_id = (request.headers.get("X-Workspace-Id") or "console")[:256]
+    context_reference = f"{command_type}:{workspace_id}"
+    if expected_mode == "self_hosted":
+        exchange_bearer = request.cookies.get(_INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE, "")
+        if not exchange_bearer:
+            return _invitation_no_store(
+                JSONResponse(
+                    {"code": "not_found", "message": "Instance claim unavailable."},
+                    status_code=404,
+                )
+            )
+        context_reference = f"{context_reference}:{exchange_bearer}"
+
+    from core.entry_confirmations import (  # noqa: PLC0415
+        EntryConfirmationValidationError,
+        issue_entry_confirmation,
+    )
+
+    try:
+        body = json.loads(await request.body())
+        payload = _first_scope_confirmation_payload(body)
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            issued = issue_entry_confirmation(
+                conn,
+                actor_person_id=principal.person_id,
+                command_type=command_type,
+                request_payload=payload,
+                idempotency_key=idempotency_key,
+                context_reference=context_reference,
+            )
+    except (ValueError, TypeError, json.JSONDecodeError, EntryConfirmationValidationError):
+        return _invitation_no_store(
+            JSONResponse(
+                {
+                    "code": "invalid_confirmation_request",
+                    "message": "Confirmation input is invalid.",
+                },
+                status_code=422,
+            )
+        )
+    except Exception as exc:
+        logger.error("admin_api: entry confirmation issue failed: %s", type(exc).__name__)
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "confirmation_unavailable", "message": "Confirmation is unavailable."},
+                status_code=500,
+            )
+        )
+
+    return _invitation_no_store(
+        JSONResponse(
+            {
+                "confirmation_id": issued.confirmation_id,
+                "confirmation_secret": issued.confirmation_secret,
+                "command_type": issued.command_type,
+                "payload_hash": issued.payload_hash,
+                "expires_at": issued.expires_at.isoformat(),
+            },
+            status_code=201,
+        )
+    )
+
+
+async def _issue_hosted_entry_confirmation(request: Request) -> Response:
+    from core.entry_confirmations import HOSTED_ENTRY_COMMAND  # noqa: PLC0415
+
+    return await _issue_first_scope_confirmation(
+        request, expected_mode="hosted", command_type=HOSTED_ENTRY_COMMAND
+    )
+
+
+async def _issue_instance_claim_confirmation(request: Request) -> Response:
+    from core.entry_confirmations import INSTANCE_CLAIM_COMMAND  # noqa: PLC0415
+
+    return await _issue_first_scope_confirmation(
+        request, expected_mode="self_hosted", command_type=INSTANCE_CLAIM_COMMAND
+    )
+
+async def _create_hosted_entry_scope(request: Request) -> Response:
+    """Consume one accepted hosted ENTRY into the first usable tenant scope."""
+    from core.deployment_mode import deployment_mode  # noqa: PLC0415
+
+    if deployment_mode() != "hosted":
+        return _invitation_no_store(
+            JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
+        )
+
+    if not _canonical_identity_enabled():
+        return _invitation_no_store(
+            JSONResponse(
+                {
+                    "code": "identity_activation_required",
+                    "message": (
+                        "Canonical identity activation is required for "
+                        "first-scope creation."
+                    ),
+                },
+                status_code=503,
+            )
+        )
+
+    authorized, principal = await _check_canonical_principal(request)
+    if not authorized or principal is None:
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "unauthorized", "message": "Authentication required"},
+                status_code=401,
+            )
+        )
+
+    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
+    confirmation_id = (request.headers.get("X-Confirmation-Id") or "").strip()
+    confirmation_secret = (request.headers.get("X-Confirmation-Secret") or "").strip()
+    if not idempotency_key or not confirmation_id or not confirmation_secret:
+        return _invitation_no_store(
+            JSONResponse(
+                {
+                    "code": "missing_confirmation",
+                    "message": "Idempotency-Key and server confirmation are required.",
+                },
+                status_code=422,
+            )
+        )
+
+    from core.entry_confirmations import (  # noqa: PLC0415
+        HOSTED_ENTRY_COMMAND,
+        EntryConfirmationRefused,
+        EntryConfirmationValidationError,
+        bind_entry_confirmation_operation,
+        consume_entry_confirmation,
+    )
+    from core.hosted_entry_scope import (  # noqa: PLC0415
+        HostedEntryScopeUnavailable,
+        HostedEntryScopeValidationError,
+        create_hosted_entry_scope,
+    )
+
+    try:
+        body = json.loads(await request.body())
+        payload = _first_scope_confirmation_payload(body)
+        from core import tracing  # noqa: PLC0415
+        from core.db import get_connection  # noqa: PLC0415
+
+        workspace_id = (request.headers.get("X-Workspace-Id") or "console")[:256]
+        with get_connection() as conn:
+            with conn.transaction():
+                confirmation = consume_entry_confirmation(
+                    conn,
+                    confirmation_id=confirmation_id,
+                    confirmation_secret=confirmation_secret,
+                    actor_person_id=principal.person_id,
+                    command_type=HOSTED_ENTRY_COMMAND,
+                    request_payload=payload,
+                    idempotency_key=idempotency_key,
+                    context_reference=f"{HOSTED_ENTRY_COMMAND}:{workspace_id}",
+                )
+                created = create_hosted_entry_scope(
+                    conn,
+                    deployment_mode="hosted",
+                    person_id=principal.person_id,
+                    organization_name=payload["organization_name"],
+                    organization_slug=payload["organization_slug"],
+                    project_name=payload["project_name"],
+                    project_slug=payload["project_slug"],
+                    currency=payload["currency"],
+                    timezone_name=payload["timezone"],
+                    idempotency_key=idempotency_key,
+                    confirmation=confirmation,
+                    host_context={"host": "rest", "workspace_id": workspace_id},
+                    versions={
+                        "policy": os.environ.get("TOOROW_POLICY_VERSION", "v1"),
+                        "tool": "rest-v1",
+                    },
+                    trace_id=tracing.current_trace_id_hex(),
+                )
+                bind_entry_confirmation_operation(
+                    conn, confirmation=confirmation, operation_id=created.operation_id
+                )
+    except EntryConfirmationRefused as exc:
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": exc.code, "message": "Confirmation is invalid or no longer usable."},
+                status_code=409,
+            )
+        )
+    except (
+        ValueError,
+        TypeError,
+        json.JSONDecodeError,
+        EntryConfirmationValidationError,
+        HostedEntryScopeValidationError,
+    ):
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "invalid_entry_scope", "message": "Entry scope input is invalid."},
+                status_code=422,
+            )
+        )
+    except HostedEntryScopeUnavailable:
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "not_found", "message": "Entry scope unavailable."},
+                status_code=404,
+            )
+        )
+    except Exception as exc:
+        from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
+
+        if (
+            isinstance(exc, OperationIdempotencyConflict)
+            or getattr(exc, "sqlstate", None) == "23505"
+        ):
+            return _invitation_no_store(
+                JSONResponse(
+                    {"code": "conflict", "message": "Entry scope conflicts with existing state."},
+                    status_code=409,
+                )
+            )
+        logger.error("admin_api: hosted_entry_scope failed: %s", type(exc).__name__)
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "operation_failed", "message": "Entry scope creation failed."},
+                status_code=500,
+            )
+        )
+
+    return _invitation_no_store(
+        JSONResponse(
+            {
+                "id": created.org_id,
+                "name": payload["organization_name"].strip(),
+                "slug": payload["organization_slug"],
+                "status": "active",
+                "org_id": created.org_id,
+                "project_id": created.project_id,
+                "journey_id": created.journey_id,
+                "operation_id": created.operation_id,
+                "audit_event_id": created.audit_event_id,
+                "outbox_event_id": created.outbox_event_id,
+                "next_url": created.next_url,
+                "replayed": created.replayed,
+            },
+            status_code=201,
+        )
     )
 
 
@@ -5075,6 +5772,9 @@ async def _create_org(request: Request) -> Response:
     Body: {"name": str, "slug": str?, "billing_ref": str?}. Returns 201.
     Auto-generates a unique slug from name when not provided (appends -1, -2 on
     collision); an explicitly supplied duplicate slug is a 409.
+
+    ONE ORGANIZATION PER PERSON -- their own (decision Jean, 2026-07-25). A 409
+    ``organization_limit_reached`` when the caller already belongs to one.
     """
     authorized, identity = await _check_auth(request)
     if not authorized:
@@ -5082,6 +5782,122 @@ async def _create_org(request: Request) -> Response:
             {"code": "unauthorized", "message": "Bearer token required"},
             status_code=401,
         )
+
+    from core.deployment_mode import deployment_mode  # noqa: PLC0415
+
+    mode = deployment_mode()
+    auth_mode = os.environ.get("TOOROW_AUTH_MODE", "disabled").strip().lower()
+    if mode == "self_hosted" or auth_mode != "disabled":
+        code = "not_found" if mode == "self_hosted" else "entry_scope_required"
+        status = 404 if mode == "self_hosted" else 409
+        return JSONResponse(
+            {
+                "code": code,
+                "message": (
+                    "Not found"
+                    if mode == "self_hosted"
+                    else "Create the first organization through the hosted ENTRY scope command."
+                ),
+            },
+            status_code=status,
+        )
+    # Self-service creation is what a newcomer does once, and only once. Being
+    # attached to a SECOND organization is an administrative act: a platform
+    # admin does it, exactly as the CRM does. Allowing multi-org ACCESS later
+    # does not change this -- the cap is on CREATION, not on access.
+    #
+    # Before this gate, POST /api/organizations checked nothing beyond a valid
+    # bearer: one identity could mint organizations without limit, each one
+    # provisioning its own warehouse datasets.
+    #
+    # Counted on BOTH identity keys on purpose. The two paths that create a
+    # membership disagree on what they store: this handler writes the token
+    # SUBJECT (below), while invitation acceptance writes the verified EMAIL
+    # (core/invitations.py). Counting one key would miss memberships created by
+    # the other, and the cap would be bypassed by whoever joined by invitation.
+    membership_keys = {identity}
+    _, verified_email = await _check_invitation_identity(request)
+    if verified_email:
+        membership_keys.add(verified_email)
+
+    from core.deployment_mode import is_self_hosted  # noqa: PLC0415
+    from core.super_admin import is_super_admin  # noqa: PLC0415
+
+    # SELF-HOSTED: the instance is CLAIMED once, by its operator.
+    #
+    # There is no waitlist and no CRM on somebody else's stack, so no entry
+    # invitation can be issued and the hosted rule leaves nothing standing in
+    # front of this endpoint: whoever finds a public instance URL first and signs
+    # in with any Google account would create the first organization and own it.
+    #
+    # So on a self-hosted instance: ONE organization, created only by an email on
+    # TOOROW_SUPER_ADMINS, and only while the instance is unclaimed. Everybody
+    # else joins it through an ordinary organization invitation issued by its
+    # owner -- that path is unchanged and needs nothing here.
+    #
+    # Runs BEFORE the per-person cap because it answers a different question
+    # (does this instance belong to anyone yet) and must refuse even a caller
+    # with zero memberships. Hosted deployments never enter this branch.
+    if is_self_hosted():
+        instance_orgs = _count_instance_organizations()
+        if instance_orgs is None:
+            return JSONResponse(
+                {
+                    "code": "db_error",
+                    "message": (
+                        "Could not verify whether this instance already has an "
+                        "organization. Nothing was created."
+                    ),
+                },
+                status_code=500,
+            )
+        if instance_orgs > 0:
+            return JSONResponse(
+                {
+                    "code": "instance_already_claimed",
+                    "message": (
+                        "This self-hosted instance already has its organization. "
+                        "Ask its owner to invite you instead."
+                    ),
+                },
+                status_code=409,
+            )
+        if not any(is_super_admin(key) for key in membership_keys):
+            # 404, not 403: an unclaimed instance must not confirm to a stranger
+            # that it is sitting there waiting to be claimed. Same convention as
+            # the org-plan control surface.
+            logger.warning("admin_api: self_hosted_claim_refused for a non-allow-listed caller")
+            return JSONResponse(
+                {"code": "not_found", "message": "Not found"},
+                status_code=404,
+            )
+
+    if not any(is_super_admin(key) for key in membership_keys):
+        existing = _count_active_memberships(membership_keys)
+        if existing is None:
+            # Fail CLOSED: an unverifiable membership count must not open the
+            # gate. Creating here would provision a warehouse we cannot justify.
+            return JSONResponse(
+                {
+                    "code": "db_error",
+                    "message": (
+                        "Could not verify existing organization membership. Nothing was created."
+                    ),
+                },
+                status_code=500,
+            )
+        if existing > 0:
+            return JSONResponse(
+                {
+                    "code": "organization_limit_reached",
+                    "message": (
+                        "You already belong to an organization. A person creates "
+                        "their own organization once; being added to another one "
+                        "is done by an administrator."
+                    ),
+                },
+                status_code=409,
+            )
 
     try:
         body: dict = json.loads(await request.body())
@@ -5216,11 +6032,292 @@ async def _create_org(request: Request) -> Response:
         result = _wt.provision_org_schemas(org_id=org_id, conn=None)
         logger.info("admin_api: provision_schemas org=%s result=%s", org_id, result)
     except Exception as exc:  # noqa: BLE001 -- non-blocking degradation (AC1)
-        logger.warning(
-            "admin_api: provision_schemas_failed org=%s error=%s", org_id, exc
-        )
+        logger.warning("admin_api: provision_schemas_failed org=%s error=%s", org_id, exc)
 
     return JSONResponse(created, status_code=201)
+
+
+_INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE = "toorow_instance_bootstrap_exchange"
+
+
+async def _exchange_instance_bootstrap(request: Request) -> Response:
+    """Exchange the fragment-delivered installer bearer before authentication."""
+    from core.deployment_mode import deployment_mode  # noqa: PLC0415
+
+    if deployment_mode() != "self_hosted":
+        return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
+    from core.self_hosted_instance_claim import (  # noqa: PLC0415
+        SelfHostedClaimUnavailable,
+        SelfHostedClaimValidationError,
+        exchange_bootstrap_capability,
+    )
+
+    try:
+        body = json.loads(await request.body())
+        if not isinstance(body, dict):
+            raise ValueError("body must be an object")
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            exchanged = exchange_bootstrap_capability(
+                conn,
+                deployment_mode="self_hosted",
+                bootstrap_bearer=body.get("bootstrap_bearer"),
+            )
+    except (ValueError, TypeError, json.JSONDecodeError, SelfHostedClaimValidationError):
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "not_found", "message": "Instance claim unavailable."},
+                status_code=404,
+            )
+        )
+    except SelfHostedClaimUnavailable:
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "not_found", "message": "Instance claim unavailable."},
+                status_code=404,
+            )
+        )
+    except Exception as exc:
+        logger.error("admin_api: instance_bootstrap_exchange failed: %s", type(exc).__name__)
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "operation_failed", "message": "Instance claim unavailable."},
+                status_code=500,
+            )
+        )
+
+    max_age = max(
+        1,
+        min(900, int((exchanged.expires_at - datetime.now(timezone.utc)).total_seconds())),
+    )
+    response = _invitation_no_store(JSONResponse({"ready_to_claim": True}))
+    response.set_cookie(
+        _INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE,
+        exchanged.session_bearer,
+        max_age=max_age,
+        path="/api/instance/claim",
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
+    return response
+
+
+async def _get_self_hosted_claim_session(request: Request) -> Response:
+    """Resume a valid tokenless claim session without exposing capability state."""
+    from core.deployment_mode import deployment_mode  # noqa: PLC0415
+
+    if deployment_mode() != "self_hosted":
+        return _invitation_no_store(
+            JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
+        )
+
+    exchange_bearer = request.cookies.get(_INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE, "")
+    if not exchange_bearer:
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "not_found", "message": "Instance claim unavailable."},
+                status_code=404,
+            )
+        )
+
+    from core.db import get_connection  # noqa: PLC0415
+    from core.self_hosted_instance_claim import (  # noqa: PLC0415
+        SelfHostedClaimValidationError,
+        bootstrap_exchange_session_is_ready,
+    )
+
+    try:
+        with get_connection() as conn:
+            ready = bootstrap_exchange_session_is_ready(
+                conn,
+                deployment_mode="self_hosted",
+                bootstrap_exchange_bearer=exchange_bearer,
+            )
+    except SelfHostedClaimValidationError:
+        ready = False
+    except Exception as exc:
+        logger.error("admin_api: self_hosted_claim_session failed: %s", type(exc).__name__)
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "operation_failed", "message": "Instance claim unavailable."},
+                status_code=500,
+            )
+        )
+
+    if not ready:
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": "not_found", "message": "Instance claim unavailable."},
+                status_code=404,
+            )
+        )
+    return _invitation_no_store(JSONResponse({"ready_to_claim": True}))
+
+
+async def _claim_self_hosted_instance(request: Request) -> Response:
+    """Claim one unclaimed self-hosted instance and create its first usable scope."""
+    from core.deployment_mode import deployment_mode  # noqa: PLC0415
+
+    if deployment_mode() != "self_hosted":
+        return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
+
+    if not _canonical_identity_enabled():
+        return _invitation_no_store(
+            JSONResponse(
+                {
+                    "code": "identity_activation_required",
+                    "message": "Canonical identity activation is required for instance claim.",
+                },
+                status_code=503,
+            )
+        )
+
+    authorized, principal = await _check_canonical_principal(request)
+    if not authorized or principal is None:
+        return JSONResponse(
+            {"code": "unauthorized", "message": "Authentication required"},
+            status_code=401,
+        )
+
+    exchange_bearer = request.cookies.get(_INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE, "")
+    if not exchange_bearer:
+        return JSONResponse(
+            {"code": "not_found", "message": "Instance claim unavailable."},
+            status_code=404,
+        )
+
+    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
+    confirmation_id = (request.headers.get("X-Confirmation-Id") or "").strip()
+    confirmation_secret = (request.headers.get("X-Confirmation-Secret") or "").strip()
+    if not idempotency_key or not confirmation_id or not confirmation_secret:
+        return JSONResponse(
+            {
+                "code": "missing_confirmation",
+                "message": "Idempotency-Key and server confirmation are required.",
+            },
+            status_code=422,
+        )
+
+    from core.entry_confirmations import (  # noqa: PLC0415
+        INSTANCE_CLAIM_COMMAND,
+        EntryConfirmationRefused,
+        EntryConfirmationValidationError,
+        bind_entry_confirmation_operation,
+        consume_entry_confirmation,
+    )
+    from core.self_hosted_instance_claim import (  # noqa: PLC0415
+        SelfHostedClaimUnavailable,
+        SelfHostedClaimValidationError,
+        claim_self_hosted_instance,
+    )
+
+    try:
+        body = json.loads(await request.body())
+        payload = _first_scope_confirmation_payload(body)
+        from core import tracing  # noqa: PLC0415
+        from core.db import get_connection  # noqa: PLC0415
+
+        workspace_id = (request.headers.get("X-Workspace-Id") or "console")[:256]
+        context_reference = f"{INSTANCE_CLAIM_COMMAND}:{workspace_id}:{exchange_bearer}"
+        with get_connection() as conn:
+            with conn.transaction():
+                confirmation = consume_entry_confirmation(
+                    conn,
+                    confirmation_id=confirmation_id,
+                    confirmation_secret=confirmation_secret,
+                    actor_person_id=principal.person_id,
+                    command_type=INSTANCE_CLAIM_COMMAND,
+                    request_payload=payload,
+                    idempotency_key=idempotency_key,
+                    context_reference=context_reference,
+                )
+                claimed = claim_self_hosted_instance(
+                    conn,
+                    deployment_mode="self_hosted",
+                    bootstrap_exchange_bearer=exchange_bearer,
+                    claimant_person_id=principal.person_id,
+                    organization_name=payload["organization_name"],
+                    organization_slug=payload["organization_slug"],
+                    project_name=payload["project_name"],
+                    project_slug=payload["project_slug"],
+                    currency=payload["currency"],
+                    timezone_name=payload["timezone"],
+                    idempotency_key=idempotency_key,
+                    confirmation=confirmation,
+                    host_context={"host": "rest", "workspace_id": workspace_id},
+                    versions={
+                        "policy": os.environ.get("TOOROW_POLICY_VERSION", "v1"),
+                        "tool": "rest-v1",
+                    },
+                    trace_id=tracing.current_trace_id_hex(),
+                )
+                bind_entry_confirmation_operation(
+                    conn, confirmation=confirmation, operation_id=claimed.operation_id
+                )
+    except EntryConfirmationRefused as exc:
+        return _invitation_no_store(
+            JSONResponse(
+                {"code": exc.code, "message": "Confirmation is invalid or no longer usable."},
+                status_code=409,
+            )
+        )
+    except (
+        ValueError,
+        TypeError,
+        json.JSONDecodeError,
+        EntryConfirmationValidationError,
+        SelfHostedClaimValidationError,
+    ):
+        return JSONResponse(
+            {"code": "invalid_claim", "message": "Instance claim input is invalid."},
+            status_code=422,
+        )
+    except SelfHostedClaimUnavailable:
+        return JSONResponse(
+            {"code": "not_found", "message": "Instance claim unavailable."},
+            status_code=404,
+        )
+    except Exception as exc:
+        from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
+
+        if isinstance(exc, OperationIdempotencyConflict):
+            return JSONResponse(
+                {"code": "conflict", "message": "Claim conflicts with existing state."},
+                status_code=409,
+            )
+        logger.error("admin_api: self_hosted_claim failed: %s", type(exc).__name__)
+        return JSONResponse(
+            {"code": "operation_failed", "message": "Instance claim failed."},
+            status_code=500,
+        )
+
+    response = _invitation_no_store(
+        JSONResponse(
+            {
+                "claim_id": claimed.claim_id,
+                "person_id": claimed.person_id,
+                "org_id": claimed.org_id,
+                "project_id": claimed.project_id,
+                "journey_id": claimed.journey_id,
+                "operation_id": claimed.operation_id,
+                "audit_event_id": claimed.audit_event_id,
+                "outbox_event_id": claimed.outbox_event_id,
+                "next_url": f"/p/{claimed.project_id}/overview/getting-started",
+                "replayed": claimed.replayed,
+            },
+            status_code=201,
+        )
+    )
+    response.delete_cookie(
+        _INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE,
+        path="/api/instance/claim",
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
+    return response
 
 
 async def _list_orgs(request: Request) -> Response:
@@ -5240,10 +6337,14 @@ async def _list_orgs(request: Request) -> Response:
     ident = identity or "anonymous"
     mode = os.environ.get("TOOROW_AUTH_MODE", "disabled").strip().lower()
     show_all = mode == "disabled" and ident == "anonymous"
+    from core.project_access import epic36_production_access_enabled  # noqa: PLC0415
+
+    production_access = epic36_production_access_enabled(auth_mode=mode)
     cols_sql = (
         "id, name, slug, status, billing_ref, created_at, updated_at, archived_at, "
         "brand_primary, brand_secondary, brand_accent, logo_url"
     )
+
     try:
         from core.db import get_connection  # noqa: PLC0415
 
@@ -5253,6 +6354,16 @@ async def _list_orgs(request: Request) -> Response:
                     cur.execute(
                         f"SELECT {cols_sql} FROM app.organizations "
                         "WHERE status = 'active' ORDER BY name ASC"
+                    )
+                elif production_access:
+                    cur.execute(
+                        f"SELECT {cols_sql} FROM app.organizations o "
+                        "WHERE o.status = 'active' AND EXISTS ("
+                        "  SELECT 1 FROM app.org_members m "
+                        "  WHERE m.org_id = o.id AND m.identity = %s "
+                        "    AND m.status = 'active'"
+                        ") ORDER BY o.name ASC",
+                        (ident,),
                     )
                 else:
                     # Open orgs (no active member) OR orgs where the caller is an
@@ -5475,8 +6586,7 @@ def _org_deletion_facts(conn, org_id: str, *, name: str, slug: str) -> dict:
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, name, status FROM app.projects WHERE org_id = %s "
-            "ORDER BY name, id",
+            "SELECT id, name, status FROM app.projects WHERE org_id = %s ORDER BY name, id",
             (org_id,),
         )
         for pid, pname, pstatus in cur.fetchall() or []:
@@ -5642,9 +6752,7 @@ def _erase_org_transactional(
             return None, JSONResponse(
                 {
                     "code": "org_has_active_projects",
-                    "message": (
-                        "Archive all active projects before deleting the organization."
-                    ),
+                    "message": ("Archive all active projects before deleting the organization."),
                 },
                 status_code=409,
             )
@@ -5712,17 +6820,14 @@ def _erase_org_transactional(
                 blocking_constraint,
             )
             detail = (
-                f" Still referenced by {blocking_table}"
-                f" ({blocking_constraint})."
+                f" Still referenced by {blocking_table} ({blocking_constraint})."
                 if blocking_table
                 else ""
             )
             return None, JSONResponse(
                 {
                     "code": "conflict",
-                    "message": (
-                        "Organization could not be deleted due to a conflict." + detail
-                    ),
+                    "message": ("Organization could not be deleted due to a conflict." + detail),
                     "blocking_table": blocking_table,
                     "blocking_constraint": blocking_constraint,
                 },
@@ -6015,9 +7120,7 @@ async def _provision_org_warehouse(request: Request) -> Response:
     try:
         result = _wt.provision_org_schemas(org_id=org_id, conn=None)
     except Exception:
-        logger.exception(
-            "admin_api: provision_org_warehouse failed org=%s", org_id
-        )
+        logger.exception("admin_api: provision_org_warehouse failed org=%s", org_id)
         return JSONResponse(
             {"code": "provision_failed", "message": "warehouse operation failed"},
             status_code=500,
@@ -6097,9 +7200,7 @@ async def _backfill_warehouse_schemas(request: Request) -> Response:
                     result.get("reason"),
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "admin_api: backfill_warehouse_schemas error org=%s error=%s", oid, exc
-            )
+            logger.warning("admin_api: backfill_warehouse_schemas error org=%s error=%s", oid, exc)
             errors.append({"org_id": oid, "reason": "provision_failed"})
 
     logger.info(
@@ -6168,6 +7269,14 @@ async def _add_org_member(request: Request) -> Response:
         return JSONResponse(
             {"code": "unauthorized", "message": "Bearer token required"},
             status_code=401,
+        )
+    if _canonical_identity_enabled():
+        return JSONResponse(
+            {
+                "code": "invitation_required",
+                "message": "New members must accept an organization invitation.",
+            },
+            status_code=409,
         )
     org_id = request.path_params["org_id"]
     try:
@@ -6277,7 +7386,9 @@ def _would_orphan_last_owner(
     RACE (FIX 1a): the active-manager set is locked FOR UPDATE on THIS cursor/txn
     BEFORE it is counted, so two concurrent mutations that each drop a different
     manager serialize instead of both observing the other as still active.
-    ``new_role``/``new_status`` are the POST-change values (None for a removal).
+    `
+ew_role``/`
+ew_status`` are the POST-change values (None for a removal).
     """
     # Lock the org's active-manager set on this transaction so concurrent
     # remove/suspend/demote operations serialize before we count. The lock must be
@@ -6311,15 +7422,11 @@ def _would_orphan_last_owner(
     if still_active_owner:
         return False  # still an active owner -> owner floor preserved
     # Are there OTHER active owners (from the locked set)?
-    other_active_owners = [
-        ident for ident, _role in active_owners if ident != target_identity
-    ]
+    other_active_owners = [ident for ident, _role in active_owners if ident != target_identity]
     return len(other_active_owners) == 0
 
 
-def _transfer_org_ownership(
-    cur, org_id: str, current_owner: str, next_owner: str
-) -> bool:
+def _transfer_org_ownership(cur, org_id: str, current_owner: str, next_owner: str) -> bool:
     """Atomically promote one active member and demote the current owner."""
     if current_owner == next_owner:
         return False
@@ -6339,16 +7446,15 @@ def _transfer_org_ownership(
     if target is None or target[0] != "active":
         return False
     cur.execute(
-        "UPDATE app.org_members SET role = 'owner' "
-        "WHERE org_id = %s AND identity = %s",
+        "UPDATE app.org_members SET role = 'owner' WHERE org_id = %s AND identity = %s",
         (org_id, next_owner),
     )
     cur.execute(
-        "UPDATE app.org_members SET role = 'admin' "
-        "WHERE org_id = %s AND identity = %s",
+        "UPDATE app.org_members SET role = 'admin' WHERE org_id = %s AND identity = %s",
         (org_id, current_owner),
     )
     return True
+
 
 # Back-compat alias for callers/tests that still use the earlier helper name.
 # Its behavior now follows the ratified owner-only floor.
@@ -6377,9 +7483,7 @@ async def _remove_org_member(request: Request) -> Response:
             if denied is not None:
                 return denied
             with conn.cursor() as cur:
-                if _would_orphan_last_owner(
-                    cur, org_id, target, new_role=None, new_status=None
-                ):
+                if _would_orphan_last_owner(cur, org_id, target, new_role=None, new_status=None):
                     return JSONResponse(
                         {
                             "code": "conflict",
@@ -6400,9 +7504,7 @@ async def _remove_org_member(request: Request) -> Response:
             status_code=500,
         )
     if not deleted:
-        return JSONResponse(
-            {"code": "not_found", "message": "member not found"}, status_code=404
-        )
+        return JSONResponse({"code": "not_found", "message": "member not found"}, status_code=404)
     write_audit_row(
         identity=identity or "anonymous",
         action=ACTION_ORG_MEMBER_REMOVED,
@@ -6456,6 +7558,7 @@ async def _update_org_member(request: Request) -> Response:
             {"code": "invalid_input", "message": "no updatable fields (role|status)"},
             status_code=422,
         )
+
     try:
         from core.db import get_connection  # noqa: PLC0415
 
@@ -6690,7 +7793,7 @@ def _account_deletion_facts(conn, identity: str) -> dict:
                 {
                     "kind": "sole_owner_with_members",
                     "detail": (
-                        f"You are the only owner of \"{name}\" and "
+                        f'You are the only owner of "{name}" and '
                         f"{int(others)} other member(s) are still active. "
                         "Transfer ownership to another member, or delete the "
                         "organization first."
@@ -6707,7 +7810,7 @@ def _account_deletion_facts(conn, identity: str) -> dict:
             blockers.append(
                 {
                     "kind": blocker["kind"],
-                    "detail": f"Organization \"{name}\": {blocker['detail']}",
+                    "detail": f'Organization "{name}": {blocker["detail"]}',
                 }
             )
         orgs_to_erase.append({"org_id": org_id, "name": name, "slug": slug})
@@ -6868,7 +7971,7 @@ async def _delete_me(request: Request) -> Response:
                     {
                         "code": "org_erasure_failed",
                         "message": (
-                            f"Organization \"{org['name']}\" could not be erased, so "
+                            f'Organization "{org["name"]}" could not be erased, so '
                             "your account was NOT erased. Resolve the cause and retry "
                             "-- organizations already erased stay erased."
                         ),
@@ -6892,9 +7995,7 @@ async def _delete_me(request: Request) -> Response:
                 org_conn.rollback()
             except Exception:
                 pass
-            logger.exception(
-                "admin_api: delete_me org_erasure_failed org=%s", org["org_id"]
-            )
+            logger.exception("admin_api: delete_me org_erasure_failed org=%s", org["org_id"])
             return JSONResponse(
                 {"code": "db_error", "message": "database operation failed"},
                 status_code=500,
@@ -6915,6 +8016,7 @@ async def _delete_me(request: Request) -> Response:
             {"code": "db_error", "message": "database connection failed"},
             status_code=500,
         )
+
     try:
         from core.audit import insert_audit_row  # noqa: PLC0415
 
@@ -6943,9 +8045,7 @@ async def _delete_me(request: Request) -> Response:
         # records this very erasure -- what the user is told is retained is
         # exactly what remains.
         with acct_conn.cursor() as cur:
-            cur.execute(
-                "SELECT count(*) FROM app.audit_log WHERE identity = %s", (ident,)
-            )
+            cur.execute("SELECT count(*) FROM app.audit_log WHERE identity = %s", (ident,))
             row = cur.fetchone()
             retained_audit = int(row[0]) if row else 0
         acct_conn.commit()
@@ -7021,9 +8121,7 @@ def _enforce_credential_org_read(credential_id: str, identity: str, conn) -> Res
     from core.project_access import identity_has_org_access  # noqa: PLC0415
 
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT owner_org_id FROM app.connection_ref WHERE id = %s", (credential_id,)
-        )
+        cur.execute("SELECT owner_org_id FROM app.connection_ref WHERE id = %s", (credential_id,))
         row = cur.fetchone()
     if row is None:
         return JSONResponse(
@@ -7245,7 +8343,7 @@ def _invitation_no_store(response: Response) -> Response:
 
 async def _exchange_invitation(request: Request) -> Response:
     """Exchange a fragment bearer only for its matching protected-auth subject."""
-    authorized, identity = await _check_invitation_identity(request)
+    authorized, identity, canonical_principal = await _check_invitation_principal(request)
     if (
         not authorized
         or identity == "anonymous"
@@ -7276,6 +8374,9 @@ async def _exchange_invitation(request: Request) -> Response:
                 conn,
                 bearer=bearer,
                 verified_identity=identity,
+                person_id=(
+                    canonical_principal.person_id if canonical_principal is not None else None
+                ),
             )
             conn.commit()
     except (InvitationExchangeError, json.JSONDecodeError, TypeError):
@@ -7291,7 +8392,23 @@ async def _exchange_invitation(request: Request) -> Response:
                 {"code": "operation_failed", "message": "Invitation unavailable"}, status_code=500
             )
         )
-    response = _invitation_no_store(JSONResponse({"ready_to_accept": True}))
+    response = _invitation_no_store(
+        JSONResponse(
+            {
+                "ready_to_accept": True,
+                "preview": {
+                    "organization_id": exchanged.preview.organization_id,
+                    "organization_label": exchanged.preview.organization_label,
+                    "authority": {
+                        "role_derived": exchanged.preview.role_derived,
+                        "explicit_grants": list(exchanged.preview.explicit_grants),
+                        "explicit_none": not exchanged.preview.explicit_grants,
+                    },
+                    "expires_at": exchanged.preview.expires_at.isoformat(),
+                },
+            }
+        )
+    )
     response.set_cookie(
         _INVITATION_EXCHANGE_COOKIE,
         exchanged.session_value,
@@ -7306,7 +8423,7 @@ async def _exchange_invitation(request: Request) -> Response:
 
 async def _accept_invitation(request: Request) -> Response:
     """Confirm exact membership/grants using the narrow exchange cookie."""
-    authorized, identity = await _check_invitation_identity(request)
+    authorized, identity, canonical_principal = await _check_invitation_principal(request)
     if (
         not authorized
         or identity == "anonymous"
@@ -7352,6 +8469,9 @@ async def _accept_invitation(request: Request) -> Response:
                 conn,
                 session_value=session_value,
                 verified_identity=identity,
+                person_id=(
+                    canonical_principal.person_id if canonical_principal is not None else None
+                ),
                 confirmed=confirmed,
                 idempotency_key=idempotency_key,
                 host_context={
@@ -7388,11 +8508,54 @@ async def _accept_invitation(request: Request) -> Response:
                 {"code": "operation_failed", "message": "Invitation unavailable"}, status_code=500
             )
         )
+    # WHO this person is -- resolved here, because acceptance is the one moment
+    # every arrival passes through, whether they are joining an organization or
+    # about to create their own. Jean, 2026-07-26: "invitation -> on te demande
+    # ton nom et ton prénom (si pas dispo dans l'oath) -> tu accèdes à une
+    # organisation (ou ça te permet d'en créer une nouvelle)".
+    #
+    # Canonical mode keys the profile on person_id. Legacy mode keeps the raw
+    # subject until an explicit backfill has mapped existing memberships.
+    #
+    # Best-effort in the strongest sense: acceptance has already COMMITTED. A
+    # failure here must not change its outcome, so everything below is inside one
+    # try/except and the worst case is `needs_name: true` -- the console asks.
+    profile_name: str | None = None
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+        from core.user_profiles import fetch_user_profile, upsert_user_profile  # noqa: PLC0415
+
+        if canonical_principal is not None:
+            ok_subject = True
+            subject = canonical_principal.person_id
+            token_name = canonical_principal.display_name
+        else:
+            from core.api_auth import authenticate_subject_and_name  # noqa: PLC0415
+
+            ok_subject, subject, token_name = await authenticate_subject_and_name(request)
+        if ok_subject and subject:
+            with get_connection() as profile_conn:
+                existing = (fetch_user_profile(subject, profile_conn) or {}).get("display_name")
+                existing = existing.strip() if isinstance(existing, str) else ""
+                if existing:
+                    # Never overwrite: a name the person typed themselves outranks
+                    # whatever the provider carries.
+                    profile_name = existing
+                elif token_name:
+                    upsert_user_profile(subject, profile_conn, display_name=token_name)
+                    profile_conn.commit()
+                    profile_name = token_name
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("admin_api: could not resolve a profile name at acceptance: %s", exc)
+
     response = _invitation_no_store(
         JSONResponse(
             {
                 "invitation_id": accepted.invitation_id,
                 "organization_id": accepted.org_id,
+                # The console asks for a first/last name if and only if this is
+                # true, so it must be false whenever a name is actually on file.
+                "profile": {"display_name": profile_name, "needs_name": not profile_name},
                 "authority": {
                     "role_derived": accepted.role,
                     "explicit_grants": list(accepted.explicit_grants),
@@ -7416,9 +8579,14 @@ async def _accept_invitation(request: Request) -> Response:
     return response
 
 
-
 async def _list_invitations(request: Request) -> Response:
-    """Return the secret-free invitation lifecycle projection for one organization."""
+    """Return the secret-free invitation lifecycle projection for one scope.
+
+    ``GET /api/organizations/{org_id}/invitations`` lists that organization's
+    invitations (org manager). ``GET /api/invitations`` lists the ENTRY
+    invitations, those that name no organization (platform admin) -- so an
+    invitation without an org never falls out of every view.
+    """
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
@@ -7431,12 +8599,17 @@ async def _list_invitations(request: Request) -> Response:
     from core.db import get_connection  # noqa: PLC0415
     from core.invitations import list_safe_invitations  # noqa: PLC0415
 
-    org_id = request.path_params["org_id"]
+    org_id = request.path_params.get("org_id")
+    if org_id is None:
+        denied = await _enforce_platform_admin(request, identity, "list_entry_invitations")
+        if denied is not None:
+            return denied
     try:
         with get_connection() as conn:
-            denied = _enforce_org_manage(org_id, identity, conn, "list_invitations")
-            if denied is not None:
-                return denied
+            if org_id is not None:
+                denied = _enforce_org_manage(org_id, identity, conn, "list_invitations")
+                if denied is not None:
+                    return denied
             rows = list_safe_invitations(conn, org_id=org_id)
     except Exception as exc:
         logger.error("admin_api: list_invitations failed: %s", type(exc).__name__)
@@ -7451,16 +8624,24 @@ def _authorize_invitation_binding(
     conn,
     *,
     identity: str,
-    org_id: str,
+    org_id: str | None,
     invitation_id: str,
 ) -> Response | None:
-    """Require manage on the org and every immutable invitation resource binding."""
-    denied = _enforce_org_manage(org_id, identity, conn, "manage_invitation")
-    if denied is not None:
-        return denied
+    """Require manage on the org and every immutable invitation resource binding.
+
+    ``org_id is None`` is the ENTRY-invitation scope: the platform gate has
+    already been applied by the caller, and such an invitation holds no grant
+    binding, so all that remains is to confirm the invitation really lives in
+    that scope (``org_id IS NULL``) -- never in someone's organization.
+    """
+    if org_id is not None:
+        denied = _enforce_org_manage(org_id, identity, conn, "manage_invitation")
+        if denied is not None:
+            return denied
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT grant_bindings FROM app.invitations WHERE id = %s AND org_id = %s",
+            "SELECT grant_bindings FROM app.invitations "
+            "WHERE id = %s AND org_id IS NOT DISTINCT FROM %s",
             (invitation_id, org_id),
         )
         row = cur.fetchone()
@@ -7497,6 +8678,13 @@ async def _mutate_invitation_lifecycle(request: Request, *, action: str) -> Resp
 
     if not epic36_production_access_enabled():
         return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
+    org_id = request.path_params.get("org_id")
+    invitation_id = request.path_params["invitation_id"]
+    # Platform scope (entry invitation): gate before anything else is answered.
+    if org_id is None:
+        denied = await _enforce_platform_admin(request, identity, f"{action}_entry_invitation")
+        if denied is not None:
+            return denied
     idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
     if not idempotency_key:
         return _invitation_no_store(
@@ -7505,8 +8693,6 @@ async def _mutate_invitation_lifecycle(request: Request, *, action: str) -> Resp
                 status_code=422,
             )
         )
-    org_id = request.path_params["org_id"]
-    invitation_id = request.path_params["invitation_id"]
     from core import tracing  # noqa: PLC0415
     from core.db import get_connection  # noqa: PLC0415
     from core.invitations import (  # noqa: PLC0415
@@ -7595,8 +8781,20 @@ async def _revoke_invitation(request: Request) -> Response:
 
 async def _resend_invitation(request: Request) -> Response:
     return await _mutate_invitation_lifecycle(request, action="resend")
+
+
 async def _issue_invitation(request: Request) -> Response:
-    """Issue one exact invitation after strict manage authorization."""
+    """Issue one exact invitation after strict authorization.
+
+    ONE endpoint handler, two scopes -- the same invitation object either way:
+
+    * ``POST /api/organizations/{org_id}/invitations`` -- join THAT organization.
+      Unchanged: the caller must be an active manager of the org and hold manage
+      on every requested resource.
+    * ``POST /api/invitations`` -- the ENTRY invitation, with no organization at
+      all. Issued by a PLATFORM admin (``TOOROW_SUPER_ADMINS``); grants nothing,
+      because there is no org to grant anything in.
+    """
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
@@ -7606,6 +8804,14 @@ async def _issue_invitation(request: Request) -> Response:
 
     if not epic36_production_access_enabled():
         return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
+    org_id = request.path_params.get("org_id")
+    # Platform scope: gate FIRST, before reading the body or complaining about a
+    # missing header -- a caller who is not allow-listed must learn nothing at all
+    # about this endpoint, not even that it validates requests.
+    if org_id is None:
+        denied = await _enforce_platform_admin(request, identity, "issue_entry_invitation")
+        if denied is not None:
+            return denied
     idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
     if not idempotency_key:
         return JSONResponse(
@@ -7621,31 +8827,43 @@ async def _issue_invitation(request: Request) -> Response:
             raise InvitationValidationError("invitation body must be an object")
         project_grants = _parse_invitation_grants(body, "project_grants", "project")
         datastream_grants = _parse_invitation_grants(body, "datastream_grants", "flux")
-        org_id = request.path_params["org_id"]
         role = str(body.get("role") or "").strip()
         invited_identity = body.get("invited_identity")
         expires_in_hours = body.get("expires_in_hours", 48)
+        if org_id is None and (project_grants or datastream_grants):
+            return JSONResponse(
+                {
+                    "code": "invalid_invitation",
+                    "message": (
+                        "An invitation without an organization grants nothing: "
+                        "project and datastream grants are org-scoped."
+                    ),
+                },
+                status_code=422,
+            )
         from core import tracing  # noqa: PLC0415
         from core.db import get_connection, set_local_access_context  # noqa: PLC0415
         from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
 
         with get_connection() as conn:
-            denied = _enforce_org_manage(org_id, identity, conn, "issue_invitation")
-            if denied is not None:
-                return denied
+            if org_id is not None:
+                denied = _enforce_org_manage(org_id, identity, conn, "issue_invitation")
+                if denied is not None:
+                    return denied
             set_local_access_context(conn, identity, enforce_epic36=True)
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT role FROM app.org_members "
-                    "WHERE org_id = %s AND identity = %s AND status = 'active'",
-                    (org_id, identity),
-                )
-                issuer_row = cur.fetchone()
-            if issuer_row is None or (role == "owner" and issuer_row[0] != "owner"):
-                return JSONResponse(
-                    {"code": "not_found", "message": "Invitation scope not found"},
-                    status_code=404,
-                )
+            if org_id is not None:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT role FROM app.org_members "
+                        "WHERE org_id = %s AND identity = %s AND status = 'active'",
+                        (org_id, identity),
+                    )
+                    issuer_row = cur.fetchone()
+                if issuer_row is None or (role == "owner" and issuer_row[0] != "owner"):
+                    return JSONResponse(
+                        {"code": "not_found", "message": "Invitation scope not found"},
+                        status_code=404,
+                    )
             for grant in project_grants + datastream_grants:
                 kwargs = (
                     {"project_id": grant.scope_id}
@@ -7781,14 +8999,10 @@ async def _create_account_grant(request: Request) -> Response:
                         {"code": "not_found", "message": "credential account not found"},
                         status_code=404,
                     )
-                denied = _enforce_org_manage(
-                    owner_org_id, identity, conn, "create_account_grant"
-                )
+                denied = _enforce_org_manage(owner_org_id, identity, conn, "create_account_grant")
                 if denied is not None:
                     return denied
-                cur.execute(
-                    "SELECT 1 FROM app.organizations WHERE id = %s", (grantee_org_id,)
-                )
+                cur.execute("SELECT 1 FROM app.organizations WHERE id = %s", (grantee_org_id,))
                 if cur.fetchone() is None:
                     return JSONResponse(
                         {"code": "not_found", "message": "grantee organization not found"},
@@ -7836,9 +9050,7 @@ async def _create_account_grant(request: Request) -> Response:
                                 "catalog": os.environ.get("TOOROW_CATALOG_VERSION", "v1"),
                                 "tool": "rest-v1",
                             },
-                            confirmation_reference=request.headers.get(
-                                "X-Confirmation-Reference"
-                            ),
+                            confirmation_reference=request.headers.get("X-Confirmation-Reference"),
                             trace_id=tracing.current_trace_id_hex(),
                         )
                     except (AccountExposureConflict, OperationIdempotencyConflict):
@@ -8025,9 +9237,7 @@ async def _revoke_account_grant(request: Request) -> Response:
                         {"code": "not_found", "message": "grant not found"},
                         status_code=404,
                     )
-                denied = _enforce_org_manage(
-                    owner_org_id, identity, conn, "revoke_account_grant"
-                )
+                denied = _enforce_org_manage(owner_org_id, identity, conn, "revoke_account_grant")
                 if denied is not None:
                     return denied
                 cur.execute(
@@ -8413,9 +9623,7 @@ async def _link_flux_to_project(request: Request) -> Response:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 # Resolve the flux (and its org) first. 404 if unknown.
-                cur.execute(
-                    "SELECT org_id FROM app.datastreams WHERE id = %s", (flux_id,)
-                )
+                cur.execute("SELECT org_id FROM app.datastreams WHERE id = %s", (flux_id,))
                 flux_row = cur.fetchone()
                 if flux_row is None:
                     return JSONResponse(
@@ -8434,9 +9642,7 @@ async def _link_flux_to_project(request: Request) -> Response:
                     if denied is not None:
                         return denied
                 # Resolve the project (and its org). 404 if unknown.
-                cur.execute(
-                    "SELECT org_id FROM app.projects WHERE id = %s", (project_id,)
-                )
+                cur.execute("SELECT org_id FROM app.projects WHERE id = %s", (project_id,))
                 proj_row = cur.fetchone()
                 if proj_row is None:
                     return JSONResponse(
@@ -8468,8 +9674,7 @@ async def _link_flux_to_project(request: Request) -> Response:
                     )
                 # Duplicate link -> 409.
                 cur.execute(
-                    "SELECT 1 FROM app.project_flux "
-                    "WHERE project_id = %s AND flux_id = %s",
+                    "SELECT 1 FROM app.project_flux WHERE project_id = %s AND flux_id = %s",
                     (project_id, flux_id),
                 )
                 if cur.fetchone() is not None:
@@ -8526,9 +9731,7 @@ async def _list_flux_projects(request: Request) -> Response:
 
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT org_id FROM app.datastreams WHERE id = %s", (flux_id,)
-                )
+                cur.execute("SELECT org_id FROM app.datastreams WHERE id = %s", (flux_id,))
                 frow = cur.fetchone()
             # Story 21.5 follow-up (reads scoping): 404 if the flux is absent or in
             # an org the caller cannot see (NULL org -> legacy, treated as open).
@@ -8552,8 +9755,7 @@ async def _list_flux_projects(request: Request) -> Response:
                     (flux_id,),
                 )
                 projects = [
-                    {"project_id": r[0], "name": r[1], "slug": r[2]}
-                    for r in cur.fetchall()
+                    {"project_id": r[0], "name": r[1], "slug": r[2]} for r in cur.fetchall()
                 ]
     except Exception as exc:
         logger.error("admin_api: list_flux_projects db_error: %s", exc)
@@ -8585,9 +9787,7 @@ async def _unlink_flux_from_project(request: Request) -> Response:
                 # Story 21.5: only an owner/admin of the flux's OWNER org may unlink.
                 # A flux with no org yet (NULL, legacy) is treated as open (compat).
                 # Default-open org -> resolves to owner (keeps 21.4 tests green).
-                cur.execute(
-                    "SELECT org_id FROM app.datastreams WHERE id = %s", (flux_id,)
-                )
+                cur.execute("SELECT org_id FROM app.datastreams WHERE id = %s", (flux_id,))
                 flux_row = cur.fetchone()
                 flux_org_id = flux_row[0] if flux_row is not None else None
                 if flux_org_id is not None:
@@ -8597,8 +9797,7 @@ async def _unlink_flux_from_project(request: Request) -> Response:
                     if denied is not None:
                         return denied
                 cur.execute(
-                    "DELETE FROM app.project_flux "
-                    "WHERE project_id = %s AND flux_id = %s",
+                    "DELETE FROM app.project_flux WHERE project_id = %s AND flux_id = %s",
                     (project_id, flux_id),
                 )
                 deleted = cur.rowcount
@@ -8649,6 +9848,13 @@ def _mint_project_id() -> str:
     from ulid import ULID  # noqa: PLC0415
 
     return f"proj_{ULID()}"
+
+
+def _mint_project_member_id() -> str:
+    """Mint a new prefixed ULID 'pmem_<ULID>' for a project membership row."""
+    from ulid import ULID  # noqa: PLC0415
+
+    return f"pmem_{ULID()}"
 
 
 def _slugify(name: str) -> str:
@@ -8854,11 +10060,29 @@ def _fetch_verification_prefs(project_id: str, conn: object) -> dict:
 
 def _geographic_error(exc: InvalidGeographicPosture) -> Response:
     message = str(exc)
-    field = (
-        "geographic_mode"
-        if "geographic_mode" in message
-        else "local_market_country_codes"
+    # Story 37.8: market-shaped validation errors point at ``local_markets`` so
+    # the operator is told exactly which market to fix; flat-code errors keep
+    # pointing at the legacy field.
+    _MARKET_SHAPE_MARKERS = (
+        "each local market",
+        "local_markets must be",
+        "market id",
+        "belongs to both market",
+        "at least one tracked market",
+        "requires a non-empty 'label'",
+        "label exceeds",
+        "country_codes must be an array",
+        "country_codes must contain",
+        "requires at least one country code",
     )
+    if "geographic_mode" in message:
+        field = "geographic_mode"
+    elif message.startswith("local_market_country_codes"):
+        field = "local_market_country_codes"
+    elif any(marker in message for marker in _MARKET_SHAPE_MARKERS):
+        field = "local_markets"
+    else:
+        field = "local_market_country_codes"
     return JSONResponse(
         {
             "code": "invalid_geographic_posture",
@@ -8868,6 +10092,7 @@ def _geographic_error(exc: InvalidGeographicPosture) -> Response:
         status_code=422,
     )
 
+
 def _country_vocabulary_error() -> Response:
     return JSONResponse(
         {
@@ -8876,7 +10101,6 @@ def _country_vocabulary_error() -> Response:
         },
         status_code=503,
     )
-
 
 
 def _country_codes() -> frozenset[str]:
@@ -8893,19 +10117,8 @@ def _fetch_geographic_prefs(
 
 
 def _upsert_geographic_prefs(project_id: str, posture, conn: object) -> None:
-    with conn.cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(
-            """
-            INSERT INTO app.project_preferences
-                (project_id, geographic_mode, local_market_country_codes)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (project_id) DO UPDATE SET
-                geographic_mode = EXCLUDED.geographic_mode,
-                local_market_country_codes = EXCLUDED.local_market_country_codes,
-                updated_at = NOW()
-            """,
-            (project_id, posture.mode, list(posture.country_codes)),
-        )
+    # Single write path (Story 37.8): markets + derived flat code union.
+    persist_project_geographic_posture(project_id, posture, conn)
 
 
 async def _list_countries(request: Request) -> Response:
@@ -8915,6 +10128,7 @@ async def _list_countries(request: Request) -> Response:
             {"code": "unauthorized", "message": "Bearer token required"},
             status_code=401,
         )
+
     try:
         countries = [
             {"code": country.code, "display_name": country.display_name}
@@ -8939,6 +10153,7 @@ def _deny_project_scope(identity: str, project_id: str, operation: str) -> Respo
         status_code=404,
     )
 
+
 async def _preview_geographic_change(request: Request) -> Response:
     """POST a no-side-effect geographic impact preview (Member)."""
 
@@ -8955,12 +10170,14 @@ async def _preview_geographic_change(request: Request) -> Response:
             {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
             status_code=400,
         )
+
     try:
         body = json.loads(await request.body())
         target = normalize_geographic_posture(
             body.get("geographic_mode"),
             body.get("local_market_country_codes", []),
             _country_codes(),
+            local_markets=body.get("local_markets"),
         )
     except CountryVocabularyError:
         return _country_vocabulary_error()
@@ -9023,6 +10240,10 @@ async def _confirm_geographic_change(request: Request) -> Response:
         raw = await request.body()
         body = json.loads(raw) if raw.strip() else {}
         backfill_decision = str(body.get("backfill_decision") or "defer")
+        # Story 37.9: the operator's answer to the market used-by guard. Absent
+        # means "not acknowledged" -- a meaning-changing regroup is refused, never
+        # assumed accepted.
+        acknowledge_market_usage = bool(body.get("acknowledge_market_usage") or False)
     except Exception as exc:
         return JSONResponse(
             {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
@@ -9046,6 +10267,7 @@ async def _confirm_geographic_change(request: Request) -> Response:
                 backfill_decision=backfill_decision,
                 conn=conn,
                 loaded_modules=get_loaded_modules(),
+                acknowledge_market_usage=acknowledge_market_usage,
             )
         return JSONResponse(result, status_code=200)
     except ValueError as exc:
@@ -9056,7 +10278,22 @@ async def _confirm_geographic_change(request: Request) -> Response:
             GeographicPreviewNotFound,
             GeographicPreviewStale,
         )
+        from core.market_governance import MarketUsageBlocked  # noqa: PLC0415
 
+        if isinstance(exc, MarketUsageBlocked):
+            # 409: the change is not invalid, it is un-acknowledged. The dependents
+            # are returned so the operator can decide with the facts in hand.
+            return JSONResponse(
+                {
+                    "code": exc.code,
+                    "message": str(exc),
+                    "market_usage": {
+                        "impacts": [impact.as_dict() for impact in exc.impacts],
+                        "acknowledgement_required": True,
+                    },
+                },
+                status_code=409,
+            )
         if isinstance(exc, GeographicPreviewNotFound):
             return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=404)
         if isinstance(exc, GeographicPreviewStale):
@@ -9068,6 +10305,32 @@ async def _confirm_geographic_change(request: Request) -> Response:
             {"code": "geographic_confirmation_failed", "message": "Confirmation failed."},
             status_code=503,
         )
+
+
+def _seed_new_project(proj_id: str) -> None:
+    """Story 44.2 -- day-0 knowledge seed hook for a freshly created project.
+
+    Best-effort : un echec d'amorcage ne doit JAMAIS faire echouer la creation
+    du projet (le seed est un confort, pas un invariant). A la creation il n'y
+    a encore aucun datastream : l'appel est un no-op peu couteux, les topics
+    connecteurs arrivent au premier atterrissage.
+
+    ensure_schema=False explicite (decision revue vague 2) : un hook ne
+    declenche JAMAIS le generateur de schema docs 11.2. Ici il profilerait
+    tout l'entrepot -- y compris des relations d'autres tenants -- pour un
+    projet qui n'a encore aucune donnee. Les schema docs restent produites
+    par le passage nocturne (SCHEMA_CONTEXT_ENABLED).
+
+    Extrait de _create_project pour etre unit-testable sans Postgres
+    (re-review vague 2) : le test patch core.context_seed et appelle ce helper.
+    """
+    try:
+        from core.context_seed import seed_project_context_best_effort  # noqa: PLC0415
+
+        seed_project_context_best_effort(proj_id, ensure_schema=False)
+    except Exception as exc:  # noqa: BLE001 -- seeding never fails project creation
+        logger.warning("admin_api: context_seed_failed project=%s err=%s", proj_id, exc)
+
 
 async def _create_project(request: Request) -> Response:
     """POST /api/projects -- create a project (AC3).
@@ -9146,13 +10409,15 @@ async def _create_project(request: Request) -> Response:
         return coherence_err
 
     geography_touched = any(
-        key in body for key in ("geographic_mode", "local_market_country_codes")
+        key in body for key in ("geographic_mode", "local_market_country_codes", "local_markets")
     )
+
     try:
         geographic_posture = normalize_geographic_posture(
             body.get("geographic_mode", "global"),
             body.get("local_market_country_codes", []),
             _country_codes(),
+            local_markets=body.get("local_markets"),
         )
     except CountryVocabularyError:
         return _country_vocabulary_error()
@@ -9186,18 +10451,103 @@ async def _create_project(request: Request) -> Response:
                         slug = f"{base_slug}-{counter}"
                         counter += 1
 
+                # Rattacher le projet a son organisation. Sans org_id, la
+                # resolution d'entrepot (warehouse_tenancy) ne trouve aucune org
+                # et retombe sur le nommage legacy : les datasets provisionnes a
+                # la creation de l'org ne servent JAMAIS, et le cloisonnement par
+                # org (P4) ne s'applique pas. La colonne existait, l'INSERT ne
+                # l'ecrivait simplement pas.
+                org_id_in = (body.get("org_id") or "").strip()
+                if org_id_in:
+                    cur.execute(
+                        "SELECT 1 FROM app.org_members "
+                        "WHERE org_id = %s AND identity = %s AND status = 'active'",
+                        (org_id_in, created_by),
+                    )
+                    if cur.fetchone() is None:
+                        conn.rollback()
+                        return JSONResponse(
+                            {
+                                "code": "forbidden",
+                                "message": ("You are not an active member of this organization."),
+                            },
+                            status_code=403,
+                        )
+                    org_id_for_project = org_id_in
+                else:
+                    # Non fourni : deduire quand c'est SANS AMBIGUITE (une seule
+                    # org active pour l'appelant). Deux orgs ou plus : exiger le
+                    # choix plutot que d'en deviner une.
+                    cur.execute(
+                        "SELECT org_id FROM app.org_members "
+                        "WHERE identity = %s AND status = 'active' LIMIT 2",
+                        (created_by,),
+                    )
+                    memberships = [r[0] for r in cur.fetchall()]
+                    if len(memberships) > 1:
+                        conn.rollback()
+                        return JSONResponse(
+                            {
+                                "code": "org_id_required",
+                                "message": (
+                                    "You belong to several organizations: specify "
+                                    "org_id for this project."
+                                ),
+                            },
+                            status_code=422,
+                        )
+                    if not memberships:
+                        # Aucune org : REFUSER plutot que de creer un orphelin.
+                        # Un projet sans org n'a pas d'entrepot ou atterrir et
+                        # echappe au cloisonnement : ce n'est pas un projet
+                        # degrade, c'est un projet impossible. L'onboarding dit
+                        # deja que l'organisation est la premiere etape et que
+                        # tout le reste en decoule -- l'API doit tenir le meme
+                        # discours au lieu de fabriquer l'objet incoherent.
+                        conn.rollback()
+                        return JSONResponse(
+                            {
+                                "code": "org_required",
+                                "message": (
+                                    "Create or join an organization before creating a project."
+                                ),
+                            },
+                            status_code=422,
+                        )
+                    org_id_for_project = memberships[0]
+
                 cur.execute(
                     """
                     INSERT INTO app.projects
-                        (id, name, slug, status, currency, timezone, created_by)
-                    VALUES (%s, %s, %s, 'active', %s, %s, %s)
+                        (id, name, slug, status, currency, timezone, created_by, org_id)
+                    VALUES (%s, %s, %s, 'active', %s, %s, %s, %s)
                     RETURNING id, name, slug, status, currency, timezone, created_at
                     """,
-                    (proj_id, name, slug, currency, timezone_str, created_by),
+                    (
+                        proj_id,
+                        name,
+                        slug,
+                        currency,
+                        timezone_str,
+                        created_by,
+                        org_id_for_project,
+                    ),
                 )
                 row = cur.fetchone()
                 cols = [d[0] for d in cur.description]
                 created = _project_row_to_dict(cols, row)
+
+                # Enroler l'auteur proprietaire, comme le fait la creation d'org.
+                # Sans cette ligne, resolve_project_role ne trouve aucun role et
+                # le createur perd l'acces a son propre projet dans la seconde qui
+                # suit : GET /api/datastreams?project_id=... repondait 404 juste
+                # apres un 201.
+                cur.execute(
+                    "INSERT INTO app.project_members (id, project_id, identity, role) "
+                    "VALUES (%s, %s, %s, 'owner') "
+                    "ON CONFLICT (project_id, identity) DO NOTHING",
+                    (_mint_project_member_id(), proj_id, created_by),
+                )
 
             # Story 17.1: écrire les préférences source de vérification dans
             # app.project_preferences (AD-8 sole-writer Postgres).
@@ -9215,9 +10565,11 @@ async def _create_project(request: Request) -> Response:
                         "project_id": proj_id,
                         "previous": {
                             "geographic_mode": "global",
+                            "local_markets": [],
                             "local_market_country_codes": [],
                         },
                         "new": geographic_posture.as_dict(),
+                        "market_diff": market_diff(GeographicPosture(), geographic_posture),
                     },
                 )
 
@@ -9277,6 +10629,10 @@ async def _create_project(request: Request) -> Response:
             status_code=500,
         )
 
+    # Story 44.2: amorcer la couche de connaissance jour-0 APRES le commit du
+    # projet (helper dedie, unit-testable sans Postgres -- re-review vague 2).
+    _seed_new_project(proj_id)
+
     # Story 17.1: enrichir la réponse avec les champs source de vérification.
     created.update(
         {
@@ -9293,26 +10649,55 @@ async def _create_project(request: Request) -> Response:
 
 async def _list_projects(request: Request) -> Response:
     """GET /api/projects -- list active projects, ordered by name ASC (AC3)."""
-    authorized, _identity = await _check_auth(request)
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Bearer token required"},
             status_code=401,
         )
+
     try:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, name, slug, status, currency, timezone,
-                           org_id, created_at, updated_at
-                    FROM app.projects
-                    WHERE status = 'active'
-                    ORDER BY name ASC
-                    """
-                )
+                from core.project_access import epic36_production_access_enabled  # noqa: PLC0415
+
+                if epic36_production_access_enabled():
+                    cur.execute(
+                        """
+                        SELECT p.id, p.name, p.slug, p.status, p.currency, p.timezone,
+                               p.org_id, p.created_at, p.updated_at
+                        FROM app.projects p
+                        JOIN app.organizations o ON o.id = p.org_id
+                        JOIN app.org_members m
+                          ON m.org_id = p.org_id AND m.identity = %s
+                         AND m.status = 'active'
+                        WHERE p.status = 'active' AND o.status = 'active'
+                          AND (
+                              m.role = 'owner'
+                              OR EXISTS (
+                                  SELECT 1 FROM app.resource_grants g
+                                  WHERE g.org_id = p.org_id AND g.identity = %s
+                                    AND g.scope_type = 'project'
+                                    AND g.scope_id = p.id
+                                    AND g.capability IN ('view', 'edit', 'manage')
+                              )
+                          )
+                        ORDER BY p.name ASC
+                        """,
+                        (identity, identity),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT id, name, slug, status, currency, timezone,
+                               org_id, created_at, updated_at
+                        FROM app.projects
+                        WHERE status = 'active'
+                        ORDER BY name ASC
+                        """
+                    )
                 cols = [d[0] for d in cur.description]
                 projects = [_project_row_to_dict(cols, r) for r in cur.fetchall()]
     except Exception as exc:
@@ -9442,7 +10827,7 @@ async def _patch_project(request: Request) -> Response:
     has_project_fields = bool(set_clauses)
     has_vs_fields = bool(vsfields)
     has_geo_fields = any(
-        key in body for key in ("geographic_mode", "local_market_country_codes")
+        key in body for key in ("geographic_mode", "local_market_country_codes", "local_markets")
     )
 
     if not has_project_fields and not has_vs_fields and not has_geo_fields:
@@ -9614,9 +10999,11 @@ async def _patch_project(request: Request) -> Response:
                         "project_id": project_id,
                         "previous": previous_geography.as_dict(),
                         "new": geographic_posture.as_dict(),
+                        # Story 37.8: the audited diff is a MARKET diff, not
+                        # merely a set of added/removed country codes.
+                        "market_diff": market_diff(previous_geography, geographic_posture),
                     },
                 )
-
 
             # Lire l'état final des préférences pour la réponse.
             final_prefs = _fetch_verification_prefs(project_id, conn)
@@ -9853,38 +11240,72 @@ async def _revoke_connection(request: Request) -> Response:
             status_code=400,
         )
 
-    # Step 1: verify connection belongs to project; fetch nango_connection_id + provider.
+    # Step 1: enforce the requested project and credential-owner scopes before mutation.
     try:
-        from core.db import get_connection  # noqa: PLC0415
+        from core.db import get_connection, set_local_access_context  # noqa: PLC0415
+        from core.project_access import (  # noqa: PLC0415
+            epic36_production_access_enabled,
+            identity_can_access_project_in_org,
+            identity_can_manage_org,
+            resolve_strict_resource_access,
+        )
 
         with get_connection() as conn:
+            strict_gate = epic36_production_access_enabled()
+            if strict_gate:
+                set_local_access_context(conn, subject, enforce_epic36=True)
+                project_allowed = resolve_strict_resource_access(
+                    subject, conn, project_id=project_id, minimum_capability="manage"
+                ).allowed
+            else:
+                project_allowed = identity_can_access_project_in_org(project_id, subject, conn)
+            if not project_allowed:
+                return JSONResponse(
+                    {"code": "not_found", "message": "Connection not found"},
+                    status_code=404 if strict_gate else 403,
+                )
+
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, nango_connection_id, provider, status
-                    FROM app.connection_ref
-                    WHERE id = %s AND project_id = %s
+                    SELECT r.id, r.nango_connection_id, r.provider, r.status,
+                           r.owner_org_id, p.org_id
+                    FROM app.connection_ref r
+                    JOIN app.projects p ON p.id = %s AND p.status = 'active'
+                    WHERE r.id = %s
                     """,
-                    (connection_id, project_id),
+                    (project_id, connection_id),
                 )
                 row = cur.fetchone()
+            if row is None:
+                return JSONResponse(
+                    {"code": "not_found", "message": "Connection not found"},
+                    status_code=404,
+                )
+            (
+                _conn_id,
+                nango_connection_id,
+                provider,
+                current_status,
+                owner_org_id,
+                project_org_id,
+            ) = row
+            if owner_org_id != project_org_id or not identity_can_manage_org(
+                owner_org_id, subject, conn
+            ):
+                return JSONResponse(
+                    {
+                        "code": "forbidden",
+                        "message": "Only the credential owner organization can revoke it",
+                    },
+                    status_code=403,
+                )
     except Exception as exc:
         logger.error("admin_api: revoke_connection db_error: %s", exc)
         return JSONResponse(
             {"code": "db_error", "message": f"Database error: {exc}"},
             status_code=500,
         )
-
-    if row is None:
-        return JSONResponse(
-            {
-                "code": "not_found",
-                "message": f"Connection '{connection_id}' not found for project '{project_id}'",
-            },
-            status_code=404,
-        )
-
-    _conn_id, nango_connection_id, provider, current_status = row
 
     # Step 2: Call Nango API to delete the connection (best-effort).
     nango_deleted = False
@@ -10154,6 +11575,25 @@ def _enforce_datastream_project_scope(
     )
 
 
+def _resolve_datastream_route_scope(
+    conn, datastream_id: str, route_project_id: str
+) -> str | None:
+    """Return the Datastream data-owner project when linked to the route project."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT ds.project_id
+            FROM app.datastreams ds
+            JOIN app.project_flux pf
+              ON pf.flux_id = ds.id AND pf.org_id = ds.org_id
+            WHERE ds.id = %s AND pf.project_id = %s AND ds.archived_at IS NULL
+            """,
+            (datastream_id, route_project_id),
+        )
+        row = cur.fetchone()
+    return row[0] if row is not None else None
+
+
 # ---------------------------------------------------------------------------
 # Story 12.19 -- deterministic daily sample-preview (server-side masking).
 #
@@ -10166,9 +11606,9 @@ def _enforce_datastream_project_scope(
 # sample owns the warehouse read + masking). Project/auth scoped exactly like the
 # neighbouring Datastream routes (AD-5): Viewer role on the datastream's own project.
 #
-# Stage version provenance (mapping_version_id / current_published_execution_id) is
-# resolved from Postgres and echoed for the requested stage; the actual row
-# materialisation is the consolidated mart (see cache_warehouse honesty note).
+# The current mart is consolidated by owner project + connector and has neither a
+# Datastream nor execution discriminator. The endpoint therefore fails closed when
+# that scope is ambiguous and explicitly reports that no version binding exists.
 # ---------------------------------------------------------------------------
 
 
@@ -10180,7 +11620,7 @@ async def _datastream_sample(request: Request) -> Response:
       date_from  -- inclusive ISO day (required)
       date_to    -- inclusive ISO day (required)
       limit      -- per-day row cap (default 5, hard-capped at 20)
-      project_id -- optional explicit scope claim (must match the datastream's owner)
+      project_id -- required route-project scope (the Datastream may be shared)
 
     Errors: 400 (bad params/range/stage), 401 (unauthorized), 404 (unknown/cross-
     scope datastream), 502 (warehouse unreachable / marts absent backend), 500 (DB).
@@ -10197,11 +11637,15 @@ async def _datastream_sample(request: Request) -> Response:
     date_from = (request.query_params.get("date_from") or "").strip()
     date_to = (request.query_params.get("date_to") or "").strip()
     claimed_project_id = (request.query_params.get("project_id") or "").strip()
-    if not date_from or not date_to:
+    if not claimed_project_id or not date_from or not date_to:
         return JSONResponse(
-            {"code": "missing_param", "message": "date_from et date_to sont requis"},
+            {
+                "code": "missing_param",
+                "message": "project_id, date_from et date_to sont requis",
+            },
             status_code=400,
         )
+
     try:
         limit = int(request.query_params.get("limit") or "5")
     except (TypeError, ValueError):
@@ -10215,51 +11659,73 @@ async def _datastream_sample(request: Request) -> Response:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
-            # Resolve owner project + stage-version pointers in one scoped read.
+            role_error = _require_datastream_role(
+                claimed_project_id,
+                identity,
+                "viewer",
+                conn,
+                datastream_id=ds_id,
+            )
+            if role_error is not None:
+                return role_error
+
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT project_id, module_name, source_kind,
-                           current_mapping_version_id, current_published_execution_id
-                    FROM app.datastreams
-                    WHERE id = %s
+                    SELECT ds.project_id, ds.module_name, ds.source_kind,
+                           ds.name, ds.enabled
+                    FROM app.datastreams ds
+                    JOIN app.project_flux pf
+                      ON pf.flux_id = ds.id AND pf.org_id = ds.org_id
+                    WHERE ds.id = %s AND pf.project_id = %s
+                      AND ds.archived_at IS NULL
                     """,
-                    (ds_id,),
+                    (ds_id, claimed_project_id),
                 )
                 row = cur.fetchone()
             if row is None:
-                # Non-disclosing 404 (same posture as neighbouring datastream routes).
                 return JSONResponse(
                     {"code": "not_found", "message": "Flux de donnees introuvable"},
                     status_code=404,
                 )
-            ds_project_id = row[0]
+
+            data_project_id = row[0]
             module_name = row[1]
             source_kind = row[2]
-            mapping_version_id = row[3]
-            published_execution_id = row[4]
-
-            # AD-5: enforce scope + strict Viewer role on the datastream's OWN
-            # project; a mismatched ?project_id= claim is a non-disclosing 404.
-            scope_error = _enforce_datastream_project_scope(
-                ds_project_id,
-                identity,
-                ds_id,
-                conn,
-                claimed_project_id=claimed_project_id,
-                minimum_role="viewer",
-            )
-            if scope_error is not None:
-                return scope_error
-
-            # The mart ``connector`` value == the datastream's module_name. Inbound
-            # managed-feed / external_bq datastreams have no module connector in the
-            # KPI mart; their sample is honestly empty at this stage (no fabrication).
+            datastream_name = row[3]
+            collection_expected = bool(row[4])
             connector = module_name or ""
+
+            # fact_daily_kpi has no Datastream discriminator. More than one
+            # Datastream for the same owner-project/connector is therefore
+            # ambiguous and must fail closed rather than mix their rows.
+            if connector:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM app.datastreams
+                        WHERE project_id = %s AND module_name = %s
+                          AND archived_at IS NULL
+                        """,
+                        (data_project_id, connector),
+                    )
+                    same_connector_count = int(cur.fetchone()[0])
+                if same_connector_count != 1:
+                    return JSONResponse(
+                        {
+                            "code": "ambiguous_materialization",
+                            "message": (
+                                "No Datastream-scoped sample materialisation is available "
+                                "for this connector."
+                            ),
+                        },
+                        status_code=409,
+                    )
 
             try:
                 sample = read_datastream_sample(
-                    project_id=ds_project_id,
+                    project_id=data_project_id,
                     connector=connector,
                     stage=stage,
                     date_from=date_from,
@@ -10268,23 +11734,7 @@ async def _datastream_sample(request: Request) -> Response:
                 )
             except SampleReadError as exc:
                 status = 502 if exc.code == "warehouse_unavailable" else 400
-                return JSONResponse(
-                    {"code": exc.code, "message": str(exc)}, status_code=status
-                )
-
-            # Overlay real per-day rejection counts for inbound managed feeds
-            # (the KPI mart carries none). Best-effort: a rejection-store hiccup
-            # never fails the sample -- counts stay 0 (honest absence).
-            if source_kind == "managed_feed":
-                try:
-                    _overlay_rejection_counts(
-                        sample["days"], ds_id, ds_project_id, conn
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "admin_api: sample_rejection_overlay_failed ds=%s: %s",
-                        ds_id, exc,
-                    )
+                return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=status)
     except Exception as exc:
         logger.error("admin_api: datastream_sample_error: %s", exc)
         return JSONResponse(
@@ -10292,26 +11742,28 @@ async def _datastream_sample(request: Request) -> Response:
             status_code=500,
         )
 
-    # Stage-appropriate version provenance (only the pointer that applies is echoed).
-    version_ref: dict = {}
-    if stage == "published":
-        version_ref["published_execution_id"] = published_execution_id
-    elif stage in ("mapped", "processed"):
-        version_ref["mapping_version_id"] = mapping_version_id
-    # 'collected' has no mapping/publication version (pre-mapping raw stage).
-
     return JSONResponse(
         {
             "datastream_id": ds_id,
-            "project_id": ds_project_id,
+            "project_id": claimed_project_id,
             "stage": stage,
             "served_stage": sample["served_stage"],
             "stage_note": sample["stage_note"],
+            "datastream": {
+                "id": ds_id,
+                "name": datastream_name,
+                "module_name": module_name,
+                "source_kind": source_kind,
+            },
+            "collection_expected": collection_expected,
+            "materialization_available": sample["materialization_available"],
+            "sample_watermark": sample["sample_watermark"],
             "date_from": date_from,
             "date_to": date_to,
             "limit": max(1, min(limit, 20)),
             "masked_fields": sample["masked_fields"],
-            **version_ref,
+            "masked_value_count": sample["masked_value_count"],
+            "version_binding_available": False,
             "days": sample["days"],
         }
     )
@@ -10400,6 +11852,7 @@ async def _create_datastream(request: Request) -> Response:
             {"code": "unauthorized", "message": "Token d'acces requis"},
             status_code=401,
         )
+
     try:
         body: dict = json.loads(await request.body())
     except Exception as exc:
@@ -10570,6 +12023,7 @@ async def _validate_datastream_intent(request: Request) -> Response:
             DatastreamIntentStructuralError,
             validate_intent,
         )
+        from core.datastreams import get_datastream  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
@@ -10578,6 +12032,10 @@ async def _validate_datastream_intent(request: Request) -> Response:
             )
             if role_error is not None:
                 return role_error
+            if get_datastream(ds_id, project_id, conn) is None:
+                return JSONResponse(
+                    {"code": "not_found", "message": "Datastream not found"}, 404
+                )
             capabilities = None
             source = intent.get("source", {})
             if source.get("kind") == "connector_pull":
@@ -10664,7 +12122,11 @@ async def _profile_datastream_mapping(request: Request) -> Response:
             if ds is None:
                 return JSONResponse({"code": "not_found", "message": "Flux introuvable"}, 404)
 
-            if field_records is None and ds.get("connection_ref_id") and ds.get("report_id"):
+            if (
+                field_records is None
+                and ds.get("connection_ref_id")
+                and ds.get("report_profile_id")
+            ):
                 from core.main import get_loaded_modules  # noqa: PLC0415
                 from core.source_capabilities import get_scoped_source_capabilities  # noqa: PLC0415
 
@@ -10680,7 +12142,7 @@ async def _profile_datastream_mapping(request: Request) -> Response:
                         (
                             r
                             for r in caps.get("reports", [])
-                            if r.get("id") == ds.get("report_id")
+                            if r.get("id") == ds.get("report_profile_id")
                         ),
                         None,
                     )
@@ -10709,9 +12171,7 @@ async def _profile_datastream_mapping(request: Request) -> Response:
         return JSONResponse({"code": "invalid_input", "message": str(exc)}, 400)
     except Exception as exc:
         logger.error("admin_api: profile_datastream_mapping_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Profilage indisponible"}, 503
-        )
+        return JSONResponse({"code": "unavailable", "message": "Profilage indisponible"}, 503)
 
 
 async def _create_datastream_mapping_version(request: Request) -> Response:
@@ -10730,6 +12190,7 @@ async def _create_datastream_mapping_version(request: Request) -> Response:
             {"code": "invalid_header", "message": "En-tête Idempotency-Key trop long (max 255)"},
             400,
         )
+
     try:
         body_bytes = await request.body()
         body = json.loads(body_bytes) if body_bytes.strip() else {}
@@ -10881,9 +12342,7 @@ async def _compile_datastream_projection(request: Request) -> Response:
         return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
     project_id = str(body.get("project_id") or "").strip()
     if not project_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "project_id est requis"}, 400
-        )
+        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
     ds_id = request.path_params.get("id", "")
     version_spec = body.get("mapping_version")
     dimension_projection = body.get("dimension_projection")
@@ -10922,9 +12381,7 @@ async def _compile_datastream_projection(request: Request) -> Response:
                     )
                 mapping_version = versions[0]  # newest-first
             else:
-                mapping_version = get_mapping_version(
-                    ds_id, project_id, version_spec, conn
-                )
+                mapping_version = get_mapping_version(ds_id, project_id, version_spec, conn)
 
             # Governed project-scoped cardinality/scan thresholds (no hardcode).
             preferences: dict = {}
@@ -11006,9 +12463,7 @@ async def _create_datastream_execution(request: Request) -> Response:
     mapping_version_id = str(body.get("mapping_version_id") or "").strip()
     projection_plan = body.get("projection_plan")
     idempotency_key = str(
-        body.get("idempotency_key")
-        or request.headers.get("Idempotency-Key")
-        or ""
+        body.get("idempotency_key") or request.headers.get("Idempotency-Key") or ""
     ).strip()
     if not plan_version_id or not mapping_version_id or not isinstance(projection_plan, dict):
         return JSONResponse(
@@ -11018,6 +12473,7 @@ async def _create_datastream_execution(request: Request) -> Response:
             },
             422,
         )
+
     try:
         from core.datastream_publication import (  # noqa: PLC0415
             ConcurrentExecutionActive,
@@ -11105,6 +12561,7 @@ async def _advance_datastream_execution_state(request: Request) -> Response:
             },
             422,
         )
+
     try:
         from core.datastream_publication import (  # noqa: PLC0415
             ExecutionNotFound,
@@ -11135,9 +12592,7 @@ async def _advance_datastream_execution_state(request: Request) -> Response:
                 conn.commit()
             except ExecutionNotFound:
                 conn.rollback()
-                return JSONResponse(
-                    {"code": "not_found", "message": "Execution introuvable"}, 404
-                )
+                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
             except InvalidStateTransition as exc:
                 conn.rollback()
                 return JSONResponse(
@@ -11214,9 +12669,7 @@ async def _publish_datastream_execution(request: Request) -> Response:
                     plan_declared_schema_hash=body.get("plan_declared_schema_hash"),
                 )
             except ExecutionNotFound:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Execution introuvable"}, 404
-                )
+                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
             if issues:
                 # Fail closed: mark the execution failed, leave prior pointer intact.
                 try:
@@ -11233,9 +12686,7 @@ async def _publish_datastream_execution(request: Request) -> Response:
                     conn.commit()
                 except (InvalidStateTransition, ExecutionNotFound):
                     conn.rollback()
-                return JSONResponse(
-                    {"code": "dq_gate_failed", "issues": issues}, 422
-                )
+                return JSONResponse({"code": "dq_gate_failed", "issues": issues}, 422)
 
             # Move validating -> ready if needed (idempotent guard), then commit.
             try:
@@ -11250,18 +12701,18 @@ async def _publish_datastream_execution(request: Request) -> Response:
                     current = srow[0] if srow is not None else None
                 if current == STATE_VALIDATING:
                     advance_state(
-                        exec_id, STATE_VALIDATING, STATE_READY,
-                        identity or "anonymous", conn, project_id=project_id,
+                        exec_id,
+                        STATE_VALIDATING,
+                        STATE_READY,
+                        identity or "anonymous",
+                        conn,
+                        project_id=project_id,
                     )
                     conn.commit()
-                result = commit_publication(
-                    exec_id, project_id, identity or "anonymous", conn
-                )
+                result = commit_publication(exec_id, project_id, identity or "anonymous", conn)
             except ExecutionNotFound:
                 conn.rollback()
-                return JSONResponse(
-                    {"code": "not_found", "message": "Execution introuvable"}, 404
-                )
+                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
             except InvalidStateTransition as exc:
                 conn.rollback()
                 return JSONResponse(
@@ -11307,9 +12758,7 @@ async def _reconcile_datastream_execution(request: Request) -> Response:
             try:
                 result = reconcile_execution(exec_id, project_id, conn)
             except ExecutionNotFound:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Execution introuvable"}, 404
-                )
+                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
     except Exception as exc:
         logger.error("admin_api: reconcile_datastream_execution_error: %s", exc)
         return JSONResponse({"code": "unavailable", "message": "Reconciliation indisponible"}, 503)
@@ -11368,9 +12817,7 @@ async def _get_datastream_execution(request: Request) -> Response:
             try:
                 record = get_execution(exec_id, project_id, conn)
             except ExecutionNotFound:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Execution introuvable"}, 404
-                )
+                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
     except Exception as exc:
         logger.error("admin_api: get_datastream_execution_error: %s", exc)
         return JSONResponse({"code": "unavailable", "message": "Execution indisponible"}, 503)
@@ -11452,9 +12899,7 @@ async def _observe_datastream(request: Request) -> Response:
     projection_plan = body.get("projection_plan")
     probe_result = body.get("probe_result")
     idempotency_key = str(
-        body.get("idempotency_key")
-        or request.headers.get("Idempotency-Key")
-        or ""
+        body.get("idempotency_key") or request.headers.get("Idempotency-Key") or ""
     ).strip()
     if (
         not plan_version_id
@@ -11472,6 +12917,7 @@ async def _observe_datastream(request: Request) -> Response:
             },
             422,
         )
+
     try:
         from core.datastream_publication import (  # noqa: PLC0415
             ConcurrentExecutionActive,
@@ -11492,9 +12938,7 @@ async def _observe_datastream(request: Request) -> Response:
             )
             if role_error is not None:
                 return role_error
-            external_object = _load_external_object(
-                conn, ds_id, project_id, plan_version_id
-            )
+            external_object = _load_external_object(conn, ds_id, project_id, plan_version_id)
             if external_object is None:
                 # Non-disclosing: unknown plan version / not an external_bq source.
                 return JSONResponse(
@@ -11635,9 +13079,7 @@ async def _open_managed_feed_import(request: Request) -> Response:
     projection_plan = body.get("projection_plan")
     source_metadata = body.get("source_metadata")
     idempotency_key = str(
-        body.get("idempotency_key")
-        or request.headers.get("Idempotency-Key")
-        or ""
+        body.get("idempotency_key") or request.headers.get("Idempotency-Key") or ""
     ).strip()
     if (
         not plan_version_id
@@ -11728,20 +13170,15 @@ async def _record_managed_feed_rows(request: Request) -> Response:
     content_hash = str(body.get("content_hash") or "").strip()
     accepted_row_count = body.get("accepted_row_count")
     rejected_rows = body.get("rejected_rows")
-    if (
-        not landing_relation
-        or not content_hash
-        or not isinstance(accepted_row_count, int)
-    ):
+    if not landing_relation or not content_hash or not isinstance(accepted_row_count, int):
         return JSONResponse(
             {
                 "code": "missing_field",
-                "message": (
-                    "landing_relation, accepted_row_count et content_hash sont requis"
-                ),
+                "message": ("landing_relation, accepted_row_count et content_hash sont requis"),
             },
             422,
         )
+
     try:
         from core.db import get_connection  # noqa: PLC0415
         from core.managed_feed_ledger import ManagedFeedError, record_rows  # noqa: PLC0415
@@ -11858,8 +13295,12 @@ async def _publish_managed_feed_import(request: Request) -> Response:
                     current = srow[0] if srow is not None else None
                 if current == STATE_VALIDATING:
                     advance_state(
-                        exec_id, STATE_VALIDATING, STATE_READY,
-                        identity or "anonymous", conn, project_id=project_id,
+                        exec_id,
+                        STATE_VALIDATING,
+                        STATE_READY,
+                        identity or "anonymous",
+                        conn,
+                        project_id=project_id,
                     )
                     conn.commit()
                 commit_publication(exec_id, project_id, identity or "anonymous", conn)
@@ -11871,9 +13312,7 @@ async def _publish_managed_feed_import(request: Request) -> Response:
                 conn.commit()
             except ExecutionNotFound:
                 conn.rollback()
-                return JSONResponse(
-                    {"code": "not_found", "message": "Execution introuvable"}, 404
-                )
+                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
             except InvalidStateTransition as exc:
                 conn.rollback()
                 return JSONResponse(
@@ -11946,9 +13385,7 @@ async def _get_managed_feed_import(request: Request) -> Response:
             try:
                 ledger = get_ledger(ledger_id, project_id, conn)
             except LedgerNotFound:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Import introuvable"}, 404
-                )
+                return JSONResponse({"code": "not_found", "message": "Import introuvable"}, 404)
     except Exception as exc:
         logger.error("admin_api: get_managed_feed_import_error: %s", exc)
         return JSONResponse({"code": "unavailable", "message": "Import indisponible"}, 503)
@@ -11983,9 +13420,7 @@ async def _get_managed_feed_rejected_rows(request: Request) -> Response:
             )
             if role_error is not None:
                 return role_error
-            rows = get_rejected_rows(
-                ledger_id, project_id, conn, limit=limit, offset=offset
-            )
+            rows = get_rejected_rows(ledger_id, project_id, conn, limit=limit, offset=offset)
     except Exception as exc:
         logger.error("admin_api: get_managed_feed_rejected_rows_error: %s", exc)
         return JSONResponse(
@@ -12033,6 +13468,7 @@ def _decode_upload_bytes(body: dict) -> tuple[bytes | None, Response | None]:
         return None, JSONResponse(
             {"code": "file_too_large", "message": "Fichier trop volumineux (max 50 Mo)"}, 422
         )
+
     try:
         data = base64.b64decode(raw, validate=True)
     except Exception:
@@ -12145,9 +13581,7 @@ async def _confirm_csv_excel_import(request: Request) -> Response:
     source_metadata = body.get("source_metadata")
     contract = body.get("contract")
     idempotency_key = str(
-        body.get("idempotency_key")
-        or request.headers.get("Idempotency-Key")
-        or ""
+        body.get("idempotency_key") or request.headers.get("Idempotency-Key") or ""
     ).strip()
     force_empty_publish = bool(body.get("force_empty_publish", False))
     if (
@@ -12193,9 +13627,7 @@ async def _confirm_csv_excel_import(request: Request) -> Response:
                 return role_error
             # Read the project empty-publication preference (fail closed to False).
             preferences = {
-                "allow_empty_publication": _read_allow_empty_publication_pref(
-                    conn, project_id
-                )
+                "allow_empty_publication": _read_allow_empty_publication_pref(conn, project_id)
             }
             try:
                 result = run_import(
@@ -12217,9 +13649,7 @@ async def _confirm_csv_excel_import(request: Request) -> Response:
                 conn.commit()
             except AppendUnavailable as exc:
                 conn.rollback()
-                return JSONResponse(
-                    {"code": "append_unavailable", "message": str(exc)}, 422
-                )
+                return JSONResponse({"code": "append_unavailable", "message": str(exc)}, 422)
             except (ImportPayloadConflict, ImportInProgress) as exc:
                 conn.rollback()
                 mapped = _managed_feed_error_response(exc)
@@ -12247,8 +13677,7 @@ def _read_allow_empty_publication_pref(conn, project_id: str) -> bool:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT allow_empty_publication FROM app.project_preferences "
-                "WHERE project_id = %s",
+                "SELECT allow_empty_publication FROM app.project_preferences WHERE project_id = %s",
                 (project_id,),
             )
             row = cur.fetchone()
@@ -12346,9 +13775,7 @@ async def _list_import_contracts(request: Request) -> Response:
                     (ds_id, project_id),
                 )
                 cols = [d[0] for d in cur.description]
-                contracts = [
-                    _import_contract_row_to_dict(cols, row) for row in cur.fetchall()
-                ]
+                contracts = [_import_contract_row_to_dict(cols, row) for row in cur.fetchall()]
     except Exception as exc:
         logger.error("admin_api: list_import_contracts_error: %s", exc)
         return JSONResponse({"code": "unavailable", "message": "Contrats indisponibles"}, 503)
@@ -12549,9 +13976,7 @@ async def _configure_managed_feed_sync(request: Request) -> Response:
                 conn.commit()
     except Exception as exc:
         logger.error("admin_api: configure_managed_feed_sync_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Configuration indisponible"}, 503
-        )
+        return JSONResponse({"code": "unavailable", "message": "Configuration indisponible"}, 503)
     return JSONResponse(schedule, 201)
 
 
@@ -12645,9 +14070,7 @@ async def _sync_now_managed_feed(request: Request) -> Response:
             except NotImplementedError as exc:
                 conn.rollback()
                 # PHASE_B_LIVE_BLOCKED: no live adapter injected in this environment.
-                return JSONResponse(
-                    {"code": "phase_b_live_blocked", "message": str(exc)}, 503
-                )
+                return JSONResponse({"code": "phase_b_live_blocked", "message": str(exc)}, 503)
     except Exception as exc:
         logger.error("admin_api: sync_now_managed_feed_error: %s", exc)
         return JSONResponse({"code": "unavailable", "message": "Sync indisponible"}, 503)
@@ -12699,9 +14122,7 @@ async def _status_managed_feed_sync(request: Request) -> Response:
     except Exception as exc:
         logger.error("admin_api: status_managed_feed_sync_error: %s", exc)
         return JSONResponse({"code": "unavailable", "message": "Statut indisponible"}, 503)
-    return JSONResponse(
-        {"schedule": schedule, "last_runs": last_runs, "next_run": next_run}
-    )
+    return JSONResponse({"schedule": schedule, "last_runs": last_runs, "next_run": next_run})
 
 
 # ===========================================================================
@@ -12727,6 +14148,10 @@ def _bounded_recovery_error_response(exc) -> Response | None:
     if not isinstance(exc, BoundedRecoveryError):
         return None
     code = exc.code
+    if code == "outcome_unknown":
+        return JSONResponse(
+            {"code": code, "outcome": "outcome_unknown", "message": exc.message}, 409
+        )
     if code == "lock_conflict":
         return JSONResponse({"code": code, "message": exc.message}, 409)
     if code in ("not_found", "wrong_verb"):
@@ -12756,7 +14181,7 @@ async def _prepare_bounded_recovery(request: Request) -> Response:
     """POST /api/datastreams/{id}/bounded/prepare (Member) -- Story 12.11.
 
     Body: {project_id, kind, reason?, date_from?, date_to_exclusive?, partition?,
-    chosen_mapping_version_id?, estimated_points?}. Assembles the AD-27 immutable
+    chosen_mapping_version_id?}. Assembles the AD-27 immutable
     proposal (NO durable operation, NO dispatch). 200 with the proposal
     {preparation_id, kind, target, target_versions, interval, impact, quota, ...}.
     BoundedRecoveryError codes -> 422/409/404.
@@ -12789,13 +14214,17 @@ async def _prepare_bounded_recovery(request: Request) -> Response:
             )
             if role_error is not None:
                 return role_error
-            org_id = _load_datastream_org_id(conn, ds_id, project_id)
+            data_project_id = _resolve_datastream_route_scope(conn, ds_id, project_id)
+            if data_project_id is None:
+                return JSONResponse(
+                    {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
+                )
+            org_id = _load_datastream_org_id(conn, ds_id, data_project_id)
             if org_id is None:
                 return JSONResponse(
                     {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
                 )
             try:
-                estimated = body.get("estimated_points") or 0
                 result = prepare_bounded_recovery(
                     conn,
                     org_id=org_id,
@@ -12807,7 +14236,6 @@ async def _prepare_bounded_recovery(request: Request) -> Response:
                     date_to_exclusive=body.get("date_to_exclusive"),
                     partition=body.get("partition"),
                     chosen_mapping_version_id=body.get("chosen_mapping_version_id"),
-                    estimated_points=int(estimated) if isinstance(estimated, int) else 0,
                 )
                 conn.commit()
             except BoundedRecoveryError as exc:
@@ -12818,16 +14246,14 @@ async def _prepare_bounded_recovery(request: Request) -> Response:
                 raise
     except Exception as exc:
         logger.error("admin_api: prepare_bounded_recovery_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Preparation indisponible"}, 503
-        )
+        return JSONResponse({"code": "unavailable", "message": "Preparation indisponible"}, 503)
     return JSONResponse(result, 200)
 
 
 async def _confirm_bounded_recovery(request: Request) -> Response:
     """POST /api/datastreams/{id}/bounded/confirm (Member) -- Story 12.11.
 
-    Body: {project_id, preparation_id, reason?, trace_id?}. Re-validates every
+    Body: {project_id, preparation_id}. Re-validates every
     precondition against the live target and routes EXACTLY ONE durable operation
     (never commit_publication / pointer mutation). 200 with {preparation_id,
     operation_id, outcome, replayed, result}. BoundedRecoveryError codes ->
@@ -12847,9 +14273,8 @@ async def _confirm_bounded_recovery(request: Request) -> Response:
     ds_id = request.path_params.get("id", "")
     preparation_id = str(body.get("preparation_id") or "").strip()
     if not preparation_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "preparation_id est requis"}, 422
-        )
+        return JSONResponse({"code": "missing_field", "message": "preparation_id est requis"}, 422)
+
     try:
         from core.bounded_recovery import (  # noqa: PLC0415
             BoundedRecoveryError,
@@ -12865,18 +14290,28 @@ async def _confirm_bounded_recovery(request: Request) -> Response:
                 return role_error
             # Scope guard: the preparation must belong to this datastream's org. A
             # cross-project confirm would otherwise leak an out-of-scope proposal.
-            org_id = _load_datastream_org_id(conn, ds_id, project_id)
+            data_project_id = _resolve_datastream_route_scope(conn, ds_id, project_id)
+            if data_project_id is None:
+                return JSONResponse(
+                    {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
+                )
+            org_id = _load_datastream_org_id(conn, ds_id, data_project_id)
             if org_id is None:
                 return JSONResponse(
                     {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
                 )
             try:
+                from core import tracing  # noqa: PLC0415
+
+                server_trace_id = tracing.current_trace_id_hex() or os.urandom(16).hex()
                 result = confirm_bounded_recovery(
                     conn,
                     preparation_id=preparation_id,
+                    expected_org_id=str(org_id),
+                    expected_project_id=data_project_id,
+                    expected_datastream_id=ds_id,
                     actor=identity or "anonymous",
-                    reason=body.get("reason"),
-                    trace_id=body.get("trace_id"),
+                    trace_id=server_trace_id,
                 )
                 conn.commit()
             except BoundedRecoveryError as exc:
@@ -12887,9 +14322,7 @@ async def _confirm_bounded_recovery(request: Request) -> Response:
                 raise
     except Exception as exc:
         logger.error("admin_api: confirm_bounded_recovery_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Confirmation indisponible"}, 503
-        )
+        return JSONResponse({"code": "unavailable", "message": "Confirmation indisponible"}, 503)
     return JSONResponse(result, 200)
 
 
@@ -12969,9 +14402,7 @@ async def _preview_dataset_rollback(request: Request) -> Response:
     if not project_id:
         return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
     ds_id = request.path_params.get("id", "")
-    target_execution_id = (
-        request.query_params.get("target_execution_id") or ""
-    ).strip() or None
+    target_execution_id = (request.query_params.get("target_execution_id") or "").strip() or None
     try:
         from core.dataset_recovery import preview_rollback  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
@@ -13022,6 +14453,7 @@ async def _rollback_dataset(request: Request) -> Response:
         return JSONResponse(
             {"code": "missing_field", "message": "target_execution_id est requis"}, 422
         )
+
     try:
         from core.dataset_recovery import DatasetRecoveryError, rollback_dataset  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
@@ -13132,9 +14564,7 @@ async def _append_availability_dataset(request: Request) -> Response:
     candidate_schema_hash = (
         request.query_params.get("candidate_schema_hash") or ""
     ).strip() or None
-    target_schema_hash = (
-        request.query_params.get("target_schema_hash") or ""
-    ).strip() or None
+    target_schema_hash = (request.query_params.get("target_schema_hash") or "").strip() or None
     try:
         from core.dataset_recovery import resolve_append_availability  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
@@ -13154,9 +14584,7 @@ async def _append_availability_dataset(request: Request) -> Response:
             )
     except Exception as exc:
         logger.error("admin_api: append_availability_dataset_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Disponibilite indisponible"}, 503
-        )
+        return JSONResponse({"code": "unavailable", "message": "Disponibilite indisponible"}, 503)
     return JSONResponse(availability, 200)
 
 
@@ -13284,36 +14712,42 @@ async def _get_datastream_versions(request: Request) -> Response:
             if role_error is not None:
                 return role_error
 
-            # Existence + scope: get_datastream returns None cross-project (AD-5).
-            datastream = get_datastream(ds_id, project_id, conn)
+            data_project_id = _resolve_datastream_route_scope(conn, ds_id, project_id)
+            if data_project_id is None:
+                return JSONResponse(
+                    {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
+                )
+            datastream = get_datastream(ds_id, data_project_id, conn)
             if datastream is None:
                 return JSONResponse(
                     {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
                 )
 
-            plan_versions = list_intent_versions(ds_id, project_id, conn)
-            try:
-                mapping_versions = list_mapping_versions(ds_id, project_id, conn)
-            except Exception:  # noqa: BLE001 - no mapping yet -> empty list.
-                mapping_versions = []
+            plan_versions = list_intent_versions(ds_id, data_project_id, conn)
+            mapping_versions = list_mapping_versions(ds_id, data_project_id, conn)
 
             current_published_execution_id = _read_current_published_execution(
-                conn, ds_id, project_id
+                conn, ds_id, data_project_id
             )
             published_execution = None
             if current_published_execution_id:
                 try:
                     published_execution = get_execution(
-                        current_published_execution_id, project_id, conn
+                        current_published_execution_id, data_project_id, conn
                     )
                 except ExecutionNotFound:
                     published_execution = None
 
             current_candidate = _read_current_candidate_execution(
-                conn, ds_id, project_id, current_published_execution_id
+                conn, ds_id, data_project_id, current_published_execution_id
             )
-            publication_log = get_publication_log(ds_id, project_id, conn, limit=20)
-            recent_imports = list_ledger(ds_id, project_id, conn, limit=20)
+            latest_execution = _read_latest_execution(conn, ds_id, data_project_id)
+            publication_log = get_publication_log(ds_id, data_project_id, conn, limit=20)
+            recent_imports = list_ledger(ds_id, data_project_id, conn, limit=20)
+            runs = _read_datastream_runs(conn, ds_id, data_project_id, limit=100)
+            _enrich_datastream_runs(
+                runs, recent_imports, current_published_execution_id
+            )
     except Exception as exc:
         logger.error("admin_api: get_datastream_versions_error: %s", exc)
         return JSONResponse(
@@ -13324,13 +14758,17 @@ async def _get_datastream_versions(request: Request) -> Response:
         {
             "datastream_id": ds_id,
             "project_id": project_id,
+            "data_project_id": data_project_id,
+            "datastream": datastream,
             "plan_versions": plan_versions,
             "mapping_versions": mapping_versions,
             "current_published_execution_id": current_published_execution_id,
             "published_execution": published_execution,
             "current_candidate": current_candidate,
+            "latest_execution": latest_execution,
             "publication_log": publication_log,
             "recent_imports": recent_imports,
+            "runs": runs,
             # PHASE B / TODO (honest -- no backing column in the 12.2-12.5 tables):
             #   * a trace_id per execution: publication_log carries published_by
             #     (actor) but there is no per-execution trace column in 042; the
@@ -13344,6 +14782,129 @@ async def _get_datastream_versions(request: Request) -> Response:
     )
 
 
+def _normalize_run_interval(projection_plan: object) -> dict[str, str] | None:
+    """Return an exact half-open run interval from persisted projection evidence."""
+    if isinstance(projection_plan, str):
+        try:
+            projection_plan = json.loads(projection_plan)
+        except (TypeError, ValueError):
+            return None
+    if not isinstance(projection_plan, dict):
+        return None
+    half_open = projection_plan.get("half_open_range")
+    interval = half_open if isinstance(half_open, dict) else projection_plan.get("interval")
+    if not isinstance(interval, dict):
+        return None
+    date_from = interval.get("from")
+    to_exclusive = interval.get("to_exclusive")
+    try:
+        start = date.fromisoformat(str(date_from))
+        end = date.fromisoformat(str(to_exclusive))
+    except (TypeError, ValueError):
+        return None
+    if start >= end:
+        return None
+    return {"from": start.isoformat(), "to_exclusive": end.isoformat()}
+
+
+def _read_datastream_runs(
+    conn, ds_id: str, project_id: str, *, limit: int = 100
+) -> list[dict]:
+    """Read the universal execution timeline; ledger rows never define membership."""
+    bounded_limit = max(1, min(int(limit), 200))
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT e.id, e.state, e.state_changed_at, e.row_count, e.plan_version_id,
+                   e.mapping_version_id, e.error_code, e.created_at, e.projection_plan_ref,
+                   e.created_by,
+                   EXISTS (
+                       SELECT 1 FROM app.datastream_publication_log pl
+                       WHERE pl.execution_id = e.id AND pl.project_id = e.project_id
+                   ) AS was_published
+            FROM app.datastream_executions e
+            WHERE datastream_id = %s AND project_id = %s
+            ORDER BY created_at DESC, id DESC
+            LIMIT %s
+            """,
+            (ds_id, project_id, bounded_limit),
+        )
+        rows = cur.fetchall()
+    runs: list[dict] = []
+    for row in rows:
+        created_at = row[7]
+        state_changed_at = row[2]
+        duration_seconds = None
+        if isinstance(created_at, datetime) and isinstance(state_changed_at, datetime):
+            duration_seconds = max(0, int((state_changed_at - created_at).total_seconds()))
+        projection_plan = row[8]
+        if isinstance(projection_plan, str):
+            try:
+                projection_plan = json.loads(projection_plan)
+            except (TypeError, ValueError):
+                projection_plan = None
+        runs.append(
+            {
+                "id": row[0],
+                "state": row[1],
+                "state_changed_at": (
+                    state_changed_at.isoformat()
+                    if state_changed_at is not None and hasattr(state_changed_at, "isoformat")
+                    else state_changed_at
+                ),
+                "row_count": row[3],
+                "plan_version_id": row[4],
+                "mapping_version_id": row[5],
+                "error_code": row[6],
+                "created_at": (
+                    created_at.isoformat()
+                    if created_at is not None and hasattr(created_at, "isoformat")
+                    else created_at
+                ),
+                "created_by": row[9],
+                "duration_seconds": duration_seconds,
+                "recovery_kind": (
+                    projection_plan.get("recovery_kind")
+                    if isinstance(projection_plan, dict)
+                    and isinstance(projection_plan.get("recovery_kind"), str)
+                    else None
+                ),
+                "recovery_interval": _normalize_run_interval(projection_plan),
+                "import_evidence": None,
+                "publication_state": (
+                    "previously_published" if bool(row[10]) else "unpublished"
+                ),
+            }
+        )
+    return runs
+
+
+def _enrich_datastream_runs(
+    runs: list[dict],
+    recent_imports: list[dict],
+    current_published_execution_id: str | None,
+) -> None:
+    """Attach optional ledger/publication evidence without creating run rows."""
+    ledger_by_execution = {
+        row.get("execution_id"): row
+        for row in recent_imports
+        if isinstance(row, dict) and isinstance(row.get("execution_id"), str)
+    }
+
+    for run in runs:
+        execution_id = run["id"]
+        ledger = ledger_by_execution.get(execution_id)
+        if ledger is not None:
+            run["import_evidence"] = {
+                "ledger_id": ledger.get("id"),
+                "outcome": ledger.get("outcome"),
+                "row_count": ledger.get("row_count"),
+                "rejected_row_count": ledger.get("rejected_row_count"),
+                "snapshot_observed_at": ledger.get("snapshot_observed_at"),
+            }
+        if execution_id == current_published_execution_id:
+            run["publication_state"] = "current"
+
 def _read_current_published_execution(conn, ds_id: str, project_id: str) -> str | None:
     """Read app.datastreams.current_published_execution_id (project-scoped)."""
     with conn.cursor() as cur:
@@ -13354,6 +14915,30 @@ def _read_current_published_execution(conn, ds_id: str, project_id: str) -> str 
         )
         row = cur.fetchone()
     return row[0] if row is not None else None
+
+
+def _read_latest_execution(conn, ds_id: str, project_id: str) -> dict | None:
+    """Return the newest execution, including terminal failures, for health evidence."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, state, state_changed_at, content_hash, row_count,
+                   plan_version_id, mapping_version_id, error_code, created_at
+            FROM app.datastream_executions
+            WHERE datastream_id = %s AND project_id = %s
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (ds_id, project_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cols = [d[0] for d in cur.description]
+    record: dict = {}
+    for col, val in zip(cols, row):
+        record[col] = val.isoformat() if val is not None and hasattr(val, "isoformat") else val
+    return record
 
 
 def _read_current_candidate_execution(
@@ -13377,7 +14962,7 @@ def _read_current_candidate_execution(
             WHERE datastream_id = %s AND project_id = %s
               AND state NOT IN ('published', 'failed', 'cancelled')
               AND (%s IS NULL OR id <> %s)
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT 1
             """,
             (ds_id, project_id, published_execution_id, published_execution_id),
@@ -13453,7 +15038,7 @@ async def _patch_datastream(request: Request) -> Response:
 
     Body (JSON): {"project_id": str, "name"?, "enabled"?, "schedule_mode"?,
                   "refetch_days"?, "date_window_days"?, "config"?,
-                  "connection_ref_id"?, "report_profile_id"?}
+                  "connection_ref_id"?, "report_profile_id"?, "plan_version_id"?}
     Response (200): updated datastream.
     Error:
         400 -- missing project_id
@@ -13488,6 +15073,8 @@ async def _patch_datastream(request: Request) -> Response:
             status_code=400,
         )
 
+    activation_replay = False
+    activation_key_hash: str | None = None
     try:
         from core.datastreams import get_datastream, update_datastream  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
@@ -13566,21 +15153,54 @@ async def _patch_datastream(request: Request) -> Response:
                 response["plan_version"] = result["plan_version"]
                 return JSONResponse(response)
 
-            # Story 38.6 AC4: a generic-tabular inbound Datastream is publish-gated
-            # until its required canonical semantics are completed (a later mapping
-            # story lifts the gate). Enabling it via PATCH must not bypass the gate.
-            _ds_cfg = existing.get("config") or {}
-            if isinstance(_ds_cfg, str):
-                import json as _json_cfg  # noqa: PLC0415
+            # Every activation first locks and rereads the authoritative pointer.
+            # This prevents a legacy-looking pre-lock snapshot from bypassing the
+            # versioned compare-and-set after a concurrent plan revision.
+            locked_activation = None
+            if body.get("enabled") is True:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT d.current_plan_version_id,
+                               p.executable,
+                               p.normalized_payload,
+                               d.config,
+                               p.capability_fingerprint,
+                               d.enabled,
+                               d.schedule_mode
+                        FROM app.datastreams d
+                        LEFT JOIN app.datastream_plan_versions p
+                          ON p.id = d.current_plan_version_id
+                         AND p.datastream_id = d.id
+                         AND p.project_id = d.project_id
+                        WHERE d.id = %s
+                          AND d.project_id = %s
+                          AND d.archived_at IS NULL
+                        FOR UPDATE OF d
+                        """,
+                        (ds_id, project_id),
+                    )
+                    locked_activation = cur.fetchone()
+                if locked_activation is None:
+                    return JSONResponse(
+                        {"code": "not_found", "message": "Flux de donnees introuvable"},
+                        status_code=404,
+                    )
 
+            locked_config = (
+                locked_activation[3]
+                if locked_activation is not None
+                else existing.get("config") or {}
+            )
+            if isinstance(locked_config, str):
                 try:
-                    _ds_cfg = _json_cfg.loads(_ds_cfg)
-                except (ValueError, TypeError):
-                    _ds_cfg = {}
+                    locked_config = json.loads(locked_config)
+                except (TypeError, ValueError):
+                    locked_config = {}
             if (
                 body.get("enabled") is True
-                and isinstance(_ds_cfg, dict)
-                and _ds_cfg.get("publish_gate") == "canonical_semantics_required"
+                and isinstance(locked_config, dict)
+                and locked_config.get("publish_gate") == "canonical_semantics_required"
             ):
                 return JSONResponse(
                     {
@@ -13593,11 +15213,80 @@ async def _patch_datastream(request: Request) -> Response:
                     status_code=422,
                 )
 
-            if existing.get("versioned") and body.get("enabled") is True:
-                # Story 12.6/12.13 activation seam: enable + schedule a VALIDATED
-                # versioned datastream. Only an `executable` plan version (12.4 admission
-                # ticket) may be activated; a blocked/draft plan is refused honestly.
-                if existing.get("validation_state") != "executable":
+            current_plan_id = locked_activation[0] if locked_activation is not None else None
+            requested_plan_id = str(body.get("plan_version_id") or "").strip()
+            if body.get("enabled") is True and current_plan_id is not None:
+                if not requested_plan_id:
+                    return JSONResponse(
+                        {
+                            "code": "missing_plan_version_id",
+                            "message": "plan_version_id est requis pour activer ce flux versionne.",
+                        },
+                        status_code=422,
+                    )
+                if current_plan_id != requested_plan_id:
+                    return JSONResponse(
+                        {
+                            "code": "stale_plan_version",
+                            "message": (
+                                "Le plan valide n'est plus le plan courant. "
+                                "Revalidez le flux avant activation."
+                            ),
+                            "details": {
+                                "requested_plan_version_id": requested_plan_id,
+                                "current_plan_version_id": current_plan_id,
+                            },
+                        },
+                        status_code=409,
+                    )
+                activation_key = (request.headers.get("Idempotency-Key") or "").strip()
+                if not activation_key:
+                    return JSONResponse(
+                        {
+                            "code": "missing_idempotency_key",
+                            "message": "Idempotency-Key is required for activation.",
+                        },
+                        status_code=400,
+                    )
+                from hashlib import sha256  # noqa: PLC0415
+
+                activation_key_hash = sha256(activation_key.encode("utf-8")).hexdigest()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT metadata->>'plan_version_id'
+                        FROM app.audit_log
+                        WHERE action = %s
+                          AND metadata->>'project_id' = %s
+                          AND metadata->>'datastream_id' = %s
+                          AND metadata->>'activation_key_hash' = %s
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """,
+                        (
+                            ACTION_DATASTREAM_UPDATED,
+                            project_id,
+                            ds_id,
+                            activation_key_hash,
+                        ),
+                    )
+                    activation_evidence = cur.fetchone()
+                if activation_evidence is not None:
+                    if activation_evidence[0] != requested_plan_id:
+                        return JSONResponse(
+                            {
+                                "code": "idempotency_conflict",
+                                "message": "Idempotency-Key was already used for another plan.",
+                            },
+                            status_code=409,
+                        )
+                    replay_state = get_datastream(ds_id, project_id, conn)
+                    if replay_state is None:
+                        return JSONResponse({"code": "not_found"}, status_code=404)
+                    return JSONResponse(replay_state)
+                executable = locked_activation[1]
+                normalized_payload = locked_activation[2]
+                if executable is not True:
                     return JSONResponse(
                         {
                             "code": "activation_not_available",
@@ -13608,19 +15297,151 @@ async def _patch_datastream(request: Request) -> Response:
                         },
                         status_code=422,
                     )
-                # Map the versioned cadence (manual/daily/hourly) to the datastream's
-                # schedule_mode: daily -> the nightly dispatch, hourly -> hourly dispatch.
-                _cadence = (
-                    ((existing.get("intent_payload") or {}).get("schedule") or {}).get("mode")
-                    or "manual"
+                if isinstance(normalized_payload, str):
+                    try:
+                        normalized_payload = json.loads(normalized_payload)
+                    except (TypeError, ValueError):
+                        normalized_payload = {}
+                source = (normalized_payload or {}).get("source") or {}
+                if source.get("kind") == "connector_pull":
+                    from core.datastream_intents import validate_intent  # noqa: PLC0415
+                    from core.main import get_loaded_modules  # noqa: PLC0415
+                    from core.source_capabilities import (  # noqa: PLC0415
+                        SourceCapabilitiesNotFound,
+                        SourceCapabilitiesUnavailable,
+                        get_scoped_source_capabilities,
+                    )
+
+                    connection_ref_id = str(source.get("connection_ref_id") or "").strip()
+                    from core.source_capabilities import (  # noqa: PLC0415
+                        get_project_connection_state,
+                    )
+
+                    connection_state = get_project_connection_state(
+                        project_id=project_id,
+                        connection_ref_id=connection_ref_id,
+                        identity=identity or "anonymous",
+                        conn=conn,
+                    )
+                    if (
+                        not isinstance(connection_state, (tuple, list))
+                        or len(connection_state) < 4
+                        or connection_state[1] != "active"
+                        or connection_state[2] is not True
+                        or connection_state[3] != "ok"
+                    ):
+                        return JSONResponse(
+                            {
+                                "code": "provider_account_unusable",
+                                "message": (
+                                    "Le compte fournisseur n'est plus actif et sain. "
+                                    "Reconnectez-le puis revalidez le flux."
+                                ),
+                            },
+                            status_code=422,
+                        )
+                    try:
+                        current_capabilities = get_scoped_source_capabilities(
+                            project_id=project_id,
+                            connection_ref_id=connection_ref_id,
+                            identity=identity or "anonymous",
+                            loaded_modules=get_loaded_modules(),
+                            conn=conn,
+                        )
+                    except SourceCapabilitiesNotFound:
+                        return JSONResponse(
+                            {
+                                "code": "provider_account_unusable",
+                                "message": (
+                                    "Le compte fournisseur du plan n'est plus actif. "
+                                    "Reconnectez-le puis revalidez le flux."
+                                ),
+                            },
+                            status_code=422,
+                        )
+                    except SourceCapabilitiesUnavailable:
+                        return JSONResponse(
+                            {
+                                "code": "capabilities_unavailable",
+                                "message": "Le catalogue de capacites est indisponible.",
+                            },
+                            status_code=503,
+                        )
+                    current_validation = validate_intent(
+                        normalized_payload,
+                        capabilities=current_capabilities,
+                    )
+                    saved_capability_fingerprint = locked_activation[4]
+                    if (
+                        current_validation.executable is not True
+                        or not saved_capability_fingerprint
+                        or current_validation.capability_fingerprint
+                        != saved_capability_fingerprint
+                    ):
+                        return JSONResponse(
+                            {
+                                "code": "stale_capabilities",
+                                "message": (
+                                    "Les capacites du fournisseur ont change. "
+                                    "Revalidez le plan avant activation."
+                                ),
+                                "details": {
+                                    "plan_capability_fingerprint": saved_capability_fingerprint,
+                                    "current_capability_fingerprint": (
+                                        current_validation.capability_fingerprint
+                                    ),
+                                },
+                            },
+                            status_code=409,
+                        )
+                cadence = ((normalized_payload or {}).get("schedule") or {}).get("mode")
+                mode = {"daily": "nightly", "hourly": "hourly", "manual": "manual"}.get(
+                    cadence or "manual", "manual"
                 )
-                _mode = {"daily": "nightly", "hourly": "hourly", "manual": "manual"}.get(
-                    _cadence, "manual"
+                if (
+                    len(locked_activation) > 6
+                    and locked_activation[5] is True
+                    and locked_activation[6] == mode
+                ):
+                    # Serialized effect replay: the exact immutable plan is already
+                    # active at the requested cadence. Return state without another
+                    # UPDATE or audit event.
+                    updated = get_datastream(ds_id, project_id, conn)
+                    activation_replay = True
+                else:
+                    updated = update_datastream(
+                        ds_id, project_id, {"enabled": True, "schedule_mode": mode}, conn
+                    )
+                    insert_audit_row(
+                        conn,
+                        identity=identity or "anonymous",
+                        action=ACTION_DATASTREAM_UPDATED,
+                        provider_account="",
+                        connection_ref="",
+                        metadata={
+                            "datastream_id": ds_id,
+                            "project_id": project_id,
+                            "plan_version_id": requested_plan_id,
+                            "activation_key_hash": activation_key_hash,
+                            "operation": "datastream_activation",
+                        },
+                    )
+                    conn.commit()
+                    activation_replay = True
+            elif body.get("enabled") is True and requested_plan_id:
+                # A client presenting immutable-plan evidence must never fall through
+                # to the legacy update path when the locked row has no current plan.
+                return JSONResponse(
+                    {
+                        "code": "stale_plan_version",
+                        "message": "Le flux ne reference plus le plan valide demande.",
+                        "details": {
+                            "requested_plan_version_id": requested_plan_id,
+                            "current_plan_version_id": None,
+                        },
+                    },
+                    status_code=409,
                 )
-                updated = update_datastream(
-                    ds_id, project_id, {"enabled": True, "schedule_mode": _mode}, conn
-                )
-                conn.commit()
             else:
                 updated = update_datastream(ds_id, project_id, body, conn)
                 conn.commit()
@@ -13656,13 +15477,14 @@ async def _patch_datastream(request: Request) -> Response:
             status_code=404,
         )
 
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_DATASTREAM_UPDATED,
-        provider_account="",
-        connection_ref="",
-        metadata={"datastream_id": ds_id, "project_id": project_id},
-    )
+    if not activation_replay:
+        write_audit_row(
+            identity=identity or "anonymous",
+            action=ACTION_DATASTREAM_UPDATED,
+            provider_account="",
+            connection_ref="",
+            metadata={"datastream_id": ds_id, "project_id": project_id},
+        )
     return JSONResponse(updated)
 
 
@@ -14701,6 +16523,7 @@ async def _get_setup_journey(request: Request) -> Response:
         return _setup_error(exc)
     return _setup_no_store(JSONResponse(result))
 
+
 async def _prepare_setup_handoff(request: Request) -> Response:
     authorized, identity = await _check_auth(request)
     if not authorized:
@@ -14904,9 +16727,7 @@ async def _exchange_setup_handoff(request: Request) -> Response:
         body = json.loads(await request.body())
         bearer = body.get("bearer") if isinstance(body, dict) else None
         with get_connection() as conn:
-            result = exchange_handoff(
-                conn, bearer=bearer, presented_identity=presented_identity
-            )
+            result = exchange_handoff(conn, bearer=bearer, presented_identity=presented_identity)
             conn.commit()
     except Exception as exc:
         return _setup_error(exc)
@@ -15314,9 +17135,7 @@ async def _prepare_host_install_handoff(request: Request) -> Response:
         preflight_id = request.path_params["preflight_id"]
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT task_id FROM app.host_preflights WHERE id=%s", (preflight_id,)
-                )
+                cur.execute("SELECT task_id FROM app.host_preflights WHERE id=%s", (preflight_id,))
                 row = cur.fetchone()
             if row is None:
                 return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
@@ -15332,8 +17151,9 @@ async def _prepare_host_install_handoff(request: Request) -> Response:
                 idempotency_key=key,
                 host_context=_setup_host_context(request),
                 trace_id=tracing.current_trace_id_hex(),
-                expires_in_hours=int((json.loads(await request.body() or "{}") or {})
-                                     .get("expires_in_hours", 72)),
+                expires_in_hours=int(
+                    (json.loads(await request.body() or "{}") or {}).get("expires_in_hours", 72)
+                ),
             )
             conn.commit()
     except Exception as exc:
@@ -15379,9 +17199,7 @@ async def _bind_host_connection(request: Request) -> Response:
         preflight_id = request.path_params["preflight_id"]
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT task_id FROM app.host_preflights WHERE id=%s", (preflight_id,)
-                )
+                cur.execute("SELECT task_id FROM app.host_preflights WHERE id=%s", (preflight_id,))
                 row = cur.fetchone()
             if row is None:
                 return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
@@ -15494,9 +17312,15 @@ async def _recommend_first_report(request: Request) -> Response:
                     )
                 cur.execute(
                     """
+                    -- Le credential DU datastream, via d.connection_ref_id : c'est
+                    -- lui qui sert a aller chercher ses donnees. La jointure
+                    -- precedente prenait  n'importe quel credential du meme projet
+                    -- puis LIMIT 1 -- des qu'un projet en a plusieurs, elle pouvait
+                    -- rendre celui d'un autre fournisseur. Elle serait de surcroit
+                    -- devenue vide le jour ou connection_ref.project_id est retire.
                     SELECT cr.id, s.account_id
                     FROM app.datastreams d
-                    JOIN app.connection_ref cr ON cr.project_id = d.project_id
+                    JOIN app.connection_ref cr ON cr.id = d.connection_ref_id
                     LEFT JOIN app.connection_account_scope s ON s.connection_ref_id = cr.id
                     WHERE d.id = %s AND d.project_id = %s AND cr.status = 'active'
                     LIMIT 1
@@ -15776,9 +17600,7 @@ async def _get_recent_first_state(request: Request) -> Response:
             )
             if not decision.allowed:
                 return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            state = get_recent_first_state(
-                conn, project_id=project_id, datastream_id=datastream_id
-            )
+            state = get_recent_first_state(conn, project_id=project_id, datastream_id=datastream_id)
     except Exception as exc:
         return _recent_first_error(exc)
     return _setup_no_store(JSONResponse(state))
@@ -16314,13 +18136,52 @@ async def _rollback_publication_review_console(request: Request) -> Response:
 
 router = Router(
     routes=[
+        *_BROWSER_AUTH_ROUTES,
         # Story 21.1 (AC4): organization CRUD + membership. Static routes precede
         # /{org_id} so Starlette matches list/create first; /members after.
+        Route(
+            "/api/instance/bootstrap/exchange",
+            endpoint=_exchange_instance_bootstrap,
+            methods=["POST"],
+        ),
+        Route(
+            "/api/instance/claim/session",
+            endpoint=_get_self_hosted_claim_session,
+            methods=["GET"],
+        ),
+        Route(
+            "/api/instance/claim/confirmation",
+            endpoint=_issue_instance_claim_confirmation,
+            methods=["POST"],
+        ),
+        Route("/api/instance/claim", endpoint=_claim_self_hosted_instance, methods=["POST"]),
+        Route("/api/entry-state", endpoint=_get_entry_state, methods=["GET"]),
+        Route(
+            "/api/entry/scope/confirmation",
+            endpoint=_issue_hosted_entry_confirmation,
+            methods=["POST"],
+        ),
+        Route("/api/entry/scope", endpoint=_create_hosted_entry_scope, methods=["POST"]),
         Route("/api/organizations", endpoint=_list_orgs, methods=["GET"]),
         Route("/api/organizations", endpoint=_create_org, methods=["POST"]),
         Route("/invite", endpoint=_invitation_bootstrap, methods=["GET"]),
         Route("/api/invitations/exchange", endpoint=_exchange_invitation, methods=["POST"]),
         Route("/api/invitations/accept", endpoint=_accept_invitation, methods=["POST"]),
+        # ENTRY invitations -- the SAME invitation object, with no target
+        # organization (migration 109). Platform-admin scope; the static routes
+        # above are declared first so they always win the match.
+        Route("/api/invitations", endpoint=_list_invitations, methods=["GET"]),
+        Route("/api/invitations", endpoint=_issue_invitation, methods=["POST"]),
+        Route(
+            "/api/invitations/{invitation_id}/revoke",
+            endpoint=_revoke_invitation,
+            methods=["POST"],
+        ),
+        Route(
+            "/api/invitations/{invitation_id}/resend",
+            endpoint=_resend_invitation,
+            methods=["POST"],
+        ),
         Route(
             "/api/projects/{project_id}/setup-journey",
             endpoint=_get_setup_journey,
@@ -16448,7 +18309,6 @@ router = Router(
             endpoint=_reproduce_first_report,
             methods=["POST"],
         ),
-
         # Story 36.18: governed-publication TRUSTED CONSOLE (AD-27 human confirmation).
         # The out-of-band secret-retrieval + human confirm/rollback surface. The MCP
         # review tool stays secret-hidden; ONLY the prepare route below returns the
@@ -16468,7 +18328,6 @@ router = Router(
             endpoint=_rollback_publication_review_console,
             methods=["POST"],
         ),
-
         Route(
             "/api/organizations/{org_id}/invitations",
             endpoint=_list_invitations,
@@ -16622,7 +18481,8 @@ router = Router(
             "/api/projects/{project_id}/geography/previews/{preview_id}/confirm",
             endpoint=_confirm_geographic_change,
             methods=["POST"],
-        ),        Route("/api/projects/{project_id}", endpoint=_get_project, methods=["GET"]),
+        ),
+        Route("/api/projects/{project_id}", endpoint=_get_project, methods=["GET"]),
         Route("/api/projects/{project_id}", endpoint=_patch_project, methods=["PATCH"]),
         Route("/api/projects/{project_id}", endpoint=_delete_project, methods=["DELETE"]),
         # Story 7.3 (AC5): key rotation endpoint.
@@ -17091,6 +18951,10 @@ router = Router(
         Route("/api/admin/cache/rebuild", endpoint=_cache_rebuild, methods=["POST"]),
         # Story 27.2: metric semantics curation REST API -- core.metric_semantics_api.
         *_METRIC_SEMANTICS_ROUTES,
+        # Story 27.9: inverse lineage ("what feeds this conformed dimension?") and the
+        # client-owned label -- core.dimension_lineage_api. Static /fed-by and /labels
+        # declared before the parameterised /labels/{canonical_dimension}.
+        *_DIMENSION_LINEAGE_ROUTES,
         # Story 13.2: MDM conflicts + FX binding -- core.conflict_resolutions_api.
         # Static routes (/api/mdm/conflicts/resolutions) declared before parameterised
         # (/api/mdm/conflicts/resolutions/{project_id}/{target_field}/{source_module}).

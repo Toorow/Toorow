@@ -126,8 +126,15 @@ def test_determinism():
 
 def test_empty_label_falls_back_to_line_key():
     """Sec.8: empty label -> the line_key is matched instead (documented)."""
-    lines = [{"line_key": "camp-42", "label": "", "start_date": "2026-03-01",
-              "end_date": "2026-03-31", "budget": "10.00"}]
+    lines = [
+        {
+            "line_key": "camp-42",
+            "label": "",
+            "start_date": "2026-03-01",
+            "end_date": "2026-03-31",
+            "budget": "10.00",
+        }
+    ]
     actuals = {"meta-ads": ["camp-42"]}
     out = pms.suggest_line_mappings(lines, actuals)
     assert len(out) == 1
@@ -212,9 +219,7 @@ def test_payload_consumable_shape_matches_set_line_mappings_entries():
 # ===========================================================================
 
 _MODULE_SRC = Path(pms.__file__).read_text(encoding="utf-8")
-_ALIGN_SRC = (
-    Path(pms.__file__).parent / "plan_actual_alignment.py"
-).read_text(encoding="utf-8")
+_ALIGN_SRC = (Path(pms.__file__).parent / "plan_actual_alignment.py").read_text(encoding="utf-8")
 
 
 def test_write_frontier_no_mutation():
@@ -390,9 +395,7 @@ def _pg_reachable() -> bool:
         return False
 
 
-pg_available = pytest.mark.skipif(
-    not _pg_reachable(), reason="platform Postgres not reachable"
-)
+pg_available = pytest.mark.skipif(not _pg_reachable(), reason="platform Postgres not reachable")
 
 
 def _connect():
@@ -406,8 +409,9 @@ def _seed_project(conn) -> str:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by)
-            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system')
+            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by,
+                org_id)
+            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system', 'org_test_fixture')
             """,
             (project_id, "Bridge Test", project_id),
         )
@@ -438,12 +442,8 @@ def _drop_project(conn, project_id: str) -> None:
                 "(SELECT id FROM app.media_plans WHERE project_id = %s)",
                 (project_id,),
             )
-            cur.execute(
-                "DELETE FROM app.media_plans WHERE project_id = %s", (project_id,)
-            )
-            cur.execute(
-                "DELETE FROM app.audit_log WHERE identity IN ('tester', 'system')"
-            )
+            cur.execute("DELETE FROM app.media_plans WHERE project_id = %s", (project_id,))
+            cur.execute("DELETE FROM app.audit_log WHERE identity IN ('tester', 'system')")
             cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
         finally:
             cur.execute("ALTER TABLE app.media_plan_versions ENABLE TRIGGER USER")
@@ -526,9 +526,7 @@ def test_live_payload_consumable_by_set_line_mappings():
     project_id = _seed_project(conn)
     try:
         plan = _make_published_plan(conn, project_id)
-        sugs = pms.suggest_line_mappings(
-            [dict(_LINES[0])], {"meta-ads": ["Summer Sale"]}
-        )
+        sugs = pms.suggest_line_mappings([dict(_LINES[0])], {"meta-ads": ["Summer Sale"]})
         payload = pms.propose_set_line_mappings_payload(sugs)
         for line_key, entries in payload.items():
             set_line_mappings(

@@ -488,6 +488,26 @@ def pull_catalog_daily(connection_id, date_from, date_to, project_id, pull_id, s
     )
 
 
+def _demicro(source_key: str, value):
+    """Applique la regle micros de SA360 : les champs *_micros arrivent en
+    micro-unites int64 (stringifiees) et se lisent en unite monetaire.
+
+    C'est EXACTEMENT la regle que _pull_profile applique deja avant d'atterrir
+    (``if metric.endswith("_micros"): value /= 1_000_000``). transform() ne la
+    portait pas : il renommait metrics.cost_micros en 'cost' en laissant 1200000
+    tel quel, si bien que le contrat declare (golden_pull -> expected_facts)
+    annoncait un cout mille fois trop grand par rapport a ce que le connecteur
+    ecrit reellement. Les connecteurs freres (google-ads, meta-ads) convertissent
+    tous dans leur transform().
+    """
+    if not source_key.endswith("_micros"):
+        return value
+    try:
+        return float(value) / 1_000_000
+    except (TypeError, ValueError):
+        return None
+
+
 def transform(raw_rows: list[dict]) -> list[dict]:
     mappings = _manifest()["canonical_metric_mapping"] | _manifest()["canonical_dimension_mapping"]
     return [
@@ -496,7 +516,7 @@ def transform(raw_rows: list[dict]) -> list[dict]:
                 mappings.get(key, key)
                 if isinstance(mappings.get(key, key), str)
                 else mappings[key]["canonical"]
-            ): value
+            ): _demicro(key, value)
             for key, value in row.items()
         }
         for row in raw_rows

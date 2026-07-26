@@ -66,7 +66,8 @@ class TestOfficialSnapshot:
             assert f["kind"] == m["kind"], f"kind mismatch for {fid}"
             src = f.get("source_field", fid)
             assert src == m["source_field"], (
-                f"source_field mismatch for {fid}: official {src!r} vs manifest {m['source_field']!r}"
+                f"source_field mismatch for {fid}: "
+                f"official {src!r} vs manifest {m['source_field']!r}"
             )
 
     def test_event_family_expansion_present(self, official):

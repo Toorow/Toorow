@@ -12,11 +12,35 @@
 import type {
   CapabilityField,
   ClassifiedField,
+  ConnectionSummary,
   SourceCapabilities,
   ValidationPlan,
   WizardDraft,
 } from "./wizardTypes";
 
+/** Explain why a project-scoped provider account cannot be selected. */
+export function connectionBlockingReason(connection: ConnectionSummary | undefined): string | null {
+  if (!connection) return "The provider account is no longer available in this project.";
+  const status = (connection.status ?? "").toLowerCase();
+  if (connection.enabled === false) {
+    return "This provider account is disabled.";
+  }
+  const health = (connection.health?.status ?? "").toLowerCase();
+  if (status === "revoked" || health === "revoked") {
+    return "This provider account was revoked. Reconnect it before use.";
+  }
+  if (status !== "active") {
+    return `This provider account is not active (${status || "unknown status"}).`;
+  }
+  if (health !== "ok") {
+    return `This provider account is not healthy (${health || "health not verified"}).`;
+  }
+  return null;
+}
+
+export function isConnectionUsable(connection: ConnectionSummary | undefined): boolean {
+  return connectionBlockingReason(connection) == null;
+}
 /** Map a capability field's kind to a coarse semantic role. */
 function roleFromCapabilityField(f: CapabilityField): string {
   if (f.kind === "metric") return "metric";
@@ -88,35 +112,30 @@ export function deriveClassifiedFields(
   return [];
 }
 
-/**
- * The schema hash observed for the CURRENT source configuration. Drift is
- * detected by comparing this against the hash captured at validation time. For
- * connector + external BQ we key on the selected shape; for managed feed we use
- * the preview's content hash directly.
- */
-export function currentSchemaSignature(draft: WizardDraft): string {
-  if (draft.sourceKind === "managed_feed" && draft.importPreview) {
-    return draft.importPreview.content_hash;
-  }
-  if (draft.sourceKind === "connector_pull") {
-    return [
-      draft.connectionRefId ?? "",
-      draft.reportId ?? "",
-      [...draft.selectedMetrics].sort().join(","),
-      [...draft.selectedDimensions].sort().join(","),
-      [...draft.grain].join(","),
-    ].join("|");
-  }
-  if (draft.sourceKind === "external_bq") {
-    return `bq:${draft.bigqueryTable ?? ""}`;
-  }
-  return "";
+/** Stable signature of the exact intent currently shown by the wizard. */
+export function currentIntentSignature(draft: WizardDraft): string {
+  const normalize = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      return value
+        .map(normalize)
+        .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    }
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, nested]) => [key, normalize(nested)]),
+      );
+    }
+    return value;
+  };
+  return JSON.stringify(normalize(buildIntent(draft)));
 }
 
 /** True when the source/schema drifted since the plan was validated (AC4). */
 export function isPreviewObsolete(draft: WizardDraft): boolean {
-  if (!draft.plan || draft.validatedSchemaHash == null) return false;
-  return currentSchemaSignature(draft) !== draft.validatedSchemaHash;
+  if (!draft.plan || draft.validatedIntentSignature == null) return false;
+  return currentIntentSignature(draft) !== draft.validatedIntentSignature;
 }
 
 /**
@@ -186,19 +205,17 @@ function buildSelection(draft: WizardDraft): Record<string, unknown> {
 /**
  * Parse a fully-qualified BigQuery reference `project.dataset.object` into the
  * schema's `external_object`. `writer_identity` is required by the schema and is
- * NOT collected pre-registration (Phase B) — we derive it from the table's own
- * project so the draft is schema-valid; the real writer identity is bound when
- * the external source is registered (Story 12.7).
+ * derived from the fully-qualified table project. Empty values remain empty so the
+ * server can reject incomplete configuration; the browser never invents IDs.
  */
 function buildExternalObject(bigqueryTable: string | null): Record<string, unknown> {
   const parts = (bigqueryTable ?? "").split(".");
   const [project, dataset, object] = [parts[0] ?? "", parts[1] ?? "", parts[2] ?? ""];
   return {
-    project: project || "unknown_project",
-    dataset: dataset || "unknown_dataset",
-    object: object || "unknown_object",
-    // Placeholder until external-source registration binds the real identity.
-    writer_identity: project || "unknown_project",
+    project,
+    dataset,
+    object,
+    writer_identity: project,
   };
 }
 
@@ -278,18 +295,16 @@ export function activationBlockingReasons(
 ): string[] {
   const reasons: string[] = [];
   if (!plan) {
-    reasons.push("Le plan n’a pas encore été validé à l’étape Aperçu & valider.");
+    reasons.push("Validate the plan in Preview and validation before activating.");
     return reasons;
   }
   if (plan.blocking_issues.length > 0) {
     reasons.push(
-      `${plan.blocking_issues.length} problème(s) bloquant(s) de validation à corriger.`,
+      `${plan.blocking_issues.length} blocking validation issue(s) must be resolved.`,
     );
   }
   if (isPreviewObsolete(draft)) {
-    reasons.push(
-      "La source ou le schéma a changé : revalidez le plan (l’aperçu est obsolète).",
-    );
+    reasons.push("The configuration changed after validation. Validate the plan again.");
   }
   return reasons;
 }

@@ -82,8 +82,8 @@ def _setup_chain(suffix: str) -> dict:
             )
             cur.execute(
                 "INSERT INTO app.connection_ref "
-                "(id, provider, nango_connection_id, project_id, owner_org_id) "
-                "VALUES (%s, %s, %s, %s, %s)",
+                "(id, provider, nango_connection_id, project_id, owner_org_id, owner_identity) "
+                "VALUES (%s, %s, %s, %s, %s, 'tester@example.com')",
                 (cred, "google-analytics", f"nango-{suffix}", proj, org_a),
             )
         conn.commit()
@@ -327,8 +327,8 @@ def test_owner_org_backfill_idempotent():
                 # connection_ref with owner_org_id LEFT NULL (legacy shape).
                 cur.execute(
                     "INSERT INTO app.connection_ref "
-                    "(id, provider, nango_connection_id, project_id) "
-                    "VALUES (%s, %s, %s, %s)",
+                    "(id, provider, nango_connection_id, project_id, owner_org_id, owner_identity) "
+                    "VALUES (%s, %s, %s, %s, 'org_test_fixture', 'tester@example.com')",
                     (cred, "google-analytics", f"nango-{suffix}", proj),
                 )
             conn.commit()

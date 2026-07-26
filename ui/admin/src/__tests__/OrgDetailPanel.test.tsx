@@ -89,6 +89,19 @@ const MEMBER_SUSPENDED: OrgMember = {
   created_at: "2026-02-01T00:00:00Z",
 };
 
+const INVITATION_PENDING = {
+  invitation_id: "invite-1",
+  role: "member",
+  state: "pending",
+  expires_at: "2026-07-28T18:00:00Z",
+  issuer: "person_owner",
+  explicit_grants: [],
+  explicit_none: true,
+  accepted_at: null,
+  revoked_at: null,
+  superseded_by: null,
+  available_actions: ["resend", "revoke"],
+};
 function mockFetch(members: OrgMember[]) {
   vi.stubGlobal(
     "fetch",
@@ -161,53 +174,224 @@ describe("OrgDetailPanel — liste des membres", () => {
 // Tests : ajout membre (AC4)
 // ---------------------------------------------------------------------------
 
-describe("OrgDetailPanel — ajout membre", () => {
-  it("envoie POST /api/organizations/{id}/members avec identity et role", async () => {
+describe("OrgDetailPanel — invitations", () => {
+  it("issues an invitation, exposes the one-time handoff honestly, and copies it", async () => {
     const user = userEvent.setup();
+    const deliveryUrl = "https://app.toorow.test/invite#invite=single-use-bearer";
+    const copyMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: copyMock },
+    });
     const fetchMock = vi
       .fn()
-      // GET membres initial
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => ({ members: [MEMBER_OWNER] }),
       })
-      // POST ajout
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 201,
-        json: async () => MEMBER_EDITOR,
-      })
-      // GET membres rechargement
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ members: [MEMBER_OWNER, MEMBER_EDITOR] }),
+        json: async () => ({ items: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          invitation_id: "invite-1",
+          state: "pending",
+          delivery_handoff: { url: deliveryUrl, single_return: true },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [INVITATION_PENDING] }),
       });
     vi.stubGlobal("fetch", fetchMock);
 
     renderWithTheme(<OrgDetailPanel org={ORG} />);
-    await waitFor(() => screen.getByTestId("add-member-identity"));
+    await waitFor(() => screen.getByTestId("members-table"));
+    await user.click(screen.getByTestId("tab-invitations"));
+    await waitFor(() => screen.getByText(/No invitations for this organization/i));
 
-    const identityInput = screen.getByLabelText(/new member identity/i);
-    await user.type(identityInput, "bob@example.com");
-
+    await user.type(screen.getByLabelText(/new member identity/i), "bob@example.com");
+    await user.type(screen.getByLabelText(/project invitation grants/i), "proj-1:view");
+    await user.type(screen.getByLabelText(/datastream invitation grants/i), "flux-1:edit");
+    const expiry = screen.getByLabelText(/invitation expiry in hours/i);
+    await user.clear(expiry);
+    await user.type(expiry, "72");
     await user.click(screen.getByTestId("add-member-submit"));
 
-    await waitFor(() => {
-      const postCall = fetchMock.mock.calls.find(
-        ([url, opts]) =>
-          typeof url === "string" &&
-          url.includes("/members") &&
-          opts?.method === "POST"
-      );
-      expect(postCall).toBeTruthy();
-      const body = JSON.parse(postCall![1].body as string);
-      expect(body.identity).toBe("bob@example.com");
+    const link = await screen.findByLabelText(/single-use invitation link/i);
+    expect(link).toHaveValue(deliveryUrl);
+    expect(screen.getByText(/No delivery is claimed/i)).toBeInTheDocument();
+    await user.click(screen.getByTestId("copy-invitation-link"));
+    await waitFor(() => expect(copyMock).toHaveBeenCalledWith(deliveryUrl));
+
+    const postCall = fetchMock.mock.calls.find(
+      ([url, opts]) =>
+        typeof url === "string" &&
+        url.endsWith("/api/organizations/org_acme01/invitations") &&
+        opts?.method === "POST"
+    );
+    expect(postCall).toBeTruthy();
+    expect(postCall![1].headers["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(JSON.parse(postCall![1].body as string)).toEqual({
+      invited_identity: "bob@example.com",
+      role: "member",
+      project_grants: [{ scope_id: "proj-1", capability: "view" }],
+      datastream_grants: [{ scope_id: "flux-1", capability: "edit" }],
+      expires_in_hours: 72,
     });
   });
-});
 
+  it("loads invitation states and resends with a fresh copyable handoff", async () => {
+    const user = userEvent.setup();
+    const replacementUrl = "https://app.toorow.test/invite#invite=replacement-bearer";
+    const replacement = {
+      ...INVITATION_PENDING,
+      invitation_id: "invite-2",
+      expires_at: "2026-07-30T18:00:00Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ members: [MEMBER_OWNER] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [INVITATION_PENDING] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          invitation_id: "invite-2",
+          state: "pending",
+          delivery_handoff: { url: replacementUrl, single_return: true },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [replacement] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTheme(<OrgDetailPanel org={ORG} />);
+    await waitFor(() => screen.getByTestId("members-table"));
+    await user.click(screen.getByTestId("tab-invitations"));
+    await waitFor(() => screen.getByTestId("invitation-row-invite-1"));
+    expect(screen.getByLabelText(/invitation state: pending/i)).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("resend-invitation-invite-1"));
+    const replacementLink = await screen.findByLabelText(/single-use invitation link/i);
+    expect(replacementLink).toHaveValue(replacementUrl);
+    expect(screen.getByText(/previous link is revoked/i)).toBeInTheDocument();
+
+    const resendCall = fetchMock.mock.calls.find(
+      ([url, opts]) =>
+        typeof url === "string" &&
+        url.endsWith("/invitations/invite-1/resend") &&
+        opts?.method === "POST"
+    );
+    expect(resendCall).toBeTruthy();
+    expect(resendCall![1].headers["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(JSON.parse(resendCall![1].body as string)).toEqual({ expires_in_hours: 48 });
+    await waitFor(() => screen.getByTestId("invitation-row-invite-2"));
+  });
+
+  it("revokes an invitation and surfaces lifecycle failures without fake success", async () => {
+    const user = userEvent.setup();
+    const revoked = {
+      ...INVITATION_PENDING,
+      state: "revoked",
+      available_actions: [],
+      revoked_at: "2026-07-27T10:00:00Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ members: [MEMBER_OWNER] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [INVITATION_PENDING] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ invitation_id: "invite-1", state: "revoked" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [revoked] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTheme(<OrgDetailPanel org={ORG} />);
+    await waitFor(() => screen.getByTestId("members-table"));
+    await user.click(screen.getByTestId("tab-invitations"));
+    await waitFor(() => screen.getByTestId("revoke-invitation-invite-1"));
+    await user.click(screen.getByTestId("revoke-invitation-invite-1"));
+
+    const revokeCall = fetchMock.mock.calls.find(
+      ([url, opts]) =>
+        typeof url === "string" &&
+        url.endsWith("/invitations/invite-1/revoke") &&
+        opts?.method === "POST"
+    );
+    expect(revokeCall).toBeTruthy();
+    expect(revokeCall![1].headers["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/i);
+    await waitFor(() => expect(screen.getByLabelText(/invitation state: revoked/i)).toBeInTheDocument());
+    expect(screen.queryByTestId("invitation-handoff")).not.toBeInTheDocument();
+  });
+
+  it("reports a lifecycle error without claiming revocation or delivery", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ members: [MEMBER_OWNER] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [INVITATION_PENDING] }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 409,
+          json: async () => ({ message: "Invitation is no longer revocable." }),
+        })
+    );
+
+    renderWithTheme(<OrgDetailPanel org={ORG} />);
+    await waitFor(() => screen.getByTestId("members-table"));
+    await user.click(screen.getByTestId("tab-invitations"));
+    await waitFor(() => screen.getByTestId("revoke-invitation-invite-1"));
+    await user.click(screen.getByTestId("revoke-invitation-invite-1"));
+
+    expect(await screen.findByTestId("invitation-mutation-error")).toHaveTextContent(
+      "Invitation is no longer revocable."
+    );
+    expect(screen.getByLabelText(/invitation state: pending/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("invitation-handoff")).not.toBeInTheDocument();
+  });
+});
 // ---------------------------------------------------------------------------
 // Tests : changement de rôle (AC4)
 // ---------------------------------------------------------------------------

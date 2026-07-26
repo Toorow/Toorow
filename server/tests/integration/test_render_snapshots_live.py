@@ -51,8 +51,8 @@ def _seed_project(conn, project_id: str):
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, created_by)
-            VALUES (%s, %s, %s, 'test')
+            INSERT INTO app.projects (id, name, slug, created_by, org_id)
+            VALUES (%s, %s, %s, 'test', 'org_test_fixture')
             ON CONFLICT DO NOTHING
             """,
             (project_id, f"Test {project_id}", project_id),

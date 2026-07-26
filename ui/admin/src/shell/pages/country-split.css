@@ -8,19 +8,17 @@
  * The application shell (ApplicationShell.tsx) already renders the frame,
  * sidebar, topbar, and <main className="main"> (padding: 32px). This file only
  * adds what is NOT already in application.css: the country-settings card, the
- * setting rows, the activation switch, the country picker, the automatic-result
- * flow, and the compatibility exception row. Shell/layout classes (page-header,
- * header-actions, signal-label, signal-mark, provider-logo, primary/secondary
- * button, attention-light) come from application.css and are reused as-is.
+ * setting rows, the tracked-market chips, and the page's load/empty states.
+ * Shell/layout classes (page-header, header-actions, signal-label, signal-mark,
+ * provider-logo, primary/secondary button) come from application.css.
+ *
+ * The activation switch, the automatic-result flow and the compatibility
+ * exception row were REMOVED with the fictions they styled: the switch wrote
+ * nothing, and the flow/exception surfaces rendered invented Datastream counts
+ * that no endpoint answers (see CountrySplit.tsx).
  *
  * Tokenized: brand/semantic colors reference the application.css CSS variables
  * only (--line, --rose, --success, --warning, --lavender, --muted, --info).
- * Numbers use Geist tabular via the shared classes. The neutral surface/track
- * literals (#fff card surfaces -> var(--surface); #fbfbfd / #fbfbfc panel tints
- * -> var(--surface-2); #aaa8b3 arrow glyph -> var(--muted)) are now routed through
- * the neutral tokens so they flip in dark. The switch-track knob stays #fff by
- * design (a fixed white handle on the colored --success track, legible in both
- * themes). The rgba(255,153,200,.12) rose focus ring is a brand tint, left as-is.
  *
  * The .country-flag rule below is adapted from the mockup's <img> flag to the
  * flag-icons <span class="fi ..."> element (icon-only, 4:3), so no flag SVG is
@@ -66,44 +64,51 @@
   align-self: center;
 }
 
-.switch-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 11px;
-  font-size: 13px;
-  font-weight: 700;
-}
-.switch-track {
-  width: 40px;
-  height: 24px;
-  display: flex;
-  justify-content: flex-end;
-  padding: 3px;
-  border-radius: 999px;
-  background: var(--success);
-}
-.switch-track::after {
-  content: "";
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
-}
-
 .country-picker {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
-.country-flag-button {
-  width: 44px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--rose);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 0 0 3px rgba(255, 153, 200, 0.12);
+.country-flag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.country-chip-name {
+  color: var(--ink);
+}
+
+/* --- Load / empty states: a failure is said, an empty list is shown. --- */
+.cs-status,
+.cs-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.cs-inline-error {
+  margin: 0 0 10px;
+  color: var(--error);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.cs-load-error {
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--surface));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--error) 7%, var(--surface));
+}
+.cs-load-error p {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
 }
 /* Adapted for flag-icons: the mockup <img class="country-flag"> becomes a
    <span class="fi fi-xx country-flag"> from flag-icons. */
@@ -115,80 +120,6 @@
   background-size: cover;
   background-position: center;
   line-height: 1;
-}
-
-.country-flow {
-  display: grid;
-  grid-template-columns: 1fr 28px 120px 28px 1.3fr;
-  align-items: center;
-  gap: 8px;
-}
-.flow-card {
-  min-height: 70px;
-  padding: 13px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface-2);
-}
-.flow-card span,
-.flow-group span {
-  color: var(--muted);
-  font-size: 12px;
-}
-.flow-card strong,
-.flow-group strong {
-  display: block;
-  margin-top: 7px;
-  font-size: 14px;
-}
-.flow-arrow {
-  color: var(--muted);
-  text-align: center;
-}
-.flow-groups {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.flow-group {
-  min-height: 70px;
-  padding: 13px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-}
-.flow-group.france {
-  box-shadow: inset 3px 0 0 var(--rose);
-}
-.flow-group.other {
-  box-shadow: inset 3px 0 0 var(--lavender);
-}
-
-.exception-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-top: 13px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface-2);
-}
-.exception-row .consumer-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.exception-row strong {
-  display: block;
-  font-size: 13px;
-}
-.exception-row small {
-  display: block;
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 12px;
 }
 
 /* Breadcrumb — Country split is reached from the Data > Modules catalog. */

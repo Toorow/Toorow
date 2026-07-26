@@ -71,8 +71,7 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     client = bigquery.Client(project=project or None)
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
-            bigquery.ScalarQueryParameter(name, "STRING", value)
-            for name, value in params.items()
+            bigquery.ScalarQueryParameter(name, "STRING", value) for name, value in params.items()
         ]
     )
     result = client.query(sql, job_config=job_config).result()
@@ -598,9 +597,7 @@ def pull(
     if aggregation_type:
         body["aggregationType"] = aggregation_type
     if dimension_filter:
-        filters = (
-            dimension_filter if isinstance(dimension_filter, list) else [dimension_filter]
-        )
+        filters = dimension_filter if isinstance(dimension_filter, list) else [dimension_filter]
         body["dimensionFilterGroups"] = [{"filters": filters}]
 
     # Pagination: the API caps each response at rowLimit (max 25k) and signals
@@ -654,7 +651,9 @@ def pull(
             truncated = True
             logger.warning(
                 "gsc_pull_truncated: pull_id=%s hit _MAX_PAGES=%d (%d rows)",
-                pull_id, _MAX_PAGES, len(api_rows),
+                pull_id,
+                _MAX_PAGES,
+                len(api_rows),
             )
             break
         body["startRow"] += len(page_rows)
@@ -681,7 +680,10 @@ def pull(
     # AD-3: no token in log — only pull_id and row_count (safe metadata).
     logger.info(
         "gsc_pull_completed: pull_id=%s row_count=%d pages=%d type=%s",
-        pull_id, row_count, pages, search_type,
+        pull_id,
+        row_count,
+        pages,
+        search_type,
     )
 
     return {
@@ -769,9 +771,7 @@ pull_query_page_daily = _make_profile_pull("query_page_daily", ["date", "query",
 # Discover / Google News / image / video / news reporting data.
 # dims are (date, page): query is not populated for discover/news surfaces and
 # device support varies — page is the one universally-supported breakdown.
-pull_discover_daily = _make_profile_pull(
-    "discover_daily", ["date", "page"], search_type="discover"
-)
+pull_discover_daily = _make_profile_pull("discover_daily", ["date", "page"], search_type="discover")
 pull_google_news_daily = _make_profile_pull(
     "google_news_daily", ["date", "page"], search_type="googleNews"
 )
@@ -799,7 +799,8 @@ def pull_search_appearance_daily(
 
     Returns the same dict shape as ``pull`` (row_count/pages summed over days).
     """
-    from datetime import date as date_cls, timedelta  # noqa: PLC0415
+    from datetime import date as date_cls  # noqa: PLC0415
+    from datetime import timedelta
 
     site_url = _resolve_site_url(site_url, "pull_search_appearance_daily")
     total_rows = 0
@@ -1006,7 +1007,8 @@ _GSC_ALL_RESPONSE_METRICS = ("clicks", "impressions", "average_position")
 # The dimension that maps to the API 'type' param (not in the dimensions list).
 _GSC_SEARCH_TYPE_FIELD = "search_type"
 
-# Dimensions excluded from catalog_daily (honor dimension_compatibility.excluded_from_catalog_daily).
+# Dimensions excluded from catalog_daily
+# (honor dimension_compatibility.excluded_from_catalog_daily).
 _GSC_EXCLUDED_FROM_CATALOG_DAILY = {"hour"}
 
 
@@ -1139,9 +1141,7 @@ def _project_gsc_metrics(
     if not updates:
         return  # all metrics selected — no zeroing needed
 
-    sql = (
-        f"UPDATE raw_gsc_daily SET {', '.join(updates)} WHERE pull_id = ?"
-    )
+    sql = f"UPDATE raw_gsc_daily SET {', '.join(updates)} WHERE pull_id = ?"
     con = duckdb.connect(duckdb_path)
     try:
         con.execute(sql, [pull_id])
@@ -1216,7 +1216,8 @@ def pull_catalog_daily(
 
     if is_sa_only:
         # searchAppearance-alone path: per-day loop reusing pull().
-        from datetime import date as date_cls, timedelta  # noqa: PLC0415
+        from datetime import date as date_cls  # noqa: PLC0415
+        from datetime import timedelta
 
         total_rows = 0
         total_pages = 0

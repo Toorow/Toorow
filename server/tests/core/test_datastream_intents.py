@@ -384,3 +384,59 @@ def test_audit_failure_rolls_back_version_and_pointer() -> None:
             )
     conn.rollback.assert_called_once_with()
     conn.commit.assert_not_called()
+
+
+def test_replay_recovers_compiled_intent_without_current_capabilities() -> None:
+    from datetime import datetime, timezone
+
+    import pytest
+    from core.datastream_intents import (
+        DatastreamIntentConflict,
+        compile_geographic_intent,
+        normalize_intent,
+        replay_datastream_intent,
+    )
+    from core.geographic_reporting import GeographicPosture
+
+    normalized, _ = normalize_intent(_intent())
+    compiled = compile_geographic_intent(normalized, GeographicPosture(), _catalog())
+    compiled, content_hash = normalize_intent(compiled)
+    existing = (
+        "dsp_01",
+        "ds_01",
+        "proj_a",
+        1,
+        "1",
+        compiled,
+        content_hash,
+        "1",
+        "b" * 64,
+        True,
+        [],
+        "member-1",
+        datetime(2026, 7, 19, 12, tzinfo=timezone.utc),
+    )
+    conn, cur = _scripted_conn([existing])
+
+    replay = replay_datastream_intent(
+        project_id="proj_a",
+        intent=_intent(),
+        idempotency_key="same-key",
+        conn=conn,
+    )
+
+    assert replay is not None
+    assert replay["datastream_id"] == "ds_01"
+    assert replay["idempotent_replay"] is True
+    assert cur.execute.call_count == 1
+
+    changed = _intent()
+    changed["historical"]["start"] = "2025-01-01T00:00:00Z"
+    conflict_conn, _ = _scripted_conn([existing])
+    with pytest.raises(DatastreamIntentConflict, match="idempotency_conflict"):
+        replay_datastream_intent(
+            project_id="proj_a",
+            intent=changed,
+            idempotency_key="same-key",
+            conn=conflict_conn,
+        )

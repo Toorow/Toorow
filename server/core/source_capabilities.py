@@ -722,6 +722,43 @@ class SourceCapabilitiesUnavailable(RuntimeError):
     """Raised when capability scope or metadata cannot be proven safely."""
 
 
+def get_project_connection_state(
+    *, project_id: str, connection_ref_id: str, identity: str, conn: Any
+) -> tuple[Any, Any, Any, Any] | None:
+    """Resolve one exact provider account through the canonical grant authority."""
+
+    from core.project_access import resolve_provider_account_access  # noqa: PLC0415
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT r.provider, r.status, r.enabled, h.status,
+                   s.account_id, p.org_id
+            FROM app.connection_ref r
+            JOIN app.projects p ON p.id = %s AND p.status = 'active'
+            JOIN app.connection_account_scope s
+              ON s.connection_ref_id = r.id AND s.state = 'ready'
+            LEFT JOIN app.connection_health h ON h.connection_ref_id = r.id
+            WHERE r.id = %s
+            """,
+            (project_id, connection_ref_id),
+        )
+        row = cur.fetchone()
+    if not isinstance(row, (tuple, list)) or len(row) < 6:
+        return None
+    provider, status, enabled, health, external_account_id, beneficiary_org_id = row[:6]
+    decision = resolve_provider_account_access(
+        identity,
+        conn,
+        credential_id=connection_ref_id,
+        external_account_id=str(external_account_id),
+        beneficiary_org_id=str(beneficiary_org_id),
+        project_id=project_id,
+    )
+    if not decision.allowed:
+        return None
+    return provider, status, enabled, health
+
 def get_scoped_source_capabilities(
     *,
     project_id: str,
@@ -755,16 +792,12 @@ def get_scoped_source_capabilities(
         if not identity_has_project_access(project_id, identity, conn, fail_closed=True):
             raise SourceCapabilitiesNotFound
 
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT provider, status, enabled
-                FROM app.connection_ref
-                WHERE id = %s AND project_id = %s
-                """,
-                (connection_ref_id, project_id),
-            )
-            row = cur.fetchone()
+        row = get_project_connection_state(
+            project_id=project_id,
+            connection_ref_id=connection_ref_id,
+            identity=identity,
+            conn=conn,
+        )
     except SourceCapabilitiesNotFound:
         raise
     except (ProjectAccessUnavailable, ModuleEnablementUnavailable) as exc:
@@ -772,7 +805,7 @@ def get_scoped_source_capabilities(
     except Exception as exc:  # noqa: BLE001
         raise SourceCapabilitiesUnavailable("connection scope is unavailable") from exc
 
-    if not isinstance(row, (tuple, list)) or len(row) < 3:
+    if row is None:
         raise SourceCapabilitiesNotFound
     module_name, connection_status, connection_enabled = row[:3]
     if connection_status != "active" or not bool(connection_enabled):

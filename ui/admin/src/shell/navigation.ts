@@ -102,6 +102,7 @@ export const WORKSPACES: Workspace[] = [
       { slug: "mapping", label: "Mapping" },
       { slug: "competitors", label: "Competitors" },
       { slug: "data-quality", label: "Data quality" },
+      { slug: "reconciliation", label: "Reconciliation methods" },
       { slug: "provenance", label: "Provenance" },
       { slug: "activity", label: "Activity" },
     ],
@@ -113,6 +114,8 @@ export const WORKSPACES: Workspace[] = [
     question: "What business knowledge should analysis use?",
     subnav: [
       { slug: "knowledge", label: "Knowledge" },
+      // Story 44.4 — the mindmap over the same governed corpus (read + drawer).
+      { slug: "graph", label: "Graph" },
       { slug: "procedures", label: "Procedures" },
       { slug: "events", label: "Events" },
     ],

@@ -25,7 +25,12 @@
  *           -> { id, name, slug, currency?, timezone?,
  *                verification_source_type?, verification_source_id?,
  *                lead_event_name?, geographic_mode?, local_market_country_codes? }
- *   GET   /api/reference/countries          -> { countries: [{ code, display_name }] }
+ *   GET   /api/vocabularies/countries       -> { countries: [{ code, display_name }] }
+ *           (verified: server/core/admin_api.py registers "/api/vocabularies/
+ *            countries" -> _list_countries. There is NO /api/reference/* route
+ *            anywhere in server/core — the previous /api/reference/countries URL
+ *            404'd on every call, so the market picker was structurally empty and
+ *            said nothing about it. OrgSettings.tsx already used the right URL.)
  *   PATCH /api/projects/{projectId}
  *           body { verification_source_type, verification_source_id,
  *                  lead_event_name }        (identity-only saves send name/currency)
@@ -39,9 +44,11 @@
  *   A geography change ALWAYS goes preview -> confirm (with the backfill decision
  *   when backfill_required); identity/verification changes PATCH directly.
  *
- * Fallback: with no backend reachable the screen still renders finished — the
- * form shows spec defaults, the country list is simply empty, and Save surfaces a
- * safe inline error instead of dead-ending.
+ * Failure handling: a load or save failure is SAID. The project fetch failing
+ * renders an explicit error instead of an empty form; the country list failing
+ * renders an explicit error instead of an empty picker (an empty picker reads as
+ * "no countries exist"); and an empty list returned by the API is rendered as
+ * empty, which is a truth.
  *
  * Styling: application.css (global, via the shell) for base classes/tokens +
  * project-settings.css for this page's specifics. Colors come exclusively from
@@ -134,6 +141,10 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([]);
   const [countriesLoading, setCountriesLoading] = useState(false);
   const [countriesError, setCountriesError] = useState<string | null>(null);
+  /** True once a country-list request has been ISSUED — so a failed load is not
+   *  retried in a loop by the lazy-load effect, and so "no options" can be told
+   *  apart from "not asked yet". */
+  const [countriesRequested, setCountriesRequested] = useState(false);
   const [countryQuery, setCountryQuery] = useState<string>("");
 
   const [saving, setSaving] = useState(false);
@@ -181,10 +192,11 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
   }, [resolvedProjectId, applyUpdatedPrefs]);
 
   const loadCountries = useCallback(async () => {
+    setCountriesRequested(true);
     setCountriesLoading(true);
     setCountriesError(null);
     try {
-      const resp = await apiFetch(`/api/reference/countries`, {
+      const resp = await apiFetch(`/api/vocabularies/countries`, {
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
       });
@@ -205,10 +217,10 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
 
   // Load the country list lazily once local markets is selected.
   useEffect(() => {
-    if (geoMode === "local_markets" && countryOptions.length === 0 && !countriesLoading) {
+    if (geoMode === "local_markets" && !countriesRequested) {
       void loadCountries();
     }
-  }, [geoMode, countryOptions.length, countriesLoading, loadCountries]);
+  }, [geoMode, countriesRequested, loadCountries]);
 
   const countryLabel = useCallback(
     (option: CountryOption) => `${option.display_name} (${option.code})`,
@@ -589,8 +601,17 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
                       className="text-input"
                       type="text"
                       value={countryQuery}
-                      placeholder={countriesLoading ? "Loading countries…" : "Add a country"}
+                      placeholder={
+                        countriesLoading
+                          ? "Loading countries…"
+                          : countriesError
+                            ? "Country list unavailable"
+                            : countryOptions.length === 0
+                              ? "No country available"
+                              : "Add a country"
+                      }
                       autoComplete="off"
+                      disabled={countriesLoading || !!countriesError || countryOptions.length === 0}
                       onChange={(e) => setCountryQuery(e.target.value)}
                     />
                     {countryQuery.trim() !== "" && countrySuggestions.length > 0 && (
@@ -607,12 +628,30 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
                     )}
                   </div>
 
-                  {countriesError && (
-                    <p className="field-error">{countriesError}</p>
+                  {/* A country list that failed to load must never look like a
+                      country list that is empty. */}
+                  {countriesError ? (
+                    <p className="field-error" role="alert">
+                      Could not load the country list ({countriesError}). The picker below is
+                      unavailable — this is a loading failure, not an empty reference list.{" "}
+                      <button
+                        type="button"
+                        className="quiet-button"
+                        onClick={() => void loadCountries()}
+                      >
+                        Retry
+                      </button>
+                    </p>
+                  ) : !countriesLoading && countryOptions.length === 0 ? (
+                    <p className="field-hint">
+                      The reference country list came back empty. No market can be selected
+                      until it is populated.
+                    </p>
+                  ) : (
+                    <p className="field-hint">
+                      Type to search the reference country list. At least one market is required.
+                    </p>
                   )}
-                  <p className="field-hint">
-                    Type to search the reference country list. At least one market is required.
-                  </p>
                 </div>
               )}
             </div>

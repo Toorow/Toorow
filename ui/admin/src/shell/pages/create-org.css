@@ -254,10 +254,35 @@
   filter: saturate(.7);
 }
 
+/* ---- Who you are (asked once, before the first organization) ------------
+   A bordered group rather than two loose fields: this asks about the PERSON,
+   while everything below it asks about the ORGANIZATION, and the two must not
+   read as one list. <fieldset> carries that grouping to assistive tech too. */
+.createorg-identity {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted, transparent);
+}
+.createorg-identity > legend {
+  padding: 0 6px;
+  font: 600 13px "Plus Jakarta Sans", sans-serif;
+}
+.createorg-identity > .field-hint { margin: 0; }
+.createorg-identity-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
 /* ---- Narrow-desktop resilience (mirrors sibling breakpoint) ------------- */
 @media (max-width: 1180px) {
   .createorg-dialog,
   .createorg-welcome { width: calc(100% - 36px); }
   .createorg-footer { flex-wrap: wrap; }
   .scope-row { grid-template-columns: 1fr; gap: 3px; }
+  .createorg-identity-row { grid-template-columns: 1fr; }
 }

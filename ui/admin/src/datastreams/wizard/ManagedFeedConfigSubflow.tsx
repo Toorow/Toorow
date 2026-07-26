@@ -26,6 +26,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { connectionBlockingReason, isConnectionUsable } from "./wizardLogic";
 import type {
   ConnectionSummary,
   ImportPreview,
@@ -45,6 +46,7 @@ interface Props {
   onSheetRangeChange: (range: string) => void;
   /** Project connections — the Sheets sub-flow needs a Google one (12.10). */
   connections: ConnectionSummary[];
+  connectionsLoading: boolean;
   sheetsConnectionId: string | null;
   onSheetsConnectionChange: (id: string) => void;
 }
@@ -66,6 +68,7 @@ export default function ManagedFeedConfigSubflow({
   onSpreadsheetChange,
   onSheetRangeChange,
   connections,
+  connectionsLoading,
   sheetsConnectionId,
   onSheetsConnectionChange,
 }: Props) {
@@ -76,39 +79,50 @@ export default function ManagedFeedConfigSubflow({
 
   if (format === "google_sheets") {
     const googleConnections = connections.filter(isGoogleConnection);
+    const usableGoogleConnections = googleConnections.filter(isConnectionUsable);
     const noGoogleConnection = googleConnections.length === 0;
     return (
       <Stack spacing={2} data-testid="sheets-config">
         <Typography color="text.secondary" variant="body2">
-          Synchronisation récurrente en lecture seule d’une feuille Google Sheets.
-          Chaque exécution crée un candidat managé immuable après validation.
+          Recurring read-only synchronization of a Google Sheet.
+          Each run creates an immutable managed candidate after validation.
         </Typography>
         <TextField
           select
-          label="Connexion Google (lecture de la feuille)"
+          label="Google connection (read sheet)"
           value={sheetsConnectionId ?? ""}
           onChange={(e) => onSheetsConnectionChange(e.target.value)}
           data-testid="sheets-connection"
-          disabled={noGoogleConnection}
+          disabled={connectionsLoading || noGoogleConnection}
           fullWidth
           helperText={
-            noGoogleConnection
-              ? "Aucune connexion Google disponible dans ce projet : connectez un compte Google avant de configurer la synchronisation."
-              : "Le compte Google dont l’autorisation lira la feuille à chaque synchronisation."
+            connectionsLoading
+              ? "Loading project-authorized Google accounts..."
+              : noGoogleConnection
+                ? "No Google account is authorized for this project."
+                : usableGoogleConnections.length === 0
+                  ? "No healthy Google account is usable. Reconnect or repair one first."
+                  : "Only an active Google account with verified healthy access can read the sheet."
           }
           sx={{ maxWidth: 520 }}
         >
-          {googleConnections.map((c) => {
-            const id = c.connection_ref_id ?? c.id;
+          {googleConnections.map((connection) => {
+            const id = connection.connection_ref_id ?? connection.id;
+            const blocked = connectionBlockingReason(connection);
             return (
-              <MenuItem key={id} value={id}>
-                {c.display_name ?? c.provider ?? id}
+              <MenuItem key={id} value={id} disabled={blocked != null}>
+                {connection.display_name ??
+                  connection.account_label ??
+                  connection.nango_connection_id ??
+                  connection.provider ??
+                  id}
+                {blocked ? ` - unavailable: ${blocked}` : " - healthy"}
               </MenuItem>
             );
           })}
         </TextField>
         <TextField
-          label="Identifiant du classeur (spreadsheet_id)"
+          label="Spreadsheet ID (spreadsheet_id)"
           value={spreadsheetId ?? ""}
           onChange={(e) => onSpreadsheetChange(e.target.value)}
           data-testid="sheets-spreadsheet"
@@ -116,27 +130,27 @@ export default function ManagedFeedConfigSubflow({
           sx={{ maxWidth: 520 }}
         />
         <TextField
-          label="Plage (ex. Budget2026!A:F)"
+          label="Range (for example, Budget2026!A:F)"
           value={sheetRange ?? ""}
           onChange={(e) => onSheetRangeChange(e.target.value)}
           data-testid="sheets-range"
           fullWidth
-          helperText="La plage lue à chaque synchronisation."
+          helperText="The range read during each synchronization."
           sx={{ maxWidth: 520 }}
         />
         {noGoogleConnection && (
           <Alert severity="warning" data-testid="sheets-no-connection">
-            La synchronisation récurrente exige une connexion Google. Tant qu’aucun
-            compte Google n’est connecté, la configuration de synchronisation reste
-            indisponible : vous pouvez enregistrer le brouillon, mais la
-            synchronisation ne sera pas programmée.
+            Recurring synchronization requires a Google connection. Until a
+            Google account is connected, synchronization configuration remains
+            unavailable: you can save the draft, but synchronization
+            will not be scheduled.
           </Alert>
         )}
         {needsDraft && (
           <Alert severity="info" data-testid="sheets-needs-draft">
-            Enregistrez d’abord un brouillon : la configuration de synchronisation
-            est rattachée au flux. Le bouton « Enregistrer le brouillon » est
-            disponible à tout moment en bas de l’assistant.
+            Save a draft first: synchronization configuration
+            is attached to the Datastream. The Save draft button is
+            always available at the bottom of the wizard.
           </Alert>
         )}
       </Stack>
@@ -147,9 +161,9 @@ export default function ManagedFeedConfigSubflow({
   return (
     <Stack spacing={2} data-testid="file-config">
       <Typography color="text.secondary" variant="body2">
-        Importez un fichier {format === "csv" ? "CSV" : "Excel"}. toorow en fait un
-        aperçu borné <strong>sans rien publier</strong> ; vous validez ensuite le
-        candidat aux étapes suivantes.
+        Import a {format === "csv" ? "CSV" : "Excel"}. toorow creates a
+        bounded preview <strong>without publishing anything</strong>; you then validate the
+        candidate in the following stages.
       </Typography>
 
       <Box>
@@ -174,20 +188,20 @@ export default function ManagedFeedConfigSubflow({
           disabled={needsDraft || previewBusy}
           data-testid="file-choose"
         >
-          {previewBusy ? "Aperçu en cours…" : "Choisir un fichier et prévisualiser"}
+          {previewBusy ? "Previewing..." : "Choose a file and preview"}
         </Button>
         {fileName && (
           <Typography variant="body2" sx={{ mt: 1 }}>
-            Fichier : {fileName}
+            File: {fileName}
           </Typography>
         )}
       </Box>
 
       {needsDraft && (
         <Alert severity="info" data-testid="file-needs-draft">
-          Enregistrez d’abord un brouillon : l’aperçu d’import est rattaché au
-          flux. Le bouton « Enregistrer le brouillon » est disponible à tout
-          moment en bas de l’assistant.
+          Save a draft first: the import preview is attached to the
+          Datastream. The Save draft button is available at any
+          time at the bottom of the wizard.
         </Alert>
       )}
 
@@ -196,23 +210,23 @@ export default function ManagedFeedConfigSubflow({
           <Divider />
           <Stack spacing={0.5} data-testid="import-preview-summary">
             <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
-              <Chip size="small" label={`Format : ${importPreview.format}`} />
+              <Chip size="small" label={`Format: ${importPreview.format}`} />
               {importPreview.encoding && (
-                <Chip size="small" label={`Encodage : ${importPreview.encoding}`} />
+                <Chip size="small" label={`Encoding: ${importPreview.encoding}`} />
               )}
               {importPreview.delimiter && (
-                <Chip size="small" label={`Délimiteur : ${importPreview.delimiter}`} />
+                <Chip size="small" label={`Delimiter: ${importPreview.delimiter}`} />
               )}
               {importPreview.sheet_name && (
-                <Chip size="small" label={`Feuille : ${importPreview.sheet_name}`} />
+                <Chip size="small" label={`Sheet: ${importPreview.sheet_name}`} />
               )}
             </Stack>
             <Typography variant="body2">
-              <strong>Lignes :</strong> {importPreview.row_count.toLocaleString("fr-FR")} ·{" "}
-              <strong>Rejets :</strong> {importPreview.rejected_count.toLocaleString("fr-FR")}
+              <strong>Rows:</strong> {importPreview.row_count.toLocaleString("fr-FR")} ·{" "}
+              <strong>Rejected:</strong> {importPreview.rejected_count.toLocaleString("fr-FR")}
             </Typography>
             <Typography variant="body2">
-              <strong>Colonnes :</strong>{" "}
+              <strong>Columns:</strong>{" "}
               {importPreview.columns.map((c) => c.name).join(", ")}
             </Typography>
             <Typography
@@ -220,7 +234,7 @@ export default function ManagedFeedConfigSubflow({
               variant="caption"
               sx={{ fontFamily: "var(--font-mono, monospace)", overflowWrap: "anywhere" }}
             >
-              empreinte contenu …{importPreview.content_hash.slice(-12)}
+              content fingerprint ...{importPreview.content_hash.slice(-12)}
             </Typography>
           </Stack>
         </>

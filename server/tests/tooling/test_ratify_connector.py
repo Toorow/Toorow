@@ -126,7 +126,12 @@ class TestFieldProbeClassification:
             }
         )
         statuses = rc.probe_fields(
-            "m", "report_statistics", 10, "acct", targets, probe,
+            "m",
+            "report_statistics",
+            10,
+            "acct",
+            targets,
+            probe,
             sleep=lambda _s: None,
         )
         assert statuses["a"] == "ok"
@@ -152,18 +157,14 @@ class TestBatching:
     def test_respects_batch_size(self):
         targets = [_target(f"f{i}") for i in range(45)]
         probe = RecordingProbe({t["field_id"]: "ok" for t in targets})
-        rc.probe_fields(
-            "m", "fields_param", 20, "acct", targets, probe, sleep=lambda _s: None
-        )
+        rc.probe_fields("m", "fields_param", 20, "acct", targets, probe, sleep=lambda _s: None)
         # 45 fields / 20 -> batches of 20, 20, 5 (all clean, no bisection).
         assert [len(c) for c in probe.calls] == [20, 20, 5]
 
     def test_clean_batch_is_not_bisected(self):
         targets = [_target(f"f{i}") for i in range(3)]
         probe = RecordingProbe({t["field_id"]: "ok" for t in targets})
-        rc.probe_fields(
-            "m", "fields_param", 20, "acct", targets, probe, sleep=lambda _s: None
-        )
+        rc.probe_fields("m", "fields_param", 20, "acct", targets, probe, sleep=lambda _s: None)
         assert probe.calls == [["f0", "f1", "f2"]]
 
     def test_rejected_batch_is_bisected_to_isolate_the_field(self):
@@ -185,9 +186,7 @@ class TestBatching:
         # batch_size 1 -> no bisection recursion even on rejection.
         targets = [_target("bad")]
         probe = RecordingProbe({"bad": ("rejected", "invalid_request")})
-        rc.probe_fields(
-            "m", "dimensions_only", 1, "acct", targets, probe, sleep=lambda _s: None
-        )
+        rc.probe_fields("m", "dimensions_only", 1, "acct", targets, probe, sleep=lambda _s: None)
         assert probe.calls == [["bad"]]
 
 
@@ -199,9 +198,7 @@ class TestBatching:
 class TestRateLimit:
     def test_pauses_and_resumes_same_batch(self):
         targets = [_target("a"), _target("b")]
-        probe = RecordingProbe(
-            {"a": "ok", "b": "ok"}, rate_limit_first_n=1, retry_after=7
-        )
+        probe = RecordingProbe({"a": "ok", "b": "ok"}, rate_limit_first_n=1, retry_after=7)
         slept = []
         statuses = rc.probe_fields(
             "m", "fields_param", 20, "acct", targets, probe, sleep=slept.append
@@ -215,8 +212,14 @@ class TestRateLimit:
         targets = [_target("a")]
         probe = RecordingProbe({"a": "ok"}, rate_limit_first_n=99)
         statuses = rc.probe_fields(
-            "m", "fields_param", 20, "acct", targets, probe,
-            sleep=lambda _s: None, max_retries=3,
+            "m",
+            "fields_param",
+            20,
+            "acct",
+            targets,
+            probe,
+            sleep=lambda _s: None,
+            max_retries=3,
         )
         # Never resolves -> the field is left unprobed (absent from statuses).
         assert "a" not in statuses
@@ -229,11 +232,14 @@ class TestRateLimit:
 
 class TestErrorProbe:
     def test_invalid_request_contract_matches(self):
-        probe = RecordingProbe(
-            {"__toorow_probe_invalid_field__": ("rejected", "invalid_request")}
-        )
+        probe = RecordingProbe({"__toorow_probe_invalid_field__": ("rejected", "invalid_request")})
         result = rc.probe_errors(
-            "m", "fields_param", "acct", probe, token="t", probe_auth=False,
+            "m",
+            "fields_param",
+            "acct",
+            probe,
+            token="t",
+            probe_auth=False,
             sleep=lambda _s: None,
         )
         assert result["invalid_request"]["match"] is True
@@ -242,7 +248,12 @@ class TestErrorProbe:
     def test_invalid_request_contract_violation_detected(self):
         probe = RecordingProbe({"__toorow_probe_invalid_field__": "ok"})
         result = rc.probe_errors(
-            "m", "fields_param", "acct", probe, token="t", probe_auth=False,
+            "m",
+            "fields_param",
+            "acct",
+            probe,
+            token="t",
+            probe_auth=False,
             sleep=lambda _s: None,
         )
         assert result["invalid_request"]["match"] is False
@@ -251,15 +262,16 @@ class TestErrorProbe:
         # The auth probe uses a sentinel bad token; here it maps to auth_expired.
         def probe(*, module, request_style, account, batch, token):
             if token == "__toorow_probe_invalid_token__":
-                return rc.ProbeOutcome(
-                    rejected={"__toorow_probe_invalid_field__": "auth_expired"}
-                )
-            return rc.ProbeOutcome(
-                rejected={"__toorow_probe_invalid_field__": "invalid_request"}
-            )
+                return rc.ProbeOutcome(rejected={"__toorow_probe_invalid_field__": "auth_expired"})
+            return rc.ProbeOutcome(rejected={"__toorow_probe_invalid_field__": "invalid_request"})
 
         result = rc.probe_errors(
-            "m", "fields_param", "acct", probe, token="t", probe_auth=True,
+            "m",
+            "fields_param",
+            "acct",
+            probe,
+            token="t",
+            probe_auth=True,
             sleep=lambda _s: None,
         )
         assert result["invalid_token"]["probed"] is True
@@ -286,8 +298,15 @@ class TestTopologyProbe:
 # ===========================================================================
 
 
-def _write_module(tmp_path, module, request_style, batch_size, fields,
-                  structural_note="note", account_topology=True):
+def _write_module(
+    tmp_path,
+    module,
+    request_style,
+    batch_size,
+    fields,
+    structural_note="note",
+    account_topology=True,
+):
     mdir = tmp_path / module
     (mdir / "catalog_sources").mkdir(parents=True)
     (mdir / "reports").mkdir()
@@ -308,14 +327,34 @@ def _write_module(tmp_path, module, request_style, batch_size, fields,
 
 
 _CORE_FIELDS = [
-    {"field_id": "sessions", "kind": "metric", "tier": "core", "exposure": "exposed",
-     "source_field": "sessions"},
-    {"field_id": "active_users", "kind": "metric", "tier": "core", "exposure": "exposed",
-     "source_field": "activeUsers"},
-    {"field_id": "country", "kind": "dimension", "tier": "core", "exposure": "planned",
-     "source_field": "country"},
-    {"field_id": "revenue", "kind": "metric", "tier": "standard", "exposure": "exposed",
-     "source_field": "revenue"},
+    {
+        "field_id": "sessions",
+        "kind": "metric",
+        "tier": "core",
+        "exposure": "exposed",
+        "source_field": "sessions",
+    },
+    {
+        "field_id": "active_users",
+        "kind": "metric",
+        "tier": "core",
+        "exposure": "exposed",
+        "source_field": "activeUsers",
+    },
+    {
+        "field_id": "country",
+        "kind": "dimension",
+        "tier": "core",
+        "exposure": "planned",
+        "source_field": "country",
+    },
+    {
+        "field_id": "revenue",
+        "kind": "metric",
+        "tier": "standard",
+        "exposure": "exposed",
+        "source_field": "revenue",
+    },
 ]
 
 
@@ -323,13 +362,22 @@ class TestReportAssembly:
     def test_deterministic_bytes(self, tmp_path):
         _write_module(tmp_path, "ga", "report_statistics", 10, _CORE_FIELDS)
         probe = RecordingProbe(
-            {"sessions": "ok", "active_users": "ok", "country": "empty",
-             "__toorow_probe_invalid_field__": ("rejected", "invalid_request")}
+            {
+                "sessions": "ok",
+                "active_users": "ok",
+                "country": "empty",
+                "__toorow_probe_invalid_field__": ("rejected", "invalid_request"),
+            }
         )
         kwargs = dict(
-            module="ga", connection_ref="conn-abcd1234", account="properties/9",
-            tiers=("core",), probed_at="2026-07-21T12:00:00Z", probe_auth=False,
-            discover=lambda: ["properties/9"], modules_dir=tmp_path,
+            module="ga",
+            connection_ref="conn-abcd1234",
+            account="properties/9",
+            tiers=("core",),
+            probed_at="2026-07-21T12:00:00Z",
+            probe_auth=False,
+            discover=lambda: ["properties/9"],
+            modules_dir=tmp_path,
             sleep=lambda _s: None,
         )
         r1 = rc.run_ratification(probe_request=RecordingProbe(probe.verdicts), **kwargs)
@@ -341,14 +389,19 @@ class TestReportAssembly:
     def test_redacts_connection_ref_and_carries_no_token(self, tmp_path):
         _write_module(tmp_path, "ga", "report_statistics", 10, _CORE_FIELDS)
         report = rc.run_ratification(
-            module="ga", connection_ref="connection-SECRET-9f2a",
-            account="properties/9", tiers=("core",),
-            probed_at="2026-07-21T12:00:00Z", probe_auth=False,
+            module="ga",
+            connection_ref="connection-SECRET-9f2a",
+            account="properties/9",
+            tiers=("core",),
+            probed_at="2026-07-21T12:00:00Z",
+            probe_auth=False,
             probe_request=RecordingProbe(
                 {"sessions": "ok", "active_users": "ok", "country": "empty"}
             ),
-            discover=lambda: ["properties/9"], modules_dir=tmp_path,
-            sleep=lambda _s: None, token="SUPER-SECRET-TOKEN",
+            discover=lambda: ["properties/9"],
+            modules_dir=tmp_path,
+            sleep=lambda _s: None,
+            token="SUPER-SECRET-TOKEN",
         )
         blob = json.dumps(report)
         assert report["connection_ref"] == "conn_***9f2a"
@@ -358,13 +411,23 @@ class TestReportAssembly:
     def test_verdict_ratified_when_all_ok_and_contract_holds(self, tmp_path):
         _write_module(tmp_path, "ga", "report_statistics", 10, _CORE_FIELDS)
         report = rc.run_ratification(
-            module="ga", connection_ref="conn-1", account="p/9", tiers=("core",),
-            probed_at="2026-07-21T12:00:00Z", probe_auth=False,
+            module="ga",
+            connection_ref="conn-1",
+            account="p/9",
+            tiers=("core",),
+            probed_at="2026-07-21T12:00:00Z",
+            probe_auth=False,
             probe_request=RecordingProbe(
-                {"sessions": "ok", "active_users": "ok", "country": "ok",
-                 "__toorow_probe_invalid_field__": ("rejected", "invalid_request")}
+                {
+                    "sessions": "ok",
+                    "active_users": "ok",
+                    "country": "ok",
+                    "__toorow_probe_invalid_field__": ("rejected", "invalid_request"),
+                }
             ),
-            discover=lambda: ["p/9"], modules_dir=tmp_path, sleep=lambda _s: None,
+            discover=lambda: ["p/9"],
+            modules_dir=tmp_path,
+            sleep=lambda _s: None,
         )
         assert report["verdict"] == "ratified"
         assert report["coverage"]["ok"] == 3
@@ -373,39 +436,62 @@ class TestReportAssembly:
     def test_verdict_failed_on_rejected_field(self, tmp_path):
         _write_module(tmp_path, "ga", "report_statistics", 10, _CORE_FIELDS)
         report = rc.run_ratification(
-            module="ga", connection_ref="conn-1", account="p/9", tiers=("core",),
-            probed_at="2026-07-21T12:00:00Z", probe_auth=False,
+            module="ga",
+            connection_ref="conn-1",
+            account="p/9",
+            tiers=("core",),
+            probed_at="2026-07-21T12:00:00Z",
+            probe_auth=False,
             probe_request=RecordingProbe(
-                {"sessions": "ok", "active_users": "ok",
-                 "country": ("rejected", "invalid_request"),
-                 "__toorow_probe_invalid_field__": ("rejected", "invalid_request")}
+                {
+                    "sessions": "ok",
+                    "active_users": "ok",
+                    "country": ("rejected", "invalid_request"),
+                    "__toorow_probe_invalid_field__": ("rejected", "invalid_request"),
+                }
             ),
-            discover=lambda: ["p/9"], modules_dir=tmp_path, sleep=lambda _s: None,
+            discover=lambda: ["p/9"],
+            modules_dir=tmp_path,
+            sleep=lambda _s: None,
         )
         assert report["verdict"] == "failed"
 
     def test_verdict_failed_when_account_not_reachable(self, tmp_path):
         _write_module(tmp_path, "ga", "report_statistics", 10, _CORE_FIELDS)
         report = rc.run_ratification(
-            module="ga", connection_ref="conn-1", account="p/UNKNOWN",
-            tiers=("core",), probed_at="2026-07-21T12:00:00Z", probe_auth=False,
+            module="ga",
+            connection_ref="conn-1",
+            account="p/UNKNOWN",
+            tiers=("core",),
+            probed_at="2026-07-21T12:00:00Z",
+            probe_auth=False,
             probe_request=RecordingProbe(
-                {"sessions": "ok", "active_users": "ok", "country": "ok",
-                 "__toorow_probe_invalid_field__": ("rejected", "invalid_request")}
+                {
+                    "sessions": "ok",
+                    "active_users": "ok",
+                    "country": "ok",
+                    "__toorow_probe_invalid_field__": ("rejected", "invalid_request"),
+                }
             ),
-            discover=lambda: ["p/9"], modules_dir=tmp_path, sleep=lambda _s: None,
+            discover=lambda: ["p/9"],
+            modules_dir=tmp_path,
+            sleep=lambda _s: None,
         )
         assert report["verdict"] == "failed"
 
     def test_only_selected_tier_is_probed(self, tmp_path):
         _write_module(tmp_path, "ga", "report_statistics", 10, _CORE_FIELDS)
         report = rc.run_ratification(
-            module="ga", connection_ref="conn-1", account="p/9", tiers=("core",),
-            probed_at="2026-07-21T12:00:00Z", probe_auth=False,
-            probe_request=RecordingProbe(
-                {"sessions": "ok", "active_users": "ok", "country": "ok"}
-            ),
-            discover=lambda: ["p/9"], modules_dir=tmp_path, sleep=lambda _s: None,
+            module="ga",
+            connection_ref="conn-1",
+            account="p/9",
+            tiers=("core",),
+            probed_at="2026-07-21T12:00:00Z",
+            probe_auth=False,
+            probe_request=RecordingProbe({"sessions": "ok", "active_users": "ok", "country": "ok"}),
+            discover=lambda: ["p/9"],
+            modules_dir=tmp_path,
+            sleep=lambda _s: None,
         )
         # revenue is 'standard' -> excluded from a core-only probe.
         assert "revenue" not in report["fields"]
@@ -415,10 +501,20 @@ class TestReportAssembly:
 class TestStructuralRatification:
     def test_none_style_marks_every_field_ok_without_a_request(self, tmp_path):
         fields = [
-            {"field_id": "date", "kind": "dimension", "tier": "core",
-             "exposure": "exposed", "source_field": "date"},
-            {"field_id": "tag_name", "kind": "dimension", "tier": "core",
-             "exposure": "planned", "source_field": "tag_name"},
+            {
+                "field_id": "date",
+                "kind": "dimension",
+                "tier": "core",
+                "exposure": "exposed",
+                "source_field": "date",
+            },
+            {
+                "field_id": "tag_name",
+                "kind": "dimension",
+                "tier": "core",
+                "exposure": "planned",
+                "source_field": "tag_name",
+            },
         ]
         _write_module(tmp_path, "github", "none", 0, fields, account_topology=False)
 
@@ -426,9 +522,15 @@ class TestStructuralRatification:
             raise AssertionError("structural ratification must not call the API")
 
         report = rc.run_ratification(
-            module="github", connection_ref="conn-1", account="",
-            tiers=("core",), probed_at="2026-07-21T12:00:00Z", probe_auth=False,
-            probe_request=boom, discover=None, modules_dir=tmp_path,
+            module="github",
+            connection_ref="conn-1",
+            account="",
+            tiers=("core",),
+            probed_at="2026-07-21T12:00:00Z",
+            probe_auth=False,
+            probe_request=boom,
+            discover=None,
+            modules_dir=tmp_path,
         )
         assert report["verdict"] == "ratified"
         assert report["fields"] == {"date": "ok", "tag_name": "ok"}
@@ -439,7 +541,9 @@ class TestStructuralRatification:
 class TestProbeConfigLoading:
     def test_all_twelve_real_modules_declare_a_probe_block(self):
         modules_dir = _SERVER_DIR / "modules"
-        names = sorted(p.parent.parent.name for p in modules_dir.glob("*/catalog_sources/catalog_sources.json"))
+        names = sorted(
+            p.parent.parent.name for p in modules_dir.glob("*/catalog_sources/catalog_sources.json")
+        )
         assert len(names) >= 12  # concurrent sessions add modules; every one must declare a probe
         for name in names:
             probe = rc.load_probe_config(name, modules_dir)
@@ -511,9 +615,7 @@ class TestRegistryVerifiedChain:
         mdir = tmp_path / "google-analytics"
         (mdir / "reports").mkdir(parents=True)
         with pytest.raises(exporter.RegistryValidationError, match="requires a valid"):
-            exporter._resolve_readiness(
-                manifest, mdir, manifest["public_catalog"]["verification"]
-            )
+            exporter._resolve_readiness(manifest, mdir, manifest["public_catalog"]["verification"])
 
     def test_ratified_with_fixture_report_becomes_verified(self, tmp_path):
         exporter = _load_exporter()
@@ -544,13 +646,9 @@ class TestRegistryVerifiedChain:
             json.dumps({"verdict": "partial", "probed_at": "2026-07-21T00:00:00Z"}),
             encoding="utf-8",
         )
-        (mdir / "reports" / "ratification-b.json").write_text(
-            "{ not json", encoding="utf-8"
-        )
+        (mdir / "reports" / "ratification-b.json").write_text("{ not json", encoding="utf-8")
         with pytest.raises(exporter.RegistryValidationError):
-            exporter._resolve_readiness(
-                manifest, mdir, manifest["public_catalog"]["verification"]
-            )
+            exporter._resolve_readiness(manifest, mdir, manifest["public_catalog"]["verification"])
 
     def test_full_registry_regenerates_with_all_validation_required(self):
         exporter = _load_exporter()
@@ -568,14 +666,16 @@ class TestRegistryVerifiedChain:
         # so a ratified manifest reaches the fail-closed readiness resolver; the
         # on-disk schema still pins const "blocked" (never mutated here).
         blocked_errors = [
-            e for e in validator.iter_errors(manifest)
+            e
+            for e in validator.iter_errors(manifest)
             if "status" in [str(p) for p in e.absolute_path]
             and "verification" in [str(p) for p in e.absolute_path]
         ]
         assert not blocked_errors  # "blocked" is accepted
         manifest["public_catalog"]["verification"]["status"] = "ratified"
         ratified_errors = [
-            e for e in validator.iter_errors(manifest)
+            e
+            for e in validator.iter_errors(manifest)
             if "status" in [str(p) for p in e.absolute_path]
             and "verification" in [str(p) for p in e.absolute_path]
         ]
@@ -583,10 +683,8 @@ class TestRegistryVerifiedChain:
 
     def test_ondisk_schema_still_pins_blocked(self):
         # Guard: the FORBIDDEN core schema file is untouched (const blocked).
-        schema = json.loads(
-            (_SCHEMAS_DIR / "manifest.schema.json").read_text(encoding="utf-8")
-        )
-        status = schema["properties"]["public_catalog"]["properties"]["verification"][
-            "properties"
-        ]["status"]
+        schema = json.loads((_SCHEMAS_DIR / "manifest.schema.json").read_text(encoding="utf-8"))
+        status = schema["properties"]["public_catalog"]["properties"]["verification"]["properties"][
+            "status"
+        ]
         assert status.get("const") == "blocked"

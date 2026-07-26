@@ -62,10 +62,9 @@
 --   [x] Additive & idempotent (IF NOT EXISTS everywhere; the whole file is replayable)
 --   [x] New columns are NULL-able or have defaults
 --   [x] No destructive DROP/ALTER on populated columns
--- Verified at dev time: 086 is the last of the tracked-entity family, but 087 is TAKEN
--- TWICE (087_connector_activations, 087_datastream_hourly_schedule) and 088 is TAKEN
--- (088_import_templates); 089 is the next genuinely-free number (noted in the story
--- Completion Notes).
+-- Verified at dev time: 086 is the last of the tracked-entity family, 087 is
+-- connector_activations and 088 is import_templates; 089 is the next free number.
+-- The former duplicate hourly migration was repaired as 110.
 --
 -- PENDING -- NOT applied to Supabase (human gate: explicit go from Jean, like 086/052/046
 -- before their go). The orchestrator may apply it to a throwaway test DB. 049 is ALREADY

@@ -1,379 +1,548 @@
-/**
- * Vitest tests for the Story 12.13 "Créer un flux" wizard.
- *
- * Coverage (mirrors the PremierRapportCard.test.tsx pattern):
- *   - stage navigation (revisitable stepper);
- *   - Save draft is always available and posts the versioned intent;
- *   - blocking validation disables activation (AC1);
- *   - source-type switching (connector <-> managed feed) reshapes Configure;
- *   - accessibility: the error + live regions carry the right roles;
- *   - drift invalidates the preview and re-blocks activation (AC4).
- *
- * French, WCAG-oriented assertions. fetch is mocked per-test; no real network.
- */
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ThemeProvider } from "@mui/material";
 import { adminTheme } from "../theme";
 import { CreerFluxWizard } from "../datastreams/wizard";
+import DatastreamCreate from "../shell/pages/DatastreamCreate";
 
-// ---------------------------------------------------------------------------
-// Fixtures.
-// ---------------------------------------------------------------------------
 const CONNECTIONS = {
   connections: [
     {
       id: "conn-1",
       connection_ref_id: "cref-1",
       provider: "meta_ads",
-      display_name: "Meta Ads — Compte 1",
-      status: "connected",
+      display_name: "Meta Ads account",
+      status: "active",
+      health: { status: "ok", last_checked_at: "2026-07-26T12:00:00Z" },
     },
   ],
 };
 
-const CAPABILITIES = {
-  contract_version: "1",
-  project_id: "proj-1",
-  connection_ref_id: "cref-1",
-  module: { name: "meta_ads", display_name: "Meta Ads", module_kind: "kpi" },
-  fields: [
-    {
-      field_id: "spend",
-      source_field: "spend",
-      kind: "metric",
-      physical_type: "number",
-      description: "Dépense média",
-      semantic_hints: ["cost"],
-      canonical_target: "media_spend",
-      aggregation: "sum",
-      non_additive: false,
-    },
-    {
-      field_id: "date",
-      source_field: "date",
-      kind: "dimension",
-      physical_type: "date",
-      description: "Jour de la donnée",
-      semantic_hints: ["date"],
-      canonical_target: "date",
-      aggregation: null,
-      non_additive: false,
-    },
-  ],
-  reports: [
-    {
-      id: "campaign_daily",
-      selection_mode: "explicit",
-      availability: { status: "selectable" },
-      metrics: ["spend"],
-      dimensions: ["date"],
-      supported_grains: [["date"]],
-      compatibility: [],
-      quota_cost: { read_points: 150, unit: "read_points" },
-      cadence: { minimum_interval_minutes: 1440, supported_modes: ["daily"] },
-    },
-  ],
+function capabilities(connectionRefId = "cref-1", reportId = "campaign_daily") {
+  return {
+    contract_version: "1",
+    project_id: "proj-1",
+    connection_ref_id: connectionRefId,
+    module: { name: "meta_ads", display_name: "Meta Ads", module_kind: "kpi" },
+    fields: [
+      {
+        field_id: "spend",
+        source_field: "spend",
+        kind: "metric",
+        physical_type: "number",
+        description: "Media spend",
+        semantic_hints: ["cost"],
+        canonical_target: "media_spend",
+        aggregation: "sum",
+        non_additive: false,
+      },
+      {
+        field_id: "date",
+        source_field: "date",
+        kind: "dimension",
+        physical_type: "date",
+        description: "Reporting day",
+        semantic_hints: ["date"],
+        canonical_target: "date",
+        aggregation: null,
+        non_additive: false,
+      },
+    ],
+    reports: [
+      {
+        id: reportId,
+        selection_mode: "explicit",
+        availability: { status: "selectable" },
+        metrics: ["spend"],
+        dimensions: ["date"],
+        supported_grains: [["date"]],
+        compatibility: [],
+        quota_cost: { read_points: 150, unit: "read_points" },
+        cadence: { minimum_interval_minutes: 1440, supported_modes: ["daily"] },
+      },
+    ],
+  };
+}
+
+type RouterOptions = {
+  connections?: { connections: Array<Record<string, unknown>> };
+  connectionsLoader?: () => Promise<{ connections: Array<Record<string, unknown>> }>;
+  capabilityLoader?: (connectionRefId: string) => Promise<unknown>;
+  failFirstCreate?: boolean;
+  failFirstValidation?: boolean;
+  validationCapabilityFingerprint?: string;
+  draftIssues?: Array<{ code: string; path?: string; message: string }>;
 };
+
+function ok(body: unknown): Response {
+  return { ok: true, status: 200, json: async () => body } as Response;
+}
+
+function routedFetch(options: RouterOptions = {}) {
+  let createAttempts = 0;
+  let validationAttempts = 0;
+  return vi.spyOn(globalThis, "fetch").mockImplementation(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/connections")) {
+        return ok(
+          options.connectionsLoader
+            ? await options.connectionsLoader()
+            : (options.connections ?? CONNECTIONS),
+        );
+      }
+      if (url.includes("/api/source-capabilities")) {
+        const connectionRefId = new URL(url, "http://localhost").searchParams.get(
+          "connection_ref_id",
+        )!;
+        return ok(
+          options.capabilityLoader
+            ? await options.capabilityLoader(connectionRefId)
+            : capabilities(connectionRefId),
+        );
+      }
+      if (url.endsWith("/validate")) {
+        validationAttempts += 1;
+        if (options.failFirstValidation && validationAttempts === 1) {
+          throw new TypeError("Validation response lost after draft save");
+        }
+        const body = JSON.parse(String(init?.body ?? "{}"));
+        const intent = body.intent as Record<string, any>;
+        const metrics = intent?.source?.selection?.metrics ?? [];
+        const issues = metrics.length
+          ? []
+          : [
+              {
+                code: "missing_metrics",
+                path: "$.source.selection.metrics",
+                message: "Select at least one metric.",
+              },
+            ];
+        return ok({
+          normalized_intent: intent,
+          content_hash: "hash-1",
+          executable: issues.length === 0,
+          issues,
+          capability_contract_version: "1",
+          capability_fingerprint: options.validationCapabilityFingerprint ?? "cap-1",
+        });
+      }
+      if (url.endsWith("/api/datastreams") && init?.method === "POST") {
+        createAttempts += 1;
+        if (options.draftIssues) {
+          return {
+            ok: false,
+            status: 422,
+            json: async () => ({ code: "validation_error", errors: options.draftIssues }),
+          } as Response;
+        }
+        if (options.failFirstCreate && createAttempts === 1) {
+          throw new TypeError("Network connection lost after send");
+        }
+        const body = JSON.parse(String(init.body ?? "{}"));
+        if (typeof body?.intent?.source?.kind !== "string") {
+          return {
+            ok: false,
+            status: 422,
+            json: async () => ({
+              code: "invalid_intent_schema",
+              message: "source.kind is required",
+            }),
+          } as Response;
+        }
+        return ok({
+          id: "ds-new-1",
+          plan_version: {
+            id: "dsp-1",
+            executable: true,
+            content_hash: "hash-1",
+            capability_contract_version: "1",
+            capability_fingerprint: "cap-1",
+          },
+        });
+      }
+      if (url.endsWith("/api/datastreams/ds-new-1") && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body ?? "{}"));
+        if (body.enabled === true) return ok({ id: "ds-new-1", enabled: true });
+        return ok({
+          id: "ds-new-1",
+          plan_version: {
+            id: "dsp-2",
+            executable: true,
+            content_hash: "hash-1",
+            capability_contract_version: "1",
+            capability_fingerprint: "cap-1",
+          },
+        });
+      }
+      if (url.includes("/managed-feed/configure")) {
+        return ok({ datastream_id: "ds-new-1" });
+      }
+      return {
+        ok: false,
+        status: 404,
+        json: async () => ({ code: "not_found", message: "Not found" }),
+      } as Response;
+    },
+  );
+}
 
 function renderWizard(overrides: Partial<Parameters<typeof CreerFluxWizard>[0]> = {}) {
   return render(
     <ThemeProvider theme={adminTheme}>
-      <CreerFluxWizard projectId="proj-1" apiToken="token" {...overrides} />
+      <CreerFluxWizard projectId="proj-1" {...overrides} />
     </ThemeProvider>,
   );
 }
 
-/**
- * A fetch mock that routes by URL to the right fixture. The create handler is
- * STRICT about the intent shape: it mirrors the real server contract by 422-ing
- * when `source.kind` is missing (the previous lax `{id}`-for-any-body mock is
- * exactly what let C1 through). A wrong-shaped intent now surfaces as an error,
- * so the shell tests exercise the real contract.
- */
-function routedFetch(handlers: Record<string, unknown>) {
-  return vi.spyOn(globalThis, "fetch").mockImplementation(
-    (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes("/api/connections")) {
-        return Promise.resolve({ ok: true, json: async () => CONNECTIONS } as Response);
-      }
-      if (url.includes("/api/source-capabilities")) {
-        return Promise.resolve({ ok: true, json: async () => CAPABILITIES } as Response);
-      }
-      if (url.endsWith("/api/datastreams") || url.includes("/api/datastreams?")) {
-        // Enforce the real intent contract: kind lives INSIDE source.
-        try {
-          const body = JSON.parse((init?.body as string) ?? "{}");
-          const source = body?.intent?.source;
-          if (!source || typeof source.kind !== "string") {
-            return Promise.resolve({
-              ok: false,
-              status: 422,
-              json: async () => ({
-                code: "invalid_intent_schema",
-                message: "source.kind manquant",
-              }),
-            } as Response);
-          }
-        } catch {
-          /* fall through to success */
-        }
-        return Promise.resolve({
-          ok: true,
-          json: async () => handlers.create ?? { id: "ds-new-1" },
-        } as Response);
-      }
-      if (url.includes("/managed-feed/configure")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => handlers.configure ?? { datastream_id: "ds-new-1" },
-        } as Response);
-      }
-      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) } as Response);
-    },
-  );
+async function chooseConnectorPlan(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText(/Datastream name/), "Campaign feed");
+  await user.click(screen.getByTestId("source-kind-connector_pull"));
+  await user.click(screen.getByTestId("wizard-next"));
+
+  const connection = within(screen.getByTestId("connector-connection")).getByRole("combobox");
+  await user.click(connection);
+  await user.click(await screen.findByRole("option", { name: /Meta Ads account/ }));
+
+  const report = within(await screen.findByTestId("connector-report")).getByRole("combobox");
+  await user.click(report);
+  await user.click(await screen.findByRole("option", { name: /campaign_daily/ }));
+  await user.click(await screen.findByLabelText("Metric spend"));
 }
 
 afterEach(() => vi.restoreAllMocks());
 
-// ---------------------------------------------------------------------------
+it("mounts the canonical six-stage wizard on the routed Add Datastream page", async () => {
+  routedFetch();
+  render(
+    <ThemeProvider theme={adminTheme}>
+      <DatastreamCreate projectId="proj-1" onCancel={vi.fn()} onActivated={vi.fn()} />
+    </ThemeProvider>,
+  );
 
-it("opens on Source with the six-stage revisitable stepper", async () => {
-  routedFetch({});
-  renderWizard();
+  expect(await screen.findByRole("heading", { name: "Add Datastream" })).toBeInTheDocument();
   expect(
-    await screen.findByRole("heading", { name: /Créer un flux — Source/ }),
+    screen.getByRole("heading", { name: /Create a Datastream — Source/ }),
   ).toBeInTheDocument();
-  // The six revisitable stages, asserted via the stepper's data-testids (a MUI
-  // StepButton's computed accessible name is unreliable across versions).
-  for (const key of ["source", "configure", "destination", "classify", "preview", "schedule"]) {
-    expect(screen.getByTestId(`stepper-${key}`)).toBeInTheDocument();
+  for (const stage of ["source", "configure", "destination", "classify", "preview", "schedule"]) {
+    expect(screen.getByTestId(`stepper-${stage}`)).toBeInTheDocument();
   }
+  expect(screen.queryByText(/Apple|Acme|3h|7 datastreams/i)).not.toBeInTheDocument();
 });
 
-it("exposes assertive error and polite live regions (WCAG)", async () => {
-  routedFetch({});
-  renderWizard();
-  await screen.findByRole("heading", { name: /Créer un flux/ });
-  const live = screen.getByTestId("wizard-live");
-  expect(live).toHaveAttribute("role", "status");
-  expect(live).toHaveAttribute("aria-live", "polite");
-  const err = screen.getByTestId("wizard-error");
-  expect(err).toHaveAttribute("role", "alert");
-  expect(err).toHaveAttribute("aria-live", "assertive");
-});
-
-it("switches source type and reshapes the Configure stage", async () => {
-  routedFetch({});
+it("scopes provider-account reads and create writes to the active project", async () => {
+  const fetchMock = routedFetch();
   const user = userEvent.setup();
   renderWizard();
-  await screen.findByRole("heading", { name: /Créer un flux/ });
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
 
-  // Name + pick the connector source, then go to Configure.
-  await user.type(screen.getByLabelText(/Nom du flux/), "Mon flux");
-  await user.click(screen.getByTestId("source-kind-connector_pull"));
-  await user.click(screen.getByTestId("wizard-next"));
-  expect(await screen.findByTestId("connector-config")).toBeInTheDocument();
-
-  // Back to Source, switch to managed feed CSV -> Configure now shows file config.
-  await user.click(screen.getByTestId("stepper-source"));
-  await user.click(screen.getByTestId("source-kind-managed_feed"));
-  const format = screen.getByTestId("managed-format");
-  await user.selectOptions(within(format).getByRole("combobox"), "csv");
-  await user.click(screen.getByTestId("stepper-configure"));
-  expect(await screen.findByTestId("file-config")).toBeInTheDocument();
-});
-
-it("Save draft is always available and posts the versioned intent with an idempotency key", async () => {
-  const fetchMock = routedFetch({ create: { id: "ds-new-1" } });
-  const user = userEvent.setup();
-  renderWizard();
-  await screen.findByRole("heading", { name: /Créer un flux/ });
-
-  await user.type(screen.getByLabelText(/Nom du flux/), "Flux BQ");
+  await user.type(screen.getByLabelText(/Datastream name/), "External table");
   await user.click(screen.getByTestId("source-kind-external_bq"));
   await user.click(screen.getByTestId("wizard-save-draft"));
 
-  await waitFor(() =>
-    expect(screen.getByTestId("wizard-live")).toHaveTextContent("Brouillon enregistré"),
+  await waitFor(() => expect(screen.getByTestId("wizard-live")).toHaveTextContent("Draft saved"));
+  const connectionCall = fetchMock.mock.calls.find(([input]) =>
+    String(input).includes("/api/connections"),
   );
-  const call = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/api/datastreams"));
-  expect(call).toBeTruthy();
-  const init = call![1] as RequestInit;
-  expect(init.headers).toMatchObject({ "Idempotency-Key": expect.any(String) });
-  const body = JSON.parse(init.body as string);
-  // C1 — the intent the wizard POSTs now matches the server contract: kind is
-  // INSIDE source (not a top-level source_kind), with the external_read_only
-  // destination policy and the schema-required contract_version.
-  expect(body).toMatchObject({
+  expect(String(connectionCall?.[0])).toContain("project_id=proj-1");
+  const createCall = fetchMock.mock.calls.find(
+    ([input, init]) => String(input).endsWith("/api/datastreams") && init?.method === "POST",
+  );
+  const createInit = createCall?.[1] as RequestInit;
+  expect(createInit.headers).toMatchObject({ "Idempotency-Key": expect.any(String) });
+  expect(JSON.parse(String(createInit.body))).toMatchObject({
     project_id: "proj-1",
-    name: "Flux BQ",
+    name: "External table",
     intent: {
       contract_version: "1",
       source: { kind: "external_bq", writer_kind: "external" },
       destination: { policy: "external_read_only" },
     },
   });
-  expect(body.intent.source_kind).toBeUndefined();
 });
 
-it("blocking validation disables activation until issues clear", async () => {
-  routedFetch({});
+it("reuses the same create idempotency key after an outcome-unknown network failure", async () => {
+  const fetchMock = routedFetch({ failFirstCreate: true });
   const user = userEvent.setup();
   renderWizard();
-  await screen.findByRole("heading", { name: /Créer un flux/ });
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
 
-  // Connector source with NO metrics selected -> validation is blocking.
-  await user.type(screen.getByLabelText(/Nom du flux/), "Flux vide");
-  await user.click(screen.getByTestId("source-kind-connector_pull"));
+  await user.type(screen.getByLabelText(/Datastream name/), "Retryable feed");
+  await user.click(screen.getByTestId("source-kind-external_bq"));
+  await user.click(screen.getByTestId("wizard-save-draft"));
+  expect(await screen.findByTestId("wizard-error")).toHaveTextContent(/connection lost/i);
+  await user.click(screen.getByTestId("wizard-save-draft"));
+  await waitFor(() => expect(screen.getByTestId("wizard-live")).toHaveTextContent("Draft saved"));
 
-  // Jump straight to Preview and validate (revisitable stepper).
-  await user.click(screen.getByTestId("stepper-preview"));
-  await user.click(screen.getByTestId("preview-validate"));
-  expect(await screen.findByTestId("preview-blocking")).toBeInTheDocument();
-
-  // Schedule stage: activation is blocked + button disabled.
-  await user.click(screen.getByTestId("stepper-schedule"));
-  expect(screen.getByTestId("activation-blocked")).toBeInTheDocument();
-  expect(screen.getByTestId("activate-datastream")).toBeDisabled();
+  const creates = fetchMock.mock.calls.filter(
+    ([input, init]) => String(input).endsWith("/api/datastreams") && init?.method === "POST",
+  );
+  expect(creates).toHaveLength(2);
+  expect((creates[0][1] as RequestInit).headers).toMatchObject({
+    "Idempotency-Key": ((creates[1][1] as RequestInit).headers as Record<string, string>)[
+      "Idempotency-Key"
+    ],
+  });
 });
 
-it("saves a ready-to-activate flow when the plan validates cleanly, without fabricating activation (C2)", async () => {
-  const fetchMock = routedFetch({ create: { id: "ds-new-1" } });
-  const onActivated = vi.fn();
+it("reuses the saved draft ID when validation fails after create", async () => {
+  const fetchMock = routedFetch({ failFirstValidation: true });
   const user = userEvent.setup();
-  renderWizard({ onActivated });
-  await screen.findByRole("heading", { name: /Créer un flux/ });
+  renderWizard();
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
+  await chooseConnectorPlan(user);
 
-  await user.type(screen.getByLabelText(/Nom du flux/), "Flux OK");
+  await user.click(screen.getByTestId("stepper-preview"));
+  await user.click(screen.getByTestId("preview-validate"));
+  expect(await screen.findByTestId("wizard-error")).toHaveTextContent(/response lost/i);
+  await user.click(screen.getByTestId("preview-validate"));
+  expect(await screen.findByTestId("preview-plan")).toHaveTextContent("Plan version: dsp-2");
+
+  const creates = fetchMock.mock.calls.filter(
+    ([input, init]) => String(input).endsWith("/api/datastreams") && init?.method === "POST",
+  );
+  const revisions = fetchMock.mock.calls.filter(([input, init]) => {
+    if (!String(input).endsWith("/api/datastreams/ds-new-1") || init?.method !== "PATCH") {
+      return false;
+    }
+    return JSON.parse(String(init.body)).intent != null;
+  });
+  expect(creates).toHaveLength(1);
+  expect(revisions).toHaveLength(1);
+});
+
+it("shows loading honestly and disables revoked or unhealthy provider accounts", async () => {
+  let resolveConnections!: (value: { connections: Array<Record<string, unknown>> }) => void;
+  const pendingConnections = new Promise<{ connections: Array<Record<string, unknown>> }>(
+    (resolve) => {
+      resolveConnections = resolve;
+    },
+  );
+  routedFetch({ connectionsLoader: () => pendingConnections });
+  const user = userEvent.setup();
+  renderWizard();
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
+  await user.type(screen.getByLabelText(/Datastream name/), "Account health");
+  await user.click(screen.getByTestId("source-kind-connector_pull"));
+  await user.click(screen.getByTestId("wizard-next"));
+  expect(screen.getByTestId("connections-loading")).toHaveTextContent(
+    "Loading provider accounts",
+  );
+  expect(screen.queryByText("No project-authorized provider accounts")).not.toBeInTheDocument();
+
+  resolveConnections({
+    connections: [
+      ...CONNECTIONS.connections,
+      {
+        id: "conn-revoked",
+        connection_ref_id: "cref-revoked",
+        provider: "meta_ads",
+        display_name: "Revoked account",
+        status: "revoked",
+        health: { status: "revoked" },
+      },
+      {
+        id: "conn-stale",
+        connection_ref_id: "cref-stale",
+        provider: "meta_ads",
+        display_name: "Stale account",
+        status: "active",
+        health: { status: "stale" },
+      },
+    ],
+  });
+  await waitFor(() => expect(screen.queryByTestId("connections-loading")).not.toBeInTheDocument());
+  const picker = within(screen.getByTestId("connector-connection")).getByRole("combobox");
+  await user.click(picker);
+  expect(
+    screen.getByRole("option", { name: /Meta Ads account.*healthy/i }),
+  ).not.toHaveAttribute("aria-disabled", "true");
+  expect(screen.getByRole("option", { name: /Revoked account.*revoked/i })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(screen.getByRole("option", { name: /Stale account.*not healthy/i })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+});
+it("ignores a stale capability response after the operator changes provider account", async () => {
+  let resolveFirst!: (value: unknown) => void;
+  const first = new Promise((resolve) => {
+    resolveFirst = resolve;
+  });
+  routedFetch({
+    connections: {
+      connections: [
+        ...CONNECTIONS.connections,
+        {
+          id: "conn-2",
+          connection_ref_id: "cref-2",
+          provider: "google_ads",
+          display_name: "Google Ads account",
+          status: "active",
+      health: { status: "ok", last_checked_at: "2026-07-26T12:00:00Z" },
+        },
+      ],
+    },
+    capabilityLoader: (connectionRefId) =>
+      connectionRefId === "cref-1"
+        ? first
+        : Promise.resolve(capabilities("cref-2", "google_daily")),
+  });
+  const user = userEvent.setup();
+  renderWizard();
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
+  await user.type(screen.getByLabelText(/Datastream name/), "Switch accounts");
   await user.click(screen.getByTestId("source-kind-connector_pull"));
   await user.click(screen.getByTestId("wizard-next"));
 
-  // Choose the connection -> capabilities load -> report + a metric.
-  const connSelect = within(screen.getByTestId("connector-connection")).getByRole("combobox");
-  await user.click(connSelect);
-  await user.click(await screen.findByRole("option", { name: /Meta Ads — Compte 1/ }));
+  const connection = within(screen.getByTestId("connector-connection")).getByRole("combobox");
+  await user.click(connection);
+  await user.click(await screen.findByRole("option", { name: /Meta Ads account/ }));
+  await user.click(connection);
+  await user.click(await screen.findByRole("option", { name: /Google Ads account/ }));
+  const report = within(await screen.findByTestId("connector-report")).getByRole("combobox");
+  await user.click(report);
+  await user.click(await screen.findByRole("option", { name: "google_daily" }));
+  resolveFirst(capabilities("cref-1", "stale_meta_report"));
+  await waitFor(() => expect(report).toHaveTextContent("google_daily"));
+  await user.click(report);
+  expect(screen.queryByRole("option", { name: "stale_meta_report" })).not.toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "google_daily" })).toBeInTheDocument();
+});
 
-  const reportSelect = within(await screen.findByTestId("connector-report")).getByRole("combobox");
-  await user.click(reportSelect);
-  await user.click(await screen.findByRole("option", { name: /campaign_daily/ }));
-
-  await user.click(await screen.findByLabelText("Métrique spend"));
-
-  // Validate -> no blocking issues -> final action enabled.
+it("rejects fresh validation evidence that does not match the saved immutable plan", async () => {
+  routedFetch({ validationCapabilityFingerprint: "cap-changed" });
+  const user = userEvent.setup();
+  renderWizard();
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
+  await chooseConnectorPlan(user);
   await user.click(screen.getByTestId("stepper-preview"));
   await user.click(screen.getByTestId("preview-validate"));
-  await waitFor(() => expect(screen.queryByTestId("preview-blocking")).not.toBeInTheDocument());
-
+  expect(await screen.findByTestId("wizard-error")).toHaveTextContent(
+    /Capability evidence no longer matches/,
+  );
+  expect(screen.queryByTestId("preview-plan")).not.toBeInTheDocument();
+});
+it("uses server validation issues to block activation", async () => {
+  routedFetch();
+  const user = userEvent.setup();
+  renderWizard();
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
+  await user.type(screen.getByLabelText(/Datastream name/), "Incomplete feed");
+  await user.click(screen.getByTestId("source-kind-connector_pull"));
+  await user.click(screen.getByTestId("stepper-preview"));
+  await user.click(screen.getByTestId("preview-validate"));
+  expect(await screen.findByTestId("preview-blocking")).toHaveTextContent("missing_metrics");
   await user.click(screen.getByTestId("stepper-schedule"));
-  // The honest Phase-B affordance is present and the button no longer says "Activer".
-  expect(screen.getByTestId("activation-phaseb")).toBeInTheDocument();
+  expect(screen.getByTestId("activate-datastream")).toBeDisabled();
+});
+
+it("validates, activates, and hands the created ID to post-create navigation", async () => {
+  const fetchMock = routedFetch();
+  const onActivated = vi.fn();
+  const user = userEvent.setup();
+  renderWizard({ onActivated });
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
+  await chooseConnectorPlan(user);
+
+  await user.click(screen.getByTestId("stepper-preview"));
+  await user.click(screen.getByTestId("preview-validate"));
+  expect(await screen.findByTestId("preview-plan")).toHaveTextContent("Plan version: dsp-1");
+  expect(screen.getByTestId("preview-intent-content-hash")).toHaveTextContent(
+    "Intent content hash ...hash-1",
+  );
+  expect(screen.getByTestId("preview-capability-fingerprint")).toHaveTextContent(
+    /Capability contract: 1.*fingerprint.*cap-1/,
+  );
+  await user.click(screen.getByTestId("stepper-schedule"));
   const activate = screen.getByTestId("activate-datastream");
-  expect(activate).toHaveTextContent(/prêt à activer/);
   expect(activate).toBeEnabled();
   await user.click(activate);
   await waitFor(() => expect(onActivated).toHaveBeenCalledWith("ds-new-1"));
 
-  // C2 honesty: the announcement does NOT claim the server activated the flow;
-  // it states the flow is ready to activate and activation is Phase B.
-  const live = screen.getByTestId("wizard-live");
-  expect(live).toHaveTextContent(/prêt à activer/);
-  expect(live).not.toHaveTextContent(/^Flux activé\.?$/);
-
-  // The final action actually POSTs a versioned intent (not a no-op / fabrication).
-  const createCall = fetchMock.mock.calls.find(
-    (c) => String(c[0]).endsWith("/api/datastreams") && (c[1] as RequestInit)?.method === "POST",
-  );
-  expect(createCall).toBeTruthy();
-  const intent = JSON.parse((createCall![1] as RequestInit).body as string).intent;
-  expect(intent.source.kind).toBe("connector_pull");
+  const activation = fetchMock.mock.calls.find(([input, init]) => {
+    if (!String(input).endsWith("/api/datastreams/ds-new-1") || init?.method !== "PATCH") {
+      return false;
+    }
+    return JSON.parse(String(init.body)).enabled === true;
+  });
+  expect(activation).toBeTruthy();
+  expect(JSON.parse(String((activation?.[1] as RequestInit).body))).toMatchObject({
+    project_id: "proj-1",
+    enabled: true,
+    plan_version_id: "dsp-1",
+  });
+  expect((activation?.[1] as RequestInit).headers).toMatchObject({
+    "Idempotency-Key": expect.any(String),
+  });
 });
 
-it("gates Google Sheets recurring sync when no Google connection exists (H2)", async () => {
-  // The default CONNECTIONS fixture has only a meta_ads connection (not Google).
-  routedFetch({});
+it("treats schedule changes after validation as drift and blocks activation", async () => {
+  routedFetch();
   const user = userEvent.setup();
   renderWizard();
-  await screen.findByRole("heading", { name: /Créer un flux/ });
-
-  await user.type(screen.getByLabelText(/Nom du flux/), "Flux Sheets");
-  await user.click(screen.getByTestId("source-kind-managed_feed"));
-  const format = screen.getByTestId("managed-format");
-  await user.selectOptions(within(format).getByRole("combobox"), "google_sheets");
-
-  await user.click(screen.getByTestId("stepper-configure"));
-  // The Sheets sub-flow surfaces the honest no-Google-connection gate rather than
-  // firing a configure call with a null connection_id.
-  expect(await screen.findByTestId("sheets-config")).toBeInTheDocument();
-  expect(screen.getByTestId("sheets-no-connection")).toBeInTheDocument();
-  // MUI renders a disabled select as a combobox with aria-disabled="true".
-  expect(
-    within(screen.getByTestId("sheets-connection")).getByRole("combobox"),
-  ).toHaveAttribute("aria-disabled", "true");
-});
-
-it("does NOT fire the Sheets configure call on Save draft when no Google connection is picked (H2)", async () => {
-  const fetchMock = routedFetch({ create: { id: "ds-new-1" } });
-  const user = userEvent.setup();
-  renderWizard();
-  await screen.findByRole("heading", { name: /Créer un flux/ });
-
-  await user.type(screen.getByLabelText(/Nom du flux/), "Flux Sheets");
-  await user.click(screen.getByTestId("source-kind-managed_feed"));
-  const format = screen.getByTestId("managed-format");
-  await user.selectOptions(within(format).getByRole("combobox"), "google_sheets");
-
-  // Provide spreadsheet + range but NO connection, then Save draft.
-  await user.click(screen.getByTestId("stepper-configure"));
-  await user.type(
-    within(await screen.findByTestId("sheets-spreadsheet")).getByRole("textbox"),
-    "sheet-123",
-  );
-  await user.type(within(screen.getByTestId("sheets-range")).getByRole("textbox"), "A:F");
-  await user.click(screen.getByTestId("wizard-save-draft"));
-
-  await waitFor(() =>
-    expect(screen.getByTestId("wizard-live")).toHaveTextContent("Brouillon enregistré"),
-  );
-  // The doomed configure call was never made (only the /api/datastreams create).
-  const configureCall = fetchMock.mock.calls.find((c) =>
-    String(c[0]).includes("/managed-feed/configure"),
-  );
-  expect(configureCall).toBeUndefined();
-  expect(screen.getByTestId("wizard-live")).toHaveTextContent(/connexion Google/);
-});
-
-it("drift after validation makes the preview obsolete and re-blocks activation", async () => {
-  routedFetch({});
-  const user = userEvent.setup();
-  renderWizard();
-  await screen.findByRole("heading", { name: /Créer un flux/ });
-
-  await user.type(screen.getByLabelText(/Nom du flux/), "Flux drift");
-  await user.click(screen.getByTestId("source-kind-connector_pull"));
-  await user.click(screen.getByTestId("wizard-next"));
-
-  const connSelect = within(screen.getByTestId("connector-connection")).getByRole("combobox");
-  await user.click(connSelect);
-  await user.click(await screen.findByRole("option", { name: /Meta Ads — Compte 1/ }));
-  const reportSelect = within(await screen.findByTestId("connector-report")).getByRole("combobox");
-  await user.click(reportSelect);
-  await user.click(await screen.findByRole("option", { name: /campaign_daily/ }));
-  await user.click(await screen.findByLabelText("Métrique spend"));
-
-  // Validate cleanly first.
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
+  await chooseConnectorPlan(user);
   await user.click(screen.getByTestId("stepper-preview"));
   await user.click(screen.getByTestId("preview-validate"));
-  await waitFor(() => expect(screen.queryByTestId("preview-blocking")).not.toBeInTheDocument());
-
-  // Now change the selection (drift) -> back on Preview it is obsolete.
-  await user.click(screen.getByTestId("stepper-configure"));
-  await user.click(await screen.findByLabelText("Dimension date"));
-  await user.click(screen.getByTestId("stepper-preview"));
-  // Re-validating would clear it; assert the drift banner OR that activation is
-  // blocked again on Schedule.
+  expect(await screen.findByTestId("preview-plan")).toBeInTheDocument();
   await user.click(screen.getByTestId("stepper-schedule"));
-  expect(screen.getByTestId("activation-blocked")).toBeInTheDocument();
+  expect(screen.getByTestId("activate-datastream")).toBeEnabled();
+  const timezone = within(screen.getByTestId("schedule-timezone")).getByRole("combobox");
+  await user.click(timezone);
+  await user.click(await screen.findByRole("option", { name: "UTC" }));
+  expect(await screen.findByTestId("activation-blocked")).toHaveTextContent(/changed/i);
   expect(screen.getByTestId("activate-datastream")).toBeDisabled();
+});
+
+it("resets draft identity and evidence when the route project changes", async () => {
+  const fetchMock = routedFetch();
+  const user = userEvent.setup();
+  const view = renderWizard();
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
+  await user.type(screen.getByLabelText(/Datastream name/), "Old project draft");
+  await user.click(screen.getByTestId("source-kind-external_bq"));
+
+  view.rerender(
+    <ThemeProvider theme={adminTheme}>
+      <CreerFluxWizard projectId="proj-2" />
+    </ThemeProvider>,
+  );
+
+  await waitFor(() => expect(screen.getByLabelText(/Datastream name/)).toHaveValue(""));
+  expect(screen.getByRole("radio", { name: /Existing BigQuery/ })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes("/api/connections?project_id=proj-2"),
+      ),
+    ).toBe(true),
+  );
+});
+
+it("surfaces structured draft-validation issues without a top-level message", async () => {
+  routedFetch({
+    draftIssues: [
+      {
+        code: "invalid_selection",
+        path: "$.source.selection.metrics",
+        message: "Choose at least one supported metric.",
+      },
+    ],
+  });
+  const user = userEvent.setup();
+  renderWizard();
+  await screen.findByRole("heading", { name: /Create a Datastream/ });
+  await user.type(screen.getByLabelText(/Datastream name/), "Invalid draft");
+  await user.click(screen.getByTestId("source-kind-external_bq"));
+  await user.click(screen.getByTestId("wizard-save-draft"));
+
+  expect(await screen.findByTestId("wizard-error")).toHaveTextContent(
+    "Choose at least one supported metric. ($.source.selection.metrics)",
+  );
 });

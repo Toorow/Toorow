@@ -1,19 +1,4 @@
-/**
- * Story 12.13 — Stage 5: Preview & validate (AC4, second half).
- *
- * Renders the versioned validation plan: interval / timezone, full grain, safe
- * KPI projection (12.4), DQ + rejections, the schema hash, and the frozen plan /
- * mapping versions. A "Valider le plan" action runs validation (produces the
- * plan + freezes the schema hash used for drift detection).
- *
- * DRIFT (AC4): when the source or schema hash observed now differs from the one
- * captured at validation time, the preview is marked OBSOLETE and revalidation
- * is required — this state disables activation until the operator revalidates.
- * Blocking issues also disable activation.
- *
- * WCAG: the obsolescence banner is textual + assertive-announced; the validate
- * result is announced by the parent live region; no colour-only status.
- */
+/** Stage 5: render and validate the server-owned immutable plan. */
 import {
   Alert,
   Box,
@@ -30,7 +15,6 @@ import type { ValidationPlan } from "./wizardTypes";
 interface Props {
   plan: ValidationPlan | null;
   validating: boolean;
-  /** True when the source/schema drifted since validation — preview is obsolete. */
   drifted: boolean;
   onValidate: () => void;
   canValidate: boolean;
@@ -39,11 +23,16 @@ interface Props {
 function formatInterval(
   interval: { start: string | null; end_exclusive: string | null } | null,
 ): string {
-  if (!interval || !interval.start) return "—";
-  const fmt = new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeZone: "UTC" });
-  const start = fmt.format(new Date(interval.start));
-  const end = interval.end_exclusive ? fmt.format(new Date(interval.end_exclusive)) : "…";
-  return `${start} → ${end}`;
+  if (!interval || !interval.start) return "-";
+  const formatter = new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  });
+  const start = formatter.format(new Date(interval.start));
+  const end = interval.end_exclusive
+    ? formatter.format(new Date(interval.end_exclusive))
+    : "open";
+  return `${start} to ${end}`;
 }
 
 export default function PreviewStage({
@@ -56,19 +45,9 @@ export default function PreviewStage({
   return (
     <Stack spacing={2} data-testid="stage-preview">
       <Typography color="text.secondary" variant="body2">
-        Validez le plan pour figer les versions, l’empreinte de schéma et la
-        projection sûre. Un changement de source ou de schéma rend l’aperçu
-        obsolète et impose une nouvelle validation.
+        Save and validate the exact plan against the current server capabilities.
+        Any later configuration change requires revalidation.
       </Typography>
-
-      {/* M1 — honest disclosure: this validation plan is a LOCAL estimate. */}
-      <Alert severity="info" data-testid="preview-local-estimate">
-        Estimation locale : cet aperçu est assemblé dans le navigateur à partir
-        des données déjà collectées. La classification et la qualité serveur
-        (Stories 12.3 / 12.4), ainsi que les identifiants de version de plan et de
-        mapping, seront calculés et figés côté serveur à la validation puis à
-        l’activation.
-      </Alert>
 
       <Box>
         <Button
@@ -77,20 +56,14 @@ export default function PreviewStage({
           disabled={!canValidate || validating}
           data-testid="preview-validate"
         >
-          {validating
-            ? "Validation en cours…"
-            : plan
-              ? "Revalider le plan"
-              : "Valider le plan"}
+          {validating ? "Validating..." : plan ? "Revalidate plan" : "Validate plan"}
         </Button>
       </Box>
 
-      {/* Drift makes the preview obsolete -> revalidation required (AC4). */}
       {drifted && plan && (
         <Alert severity="warning" role="alert" data-testid="preview-drift">
-          La source ou le schéma a changé depuis la dernière validation : cet
-          aperçu est <strong>obsolète</strong>. Revalidez le plan avant de pouvoir
-          activer.
+          The configuration changed after validation. This preview is obsolete;
+          revalidate before activation.
         </Alert>
       )}
 
@@ -99,77 +72,85 @@ export default function PreviewStage({
           <Divider />
           <Stack spacing={1} data-testid="preview-plan">
             <Typography variant="body2">
-              <strong>Intervalle :</strong> {formatInterval(plan.interval)}{" "}
+              <strong>Interval:</strong> {formatInterval(plan.interval)}{" "}
               {plan.timezone ? `(${plan.timezone})` : ""}
             </Typography>
             <Typography variant="body2">
-              <strong>Grain complet :</strong> {plan.full_grain.join(" · ") || "—"}
+              <strong>Full grain:</strong> {plan.full_grain.join(" / ") || "-"}
             </Typography>
 
             <Box>
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                Projection KPI sûre
+                Server-certified KPI projection
               </Typography>
               <List dense disablePadding>
-                {plan.safe_kpi_projection.map((k) => (
-                  <ListItem key={k.name} disableGutters sx={{ display: "block" }}>
+                {plan.safe_kpi_projection.map((kpi) => (
+                  <ListItem key={kpi.name} disableGutters sx={{ display: "block" }}>
                     <Typography variant="body2">
-                      {k.name}
-                      {k.expression ? ` — ${k.expression}` : ""}
+                      {kpi.name}
+                      {kpi.expression ? ` - ${kpi.expression}` : ""}
                     </Typography>
                   </ListItem>
                 ))}
                 {plan.safe_kpi_projection.length === 0 && (
                   <Typography variant="body2" color="text.secondary">
-                    Aucune projection.
+                    Not provided by this validation endpoint.
                   </Typography>
                 )}
               </List>
             </Box>
 
             <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
-              <Chip
-                size="small"
-                color={plan.dq?.degraded ? "warning" : "success"}
-                label={
-                  plan.dq
-                    ? plan.dq.degraded
-                      ? `Qualité dégradée · ${plan.dq.total_unresolved} non résolu(s)`
-                      : `Qualité OK · ${plan.dq.total_unresolved} non résolu(s)`
-                    : "Qualité : indisponible"
-                }
-              />
-              <Chip
-                size="small"
-                variant="outlined"
-                label={`Rejets : ${plan.rejected_count ?? 0}`}
-              />
+              {plan.dq && (
+                <Chip
+                  size="small"
+                  color={plan.dq.degraded ? "warning" : "default"}
+                  label={`Server DQ: ${plan.dq.total_unresolved} unresolved`}
+                />
+              )}
+              {plan.rejected_count != null && (
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={`Import preview rejected rows: ${plan.rejected_count}`}
+                />
+              )}
             </Stack>
 
             <Typography
               component="code"
               variant="caption"
-              data-testid="preview-schema-hash"
+              data-testid="preview-intent-content-hash"
               sx={{ fontFamily: "var(--font-mono, monospace)", overflowWrap: "anywhere" }}
             >
-              empreinte schéma …{(plan.schema_hash ?? "").slice(-12) || "?"}
+              Intent content hash ...
+              {(plan.intent_content_hash ?? "").slice(-12) || "not supplied"}
+            </Typography>
+            <Typography
+              component="code"
+              variant="caption"
+              data-testid="preview-capability-fingerprint"
+              sx={{ fontFamily: "var(--font-mono, monospace)", overflowWrap: "anywhere" }}
+            >
+              Capability contract: {plan.capability_contract_version ?? "not applicable"} /{" "}
+              fingerprint ...
+              {(plan.capability_fingerprint ?? "").slice(-12) || "not applicable"}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Version de plan : {plan.plan_version_id ?? "—"} · Version de mapping :{" "}
-              {plan.mapping_version_id ?? "—"}
+              Plan version: {plan.plan_version_id ?? "-"} / Mapping version:{" "}
+              {plan.mapping_version_id ?? "not created"}
             </Typography>
 
-            {/* Blocking issues disable activation (AC1). */}
             {plan.blocking_issues.length > 0 && (
               <Alert severity="error" role="alert" data-testid="preview-blocking">
                 <Typography variant="subtitle2">
-                  Problèmes bloquants ({plan.blocking_issues.length})
+                  Blocking issues ({plan.blocking_issues.length})
                 </Typography>
                 <List dense disablePadding>
                   {plan.blocking_issues.map((issue) => (
                     <ListItem key={issue.code} disableGutters sx={{ display: "block" }}>
                       <Typography variant="body2">
-                        <strong>{issue.code} :</strong> {issue.message}
+                        <strong>{issue.code}:</strong> {issue.message}
                       </Typography>
                     </ListItem>
                   ))}

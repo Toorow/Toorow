@@ -21,6 +21,10 @@ flowchart LR
     B & C & D & E & F --> G["DQ Ledger & Alert Dispatch"]
 ```
 
+### Admin Console: Quality Dashboard
+
+![Quality Dashboard — 4 monitors at 100% health: Volume, Ponctualité, Doublons, Cohérence de schéma](/images/dq-monitors.png)
+
 ### 1. Volume Anomaly Monitor (`volume`)
 Detects unexpected drops or spikes in ingested row counts compared to historical trailing averages.
 - **Baseline Window**: 30-day trailing mean and standard deviation.

@@ -884,7 +884,7 @@ def read_datastream_sample(
 
     Returns a dict:
         ``{"served_stage": str, "stage_note": str|None, "masked_fields": [...],
-           "days": [{"date", "row_count", "rejection_count", "field_count",
+           "days": [{"date", "sampled_row_count", "rejection_count", "field_count",
                      "rows": [{col: value, ...}]}]}``
 
     Raises ``SampleReadError`` (never a raw exception) on bad input / backend down.
@@ -899,6 +899,28 @@ def read_datastream_sample(
         )
     per_day_limit = max(1, min(int(limit or _SAMPLE_DEFAULT_LIMIT), _SAMPLE_MAX_LIMIT))
     days = _daterange_days(date_from, date_to)
+    if not connector:
+        return {
+            "served_stage": _SAMPLE_SERVED_STAGE,
+            "stage_note": (
+                "This Datastream has no connector-scoped consolidated mart "
+                "materialisation; no sample was served."
+            ),
+            "materialization_available": False,
+            "sample_watermark": None,
+            "masked_fields": [],
+            "masked_value_count": 0,
+            "days": [
+                {
+                    "date": day,
+                    "sampled_row_count": 0,
+                    "rejection_count": None,
+                    "field_count": 0,
+                    "rows": [],
+                }
+                for day in days
+            ],
+        }
 
     from core import warehouse  # noqa: PLC0415
 
@@ -922,26 +944,39 @@ def read_datastream_sample(
         return {
             "served_stage": _SAMPLE_SERVED_STAGE,
             "stage_note": note,
+            "materialization_available": False,
+            "sample_watermark": None,
             "masked_fields": [],
+            "masked_value_count": 0,
             "days": [
-                {"date": d, "row_count": 0, "rejection_count": 0,
+                {"date": d, "sampled_row_count": 0, "rejection_count": 0,
                  "field_count": 0, "rows": []}
                 for d in days
             ],
         }
 
-    masked_set = frozenset(_pii_columns(col_names))
+    # Long-form marts can carry sensitive dimension values under a generic column.
+    # Without field-level classification evidence, mask that column conservatively.
+    generic_sensitive = ["breakdown_value"] if "breakdown_value" in col_names else []
+    masked_set = frozenset(_pii_columns(col_names) + generic_sensitive)
     field_count = len(col_names)
     order_cols = [c for c in _SAMPLE_ORDER_COLUMNS if c in col_names]
 
     # Cell-budget guard: shrink the per-day limit if a very wide relation x day span
     # would exceed the total cell budget (rows x columns). Evidence stays bounded.
     if field_count > 0:
-        max_total_rows = max(1, _SAMPLE_CELL_BUDGET // field_count)
-        max_rows_per_day = max(1, max_total_rows // max(1, len(days)))
+        minimum_cells = field_count * len(days)
+        if minimum_cells > _SAMPLE_CELL_BUDGET:
+            raise SampleReadError(
+                "sample_too_wide",
+                "one row per requested day exceeds the bounded sample cell budget",
+            )
+        max_total_rows = _SAMPLE_CELL_BUDGET // field_count
+        max_rows_per_day = max_total_rows // max(1, len(days))
         per_day_limit = min(per_day_limit, max_rows_per_day, _SAMPLE_MAX_LIMIT)
 
     day_payloads: list[dict] = []
+    masked_value_count = 0
     for day in days:
         try:
             rows = _sample_day_rows(
@@ -955,13 +990,17 @@ def read_datastream_sample(
 
         masked_rows: list[dict] = []
         for raw_row in rows:
-            masked_rows.append(
-                {col: _mask_cell(raw_row.get(col), col, masked_set) for col in col_names}
-            )
+            masked_row: dict = {}
+            for col in col_names:
+                raw_value = raw_row.get(col)
+                if col in masked_set and raw_value not in (None, _SAMPLE_MASK_SENTINEL):
+                    masked_value_count += 1
+                masked_row[col] = _mask_cell(raw_value, col, masked_set)
+            masked_rows.append(masked_row)
         day_payloads.append(
             {
                 "date": day,
-                "row_count": len(masked_rows),
+                "sampled_row_count": len(masked_rows),
                 # Rejection materialisation (managed-feed rejected rows) is a
                 # SEPARATE Postgres surface; the warehouse mart carries no rejected
                 # rows, so mart-stage evidence honestly reports 0 here. The HTTP
@@ -972,10 +1011,15 @@ def read_datastream_sample(
             }
         )
 
+    non_empty_days = [day["date"] for day in day_payloads if day["rows"]]
+
     return {
         "served_stage": _SAMPLE_SERVED_STAGE,
         "stage_note": _sample_stage_note(stage),
+        "materialization_available": True,
+        "sample_watermark": non_empty_days[-1] if non_empty_days else None,
         "masked_fields": sorted(masked_set),
+        "masked_value_count": masked_value_count,
         "days": day_payloads,
     }
 
@@ -993,7 +1037,7 @@ def _sample_stage_note(requested_stage: str) -> str | None:
         f"Requested stage '{requested_stage}' has no distinct warehouse "
         f"materialisation; served the closest available stage "
         f"'{_SAMPLE_SERVED_STAGE}' (consolidated mart). Stage version provenance "
-        f"is still reported from the datastream's Postgres pointers."
+        f"cannot be version-bound by the current mart."
     )
 
 
@@ -1020,7 +1064,7 @@ def _sample_relation_columns(warehouse, mode: str, project_id: str, relation: st
             _quote_ident(relation)
             try:
                 rel = con.execute(f"SELECT * FROM {prefix}{relation} LIMIT 0")  # noqa: S608
-            except Exception:  # noqa: BLE001 -- relation absent => honest empty
+            except duckdb.CatalogException:
                 return []
             return [d[0] for d in rel.description]
         finally:
@@ -1078,7 +1122,7 @@ def _sample_day_rows(
         dataset = warehouse_tenancy.bigquery_marts_dataset(project_id)
         sql = (
             f"SELECT * FROM `{dataset}`.{relation} "  # noqa: S608 -- relation is a constant
-            "WHERE project_id = @p0 AND connector = @p1 AND date = @p2 "
+            "WHERE project_id = @p0 AND connector = @p1 AND date = DATE(@p2) "
             f"ORDER BY {order_by} LIMIT {safe_limit}"
         )
         return warehouse._query_bigquery(sql, [project_id, connector, day])

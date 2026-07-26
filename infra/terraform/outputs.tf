@@ -75,11 +75,11 @@ output "inbound_bridge_url" {
 output "inbound_bridge_readiness_id" {
   description = "Readiness identifiers for the inbound bridge (service name, region, runtime SA email, Pub/Sub invoker SA email, topic, subscription). No secret and no Datastream capability — pure provisioning identifiers."
   value = {
-    service_name    = google_cloud_run_v2_service.inbound_bridge.name
-    region          = var.region
-    runtime_sa      = google_service_account.inbound_bridge.email
-    invoker_sa      = google_service_account.inbound_pubsub_invoker.email
-    manifest_topic  = google_pubsub_topic.inbound_manifest.name
+    service_name      = google_cloud_run_v2_service.inbound_bridge.name
+    region            = var.region
+    runtime_sa        = google_service_account.inbound_bridge.email
+    invoker_sa        = google_service_account.inbound_pubsub_invoker.email
+    manifest_topic    = google_pubsub_topic.inbound_manifest.name
     push_subscription = google_pubsub_subscription.inbound_manifest_push.name
   }
 }

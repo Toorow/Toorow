@@ -223,7 +223,9 @@ class TestPhysicalTypeMapping:
     def test_all_map_values_are_valid(self):
         valid = {"string", "integer", "decimal", "boolean", "date", "datetime", "json"}
         for token, pt in PHYSICAL_TYPE_MAP.items():
-            assert pt in valid, f"PHYSICAL_TYPE_MAP[{token!r}] = {pt!r} is not a valid physical_type"
+            assert pt in valid, (
+                f"PHYSICAL_TYPE_MAP[{token!r}] = {pt!r} is not a valid physical_type"
+            )
 
 
 # ===========================================================================
@@ -251,12 +253,22 @@ def _make_sources_config(**overrides) -> dict:
     return base
 
 
-def _make_official(field_id: str, kind: str = "metric", data_type: str = "int", section: str = "AD") -> OfficialField:
+def _make_official(
+    field_id: str, kind: str = "metric", data_type: str = "int", section: str = "AD"
+) -> OfficialField:
     return OfficialField(field_id=field_id, kind=kind, data_type=data_type, section=section)
 
 
-def _make_enrichment(field_id: str, kind: str = "metric", data_type: str = "int", section: str = "AD", description: str | None = None) -> EnrichmentField:
-    return EnrichmentField(field_id=field_id, kind=kind, data_type=data_type, description=description, section=section)
+def _make_enrichment(
+    field_id: str,
+    kind: str = "metric",
+    data_type: str = "int",
+    section: str = "AD",
+    description: str | None = None,
+) -> EnrichmentField:
+    return EnrichmentField(
+        field_id=field_id, kind=kind, data_type=data_type, description=description, section=section
+    )
 
 
 class TestMergeAuthority:
@@ -284,15 +296,43 @@ class TestMergeAuthority:
         assert report.enrichment_only == 1
 
     def test_enrichment_description_used_when_official_has_none(self):
-        official = [OfficialField(field_id="f1", kind="metric", data_type="int", section="AD", description=None)]
-        enrichment = [EnrichmentField(field_id="f1", kind="metric", data_type="int", description="Enriched desc", section="AD")]
+        official = [
+            OfficialField(
+                field_id="f1", kind="metric", data_type="int", section="AD", description=None
+            )
+        ]
+        enrichment = [
+            EnrichmentField(
+                field_id="f1",
+                kind="metric",
+                data_type="int",
+                description="Enriched desc",
+                section="AD",
+            )
+        ]
         catalog, _ = merge(official, enrichment, {}, _make_sources_config())
         f1 = next(f for f in catalog["fields"] if f["field_id"] == "f1")
         assert f1["description"] == "Enriched desc"
 
     def test_official_description_takes_priority_over_enrichment(self):
-        official = [OfficialField(field_id="f1", kind="metric", data_type="int", section="AD", description="Official desc")]
-        enrichment = [EnrichmentField(field_id="f1", kind="metric", data_type="int", description="Enriched desc", section="AD")]
+        official = [
+            OfficialField(
+                field_id="f1",
+                kind="metric",
+                data_type="int",
+                section="AD",
+                description="Official desc",
+            )
+        ]
+        enrichment = [
+            EnrichmentField(
+                field_id="f1",
+                kind="metric",
+                data_type="int",
+                description="Enriched desc",
+                section="AD",
+            )
+        ]
         catalog, _ = merge(official, enrichment, {}, _make_sources_config())
         f1 = next(f for f in catalog["fields"] if f["field_id"] == "f1")
         assert f1["description"] == "Official desc"
@@ -300,7 +340,11 @@ class TestMergeAuthority:
     def test_kind_from_official_not_enrichment(self):
         """Even if enrichment says 'dimension', official kind wins."""
         official = [OfficialField(field_id="f1", kind="metric", data_type="int", section="AD")]
-        enrichment = [EnrichmentField(field_id="f1", kind="dimension", data_type="int", description=None, section="AD")]
+        enrichment = [
+            EnrichmentField(
+                field_id="f1", kind="dimension", data_type="int", description=None, section="AD"
+            )
+        ]
         catalog, _ = merge(official, enrichment, {}, _make_sources_config())
         f1 = next(f for f in catalog["fields"] if f["field_id"] == "f1")
         assert f1["kind"] == "metric"
@@ -355,7 +399,9 @@ class TestMergeTier:
 
     def test_default_tier_when_section_not_mapped(self):
         official = [_make_official("f1", section="UNKNOWN_SECTION")]
-        catalog, _ = merge(official, [], {}, _make_sources_config(section_tier_map={}, default_tier="advanced"))
+        catalog, _ = merge(
+            official, [], {}, _make_sources_config(section_tier_map={}, default_tier="advanced")
+        )
         f1 = next(f for f in catalog["fields"] if f["field_id"] == "f1")
         assert f1["tier"] == "advanced"
 
@@ -446,6 +492,7 @@ class TestMergeSchemaValidity:
 
         sm_text = (_FIXTURES / "supermetrics_excerpt.md").read_text(encoding="utf-8")
         from catalog_gen.supermetrics_parser import parse_supermetrics_markdown  # noqa: PLC0415
+
         sm_entries = parse_supermetrics_markdown(sm_text)
         enrichment = [
             EnrichmentField(
@@ -459,12 +506,8 @@ class TestMergeSchemaValidity:
             for e in sm_entries
         ]
 
-        manifest = json.loads(
-            (_FIXTURES / "manifest_mini.json").read_text(encoding="utf-8")
-        )
-        cfg = json.loads(
-            (_FIXTURES / "sources_config_mini.json").read_text(encoding="utf-8")
-        )
+        manifest = json.loads((_FIXTURES / "manifest_mini.json").read_text(encoding="utf-8"))
+        cfg = json.loads((_FIXTURES / "sources_config_mini.json").read_text(encoding="utf-8"))
 
         catalog, report = merge(official, enrichment, manifest, cfg)
         issues = validate_catalog_schema(catalog)
@@ -557,15 +600,12 @@ class TestCliEndToEnd:
     @staticmethod
     def _write_sources_dir(tmp_path: Path) -> Path:
         official = [
-            {"field_id": "alpha_metric", "kind": "metric", "data_type": "int",
-             "section": "ALPHA"},
+            {"field_id": "alpha_metric", "kind": "metric", "data_type": "int", "section": "ALPHA"},
             {"field_id": "beta_dimension", "kind": "dimension"},
             # duplicate on purpose: merge must dedup and report it (review F-B1)
             {"field_id": "alpha_metric", "kind": "metric"},
         ]
-        (tmp_path / "official_fields.json").write_text(
-            json.dumps(official), encoding="utf-8"
-        )
+        (tmp_path / "official_fields.json").write_text(json.dumps(official), encoding="utf-8")
         config = {
             "connector": "zz-e2e-module",
             "api_version": "v1-test",
@@ -582,9 +622,7 @@ class TestCliEndToEnd:
                 },
             ],
         }
-        (tmp_path / "catalog_sources.json").write_text(
-            json.dumps(config), encoding="utf-8"
-        )
+        (tmp_path / "catalog_sources.json").write_text(json.dumps(config), encoding="utf-8")
         return tmp_path
 
     def _build(self, tmp_path: Path, **kwargs):
@@ -604,10 +642,7 @@ class TestCliEndToEnd:
         catalog = json.loads(out_path.read_text(encoding="utf-8"))
         assert validate_catalog_schema(catalog) == []
         # F-A1: only the emitted keys survive the projection
-        assert all(
-            set(entry) <= {"url", "kind", "fetched_at"}
-            for entry in catalog["sources"]
-        )
+        assert all(set(entry) <= {"url", "kind", "fetched_at"} for entry in catalog["sources"])
         ids = [f["field_id"] for f in catalog["fields"]]
         assert ids == ["alpha_metric", "beta_dimension"]  # deduped + sorted
         by_id = {f["field_id"]: f for f in catalog["fields"]}
@@ -630,14 +665,16 @@ class TestCliEndToEnd:
         import build_api_catalog
 
         official = [
-            {"field_id": "date", "kind": "dimension", "data_type": "date",
-             "section": "TIME", "source_field": "date_start"},
-            {"field_id": "spend", "kind": "metric", "data_type": "currency",
-             "section": "COST"},
+            {
+                "field_id": "date",
+                "kind": "dimension",
+                "data_type": "date",
+                "section": "TIME",
+                "source_field": "date_start",
+            },
+            {"field_id": "spend", "kind": "metric", "data_type": "currency", "section": "COST"},
         ]
-        (tmp_path / "official_fields.json").write_text(
-            json.dumps(official), encoding="utf-8"
-        )
+        (tmp_path / "official_fields.json").write_text(json.dumps(official), encoding="utf-8")
         config = {
             "connector": "zz-sf-module",
             "api_version": "v23.0",
@@ -653,9 +690,7 @@ class TestCliEndToEnd:
                 },
             ],
         }
-        (tmp_path / "catalog_sources.json").write_text(
-            json.dumps(config), encoding="utf-8"
-        )
+        (tmp_path / "catalog_sources.json").write_text(json.dumps(config), encoding="utf-8")
         out_path = tmp_path / "out" / "api_catalog.json"
         build_api_catalog.build_catalog(
             module="zz-sf-module-does-not-exist",
@@ -681,17 +716,24 @@ class TestExposurePolicy:
             "api_version": "v1",
             "generated_at": "2026-07-21T00:00:00Z",
             "sources": [
-                {"url": "https://o.example", "kind": "official",
-                 "fetched_at": "2026-07-21T00:00:00Z"}
+                {
+                    "url": "https://o.example",
+                    "kind": "official",
+                    "fetched_at": "2026-07-21T00:00:00Z",
+                }
             ],
         }
         if policy:
             config["exposure_policy"] = policy
         if excluded is not None:
             config["excluded_sections"] = excluded
-        manifest = {"source_capabilities": {"fields": [
-            {"field_id": i, "kind": "metric", "source_field": i} for i in manifest_ids
-        ]}}
+        manifest = {
+            "source_capabilities": {
+                "fields": [
+                    {"field_id": i, "kind": "metric", "source_field": i} for i in manifest_ids
+                ]
+            }
+        }
         fields = [
             OfficialField(field_id="alpha_metric", kind="metric", section="ALPHA"),
             OfficialField(field_id="beta_metric", kind="metric", section="BETA"),
@@ -705,16 +747,15 @@ class TestExposurePolicy:
         assert by_id["beta_metric"]["exposure"] == "planned"
 
     def test_catalog_driven_exposes_everything_not_excluded(self):
-        by_id = self._merge(policy="catalog_driven",
-                            excluded={"BETA": "shape not implemented"})
+        by_id = self._merge(policy="catalog_driven", excluded={"BETA": "shape not implemented"})
         assert by_id["alpha_metric"]["exposure"] == "exposed"
         assert by_id["beta_metric"]["exposure"] == "excluded"
         assert by_id["beta_metric"]["exclusion_reason"] == "shape not implemented"
 
     def test_manifest_field_stays_exposed_even_in_excluded_section(self):
-        by_id = self._merge(policy="catalog_driven",
-                            excluded={"ALPHA": "reason"},
-                            manifest_ids=("alpha_metric",))
+        by_id = self._merge(
+            policy="catalog_driven", excluded={"ALPHA": "reason"}, manifest_ids=("alpha_metric",)
+        )
         assert by_id["alpha_metric"]["exposure"] == "exposed"
 
     def test_invalid_policy_raises(self):

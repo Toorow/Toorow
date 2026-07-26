@@ -3,151 +3,132 @@
  *
  * PURPOSE
  * Provenance answers one question: "where did this published number come from?".
- * In toorow every published figure carries provenance in its envelope
- * `meta.provenance`:
- *   - the pull_ids that fed it,
- *   - the mapping version used to shape it,
- *   - the published execution pointer that produced it, and
- *   - for money, the FX as-of-day rate used to convert AT READ
- *     (epic 39: FX AT READ, with as-of-day provenance).
- * This is a Governance surface: it explains how the data are verified and
- * traceable back to their inputs.
+ * It is the verification apparatus itself, which is exactly why it must never
+ * show anything it did not read.
  *
- * The application shell (ApplicationShell.tsx) already renders the frame,
- * sidebar, topbar, and <main>. This component renders ONLY the page content that
- * lives inside <main>: the page header, a short "what provenance guarantees"
- * explainer panel, and a panel with a table of recent published figures /
- * executions.
+ * ── Data ─────────────────────────────────────────────────────────────────────
+ * There is no single /api/provenance endpoint. The real publication lineage is
+ * the per-datastream publication log, composed here from two reads:
+ *   1. GET /api/datastreams?project_id=…                    → the fleet
+ *   2. GET /api/datastreams/{id}/publications?project_id=…  → {publications: [...]}
+ * Each publication row carries `execution_id`, `plan_version_id`,
+ * `mapping_version_id`, `content_hash`, `row_count`, `prior_execution_id`,
+ * `published_at` and `published_by` — every column below is one of those fields.
  *
- * Styling: application.css (global, via the shell) for shell/layout classes
- * (page-header, panel, signal-label, signal-mark, number, mono/event) +
- * provenance.css for the page-specific explainer rows and lineage table. Colors
- * come exclusively from the application.css CSS variables (dark-safe); IDs use
- * JetBrains Mono (.mono) and numbers/dates use Geist tabular (.number).
+ * What is NOT shown, and why: the pull ids that fed a figure and the FX as-of-day
+ * rate live in the published figure's AD-1 envelope (`meta.provenance`), which no
+ * HTTP read exposes today. They are therefore ABSENT, not approximated.
  *
- * ── Data ──────────────────────────────────────────────────────────────────────
- * There is no single dedicated provenance endpoint yet. The real source is the
- * published state of GET /api/datastreams plus each published figure's envelope
- * `meta.provenance` (pull_ids, mapping_version, published execution pointer, and
- * — for money — the FX as-of-day rate). Until that read is wired, the surface
- * renders designed, honest placeholder content, each block flagged with
- * // TODO(api) (exactly as Overview.tsx and CountrySplit.tsx use mockup literals
- * + TODO(api)). The page renders finished with no backend.
+ * History (audit 2026-07-25): this page made no network call at all. It invented
+ * pull ids ("pull_9f2ac1"), mapping versions ("mapping_v17"), exchange rates with
+ * an as-of date ("1 USD = 0.9184 EUR", "2026-07-22") and client names ("Acme",
+ * "Northwind") — a fabricated audit trail on the one surface whose entire job is
+ * to prove that figures are traceable. Removed in full.
+ *
+ * Styling: application.css (global, via the shell) + provenance.css. Colors come
+ * exclusively from the application.css CSS variables (dark-safe).
  */
-import type { ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import ConnectorLogo from "../ConnectorLogo";
+import { apiGet } from "../../lib/apiFetch";
 import "../application.css";
 import "./provenance.css";
 
 // ---------------------------------------------------------------------------
-// View model — one published figure and the provenance envelope behind it.
-// TODO(api): every field below is a designed placeholder. The real source is
-// GET /api/datastreams published state + each figure's envelope meta.provenance.
+// API shapes (only the fields this page reads are declared)
 // ---------------------------------------------------------------------------
 
-interface ProvenanceRow {
-  /** Connector/provider id resolved through ConnectorLogo's managed registry. */
-  provider: string;
-  datastream: string; // friendly datastream label
-  metric: string; // the published figure / metric name
-  metricNote: string; // grain / scope note under the metric
-  pullIds: string[]; // pull_ids that fed this figure (mono)
-  mappingVersion: string; // mapping version used, e.g. "mapping_v17" (mono)
-  /** FX as-of-day provenance — null when the figure is single-currency. */
-  fx: { asOf: string; rate: string } | null;
-  published: string; // published execution date (Geist tabular)
+interface DatastreamSummary {
+  id: string;
+  name: string;
+  module_name?: string | null;
+  source_kind?: string | null;
+  [k: string]: unknown;
 }
 
-// Mockup literals — the validated placeholder lineage. Rendered verbatim so the
-// surface is finished with no backend.
-// TODO(api): replace with GET /api/datastreams published state + meta.provenance.
-const MOCK_ROWS: ProvenanceRow[] = [
-  {
-    provider: "meta",
-    datastream: "Meta Ads · Acme",
-    metric: "Media spend",
-    metricNote: "EUR · daily grain",
-    pullIds: ["pull_9f2ac1", "pull_9f2b07", "pull_9f2b44"],
-    mappingVersion: "mapping_v17",
-    fx: { asOf: "2026-07-22", rate: "1 USD = 0.9184 EUR" },
-    published: "22 Jul 2026",
-  },
-  {
-    provider: "google-ads",
-    datastream: "Google Ads · Northwind",
-    metric: "Media spend",
-    metricNote: "EUR · daily grain",
-    pullIds: ["pull_7c10de", "pull_7c1122"],
-    mappingVersion: "mapping_v17",
-    fx: { asOf: "2026-07-22", rate: "1 USD = 0.9184 EUR" },
-    published: "22 Jul 2026",
-  },
-  {
-    provider: "google-analytics",
-    datastream: "GA4 · acme.com",
-    metric: "Revenue",
-    metricNote: "EUR · daily grain",
-    pullIds: ["pull_4b88a0"],
-    mappingVersion: "mapping_v16",
-    fx: { asOf: "2026-07-21", rate: "1 USD = 0.9203 EUR" },
-    published: "21 Jul 2026",
-  },
-  {
-    provider: "google-analytics",
-    datastream: "GA4 · acme.com",
-    metric: "Sessions",
-    metricNote: "count · daily grain",
-    pullIds: ["pull_4b88a0"],
-    mappingVersion: "mapping_v16",
-    fx: null, // single-currency figure — no FX applied
-    published: "21 Jul 2026",
-  },
-  {
-    provider: "google-sheets",
-    datastream: "Media plan · Planning team",
-    metric: "Planned spend",
-    metricNote: "EUR · monthly grain",
-    pullIds: ["pull_2fd001", "pull_2fd014", "pull_2fd022", "pull_2fd031"],
-    mappingVersion: "mapping_v17",
-    fx: { asOf: "2026-07-20", rate: "1 GBP = 1.1642 EUR" },
-    published: "20 Jul 2026",
-  },
-  {
-    provider: "meta",
-    datastream: "Meta Ads · Acme",
-    metric: "ROAS",
-    metricNote: "ratio · daily grain",
-    pullIds: ["pull_9f2ac1"],
-    mappingVersion: "mapping_v17",
-    fx: null, // derived ratio — currency cancels, no FX applied
-    published: "19 Jul 2026",
-  },
-];
+interface PublicationRow {
+  id?: string;
+  execution_id?: string | null;
+  mapping_version_id?: string | null;
+  plan_version_id?: string | null;
+  content_hash?: string | null;
+  row_count?: number | null;
+  published_at?: string | null;
+  published_by?: string | null;
+  [k: string]: unknown;
+}
 
-// The four things a published figure's provenance guarantees. Calm explainer
-// rows. TODO(api): each maps to an envelope meta.provenance field.
+interface PublicationsResponse {
+  publications?: PublicationRow[];
+}
+
+/** A publication joined to the datastream it belongs to. */
+interface LineageRow {
+  key: string;
+  datastreamId: string;
+  datastreamName: string;
+  provider: string;
+  executionId: string | null;
+  mappingVersionId: string | null;
+  contentHash: string | null;
+  rowCount: number | null;
+  publishedAt: string | null;
+  publishedBy: string | null;
+}
+
+type LoadState = "loading" | "error" | "ready";
+
+/** Newest publications first; the page shows the most recent slice. */
+const MAX_ROWS = 50;
+
+// ---------------------------------------------------------------------------
+// Formatting — "—" whenever the field is absent. Never a substitute value.
+// ---------------------------------------------------------------------------
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** Long opaque ids are truncated for the cell; the full value stays in `title`. */
+function shortId(value: string | null): string {
+  if (!value) return "—";
+  return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+}
+
+function providerOf(ds: DatastreamSummary): string {
+  return (ds.module_name || ds.source_kind || "").toLowerCase();
+}
+
+// ---------------------------------------------------------------------------
+// What the publication log records. Descriptive copy about the CONTRACT, each
+// line naming the field the column above it is read from — no data claimed.
+// ---------------------------------------------------------------------------
+
 interface Guarantee {
   title: string;
   copy: string;
-  mono: string; // the envelope key this guarantee reads from (mono)
+  field: string;
   icon: ReactElement;
 }
 
 const GUARANTEES: Guarantee[] = [
   {
-    title: "Pull lineage",
-    copy: "Every published figure records the exact pull ids that fed it, so any number traces back to the raw extractions behind it.",
-    mono: "meta.provenance.pull_ids",
+    title: "Published execution",
+    copy: "Each publication pins the execution that produced it, so the run behind a live figure is always recoverable.",
+    field: "execution_id",
     icon: (
       <svg viewBox="0 0 24 24">
-        <path d="M7 7h10v10H7zM7 12H3M21 12h-4M12 7V3M12 21v-4" />
+        <path d="M12 7v5l3 2M20 12a8 8 0 11-16 0 8 8 0 0116 0z" />
       </svg>
     ),
   },
   {
     title: "Mapping version",
-    copy: "The mapping version that shaped the figure is pinned, so you can see which canonical rules were in force when it was published.",
-    mono: "meta.provenance.mapping_version",
+    copy: "The mapping version that shaped the rows is pinned, so you can see which canonical rules were in force at publication.",
+    field: "mapping_version_id",
     icon: (
       <svg viewBox="0 0 24 24">
         <path d="M4 6h16M4 12h12M4 18h8" />
@@ -155,37 +136,126 @@ const GUARANTEES: Guarantee[] = [
     ),
   },
   {
-    title: "FX as-of-day",
-    copy: "Money is converted at read using the as-of-day rate for the figure's date, and that rate is recorded — never re-derived after the fact.",
-    mono: "meta.provenance.fx_as_of",
+    title: "Content hash",
+    copy: "A hash of the published content makes the publication verifiable: the same inputs reproduce the same hash.",
+    field: "content_hash",
     icon: (
       <svg viewBox="0 0 24 24">
-        <path d="M6 18L18 6M8 7h.01M16 17h.01" />
+        <path d="M7 7h10v10H7zM7 12H3M21 12h-4M12 7V3M12 21v-4" />
       </svg>
     ),
   },
   {
-    title: "Published execution",
-    copy: "A pointer to the execution that published the figure closes the loop: the run, its inputs, and the moment it went live are all recoverable.",
-    mono: "meta.provenance.published_execution",
+    title: "Publisher and moment",
+    copy: "Who published, and when. Together with the prior execution pointer this closes the chain between two published states.",
+    field: "published_by · published_at",
     icon: (
       <svg viewBox="0 0 24 24">
-        <path d="M12 7v5l3 2M20 12a8 8 0 11-16 0 8 8 0 0116 0z" />
+        <path d="M12 12a4 4 0 100-8 4 4 0 000 8zM5 20a7 7 0 0114 0" />
       </svg>
     ),
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 interface ProvenanceProps {
   projectId?: string;
 }
 
 export default function Provenance({ projectId }: ProvenanceProps) {
-  // projectId will scope GET /api/datastreams once the published-state read is
-  // wired; referenced here so the prop is part of the contract from day one.
-  void projectId;
+  const [state, setState] = useState<LoadState>("loading");
+  const [error, setError] = useState("");
+  const [rows, setRows] = useState<LineageRow[]>([]);
+  const [unreadable, setUnreadable] = useState(0);
+  const [streamNames, setStreamNames] = useState<{ id: string; name: string }[]>([]);
+  const [filter, setFilter] = useState("all");
+  const [attempt, setAttempt] = useState(0);
 
-  const rows = MOCK_ROWS;
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
+  useEffect(() => {
+    let alive = true;
+    setState("loading");
+    setError("");
+    setUnreadable(0);
+
+    if (!projectId) {
+      setState("error");
+      setError("No project in scope.");
+      return;
+    }
+    const scope = `project_id=${encodeURIComponent(projectId)}`;
+
+    (async () => {
+      try {
+        const fleet = await apiGet<DatastreamSummary[]>(`/api/datastreams?${scope}`);
+        const streams = Array.isArray(fleet) ? fleet : [];
+        if (!alive) return;
+        setStreamNames(streams.map((ds) => ({ id: ds.id, name: ds.name })));
+
+        const settled = await Promise.allSettled(
+          streams.map((ds) =>
+            apiGet<PublicationsResponse>(
+              `/api/datastreams/${encodeURIComponent(ds.id)}/publications?${scope}`,
+            ),
+          ),
+        );
+        if (!alive) return;
+
+        const collected: LineageRow[] = [];
+        let failures = 0;
+        settled.forEach((result, i) => {
+          const ds = streams[i];
+          if (result.status === "rejected") {
+            failures += 1;
+            return;
+          }
+          const pubs = result.value.publications ?? [];
+          pubs.forEach((p, j) => {
+            collected.push({
+              key: `${ds.id}:${p.id ?? p.execution_id ?? j}`,
+              datastreamId: ds.id,
+              datastreamName: ds.name,
+              provider: providerOf(ds),
+              executionId: p.execution_id ?? null,
+              mappingVersionId: p.mapping_version_id ?? null,
+              contentHash: p.content_hash ?? null,
+              rowCount: typeof p.row_count === "number" ? p.row_count : null,
+              publishedAt: p.published_at ?? null,
+              publishedBy: p.published_by ?? null,
+            });
+          });
+        });
+        collected.sort((a, b) => {
+          const ta = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+          const tb = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+          return tb - ta;
+        });
+
+        setRows(collected.slice(0, MAX_ROWS));
+        setUnreadable(failures);
+        setState("ready");
+      } catch (err) {
+        if (!alive) return;
+        setRows([]);
+        setStreamNames([]);
+        setError(err instanceof Error ? err.message : "Request failed");
+        setState("error");
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [projectId, attempt]);
+
+  const visible = useMemo(
+    () => (filter === "all" ? rows : rows.filter((r) => r.datastreamId === filter)),
+    [rows, filter],
+  );
 
   return (
     <>
@@ -193,8 +263,8 @@ export default function Provenance({ projectId }: ProvenanceProps) {
         <div>
           <h1>Provenance</h1>
           <p>
-            Trace every published figure back to the pulls, mapping version, and
-            as-of FX rate that produced it.
+            Trace every published state back to the execution, mapping version and
+            content hash that produced it.
           </p>
         </div>
       </div>
@@ -202,16 +272,12 @@ export default function Provenance({ projectId }: ProvenanceProps) {
       <section className="panel provenance-explainer">
         <div className="provenance-explainer-header">
           <div>
-            <h2>What provenance guarantees</h2>
+            <h2>What a publication records</h2>
             <p>
-              Each published figure carries a provenance envelope. These four
-              records make the number verifiable and traceable back to its inputs.
+              Each publication of a datastream writes an immutable log entry. These
+              are the fields it records — and the columns below are read from them.
             </p>
           </div>
-          <span className="signal-label success">
-            <span className="signal-mark" />
-            Always recorded
-          </span>
         </div>
         <div className="guarantee-rows">
           {GUARANTEES.map((g) => (
@@ -221,114 +287,140 @@ export default function Provenance({ projectId }: ProvenanceProps) {
                 <strong>{g.title}</strong>
                 <p>{g.copy}</p>
               </div>
-              {/* TODO(api): envelope key this guarantee reads from. */}
-              <code className="mono guarantee-key">{g.mono}</code>
+              <code className="mono guarantee-key">{g.field}</code>
             </div>
           ))}
         </div>
+        <p className="provenance-gap" data-testid="provenance-gap">
+          Pull-level lineage and the as-of FX rate travel in the published figure&apos;s
+          envelope (<code className="mono">meta.provenance</code>). No HTTP read exposes
+          them yet, so they are not shown here.
+        </p>
       </section>
 
       <section className="panel provenance-panel">
         <div className="provenance-panel-header">
           <div>
-            <h2>Recent published figures</h2>
-            <p>
-              {/* TODO(api): real source is GET /api/datastreams published state +
-                  each figure's envelope meta.provenance. */}
-              The pulls, mapping version, and as-of FX rate behind each figure
-              published to the data model.
-            </p>
+            <h2>Recent publications</h2>
+            <p>The publication log of every datastream in this project, newest first.</p>
           </div>
-          {/* TODO(api): figure / datastream filter. */}
-          <button className="selector" type="button">
-            All datastreams
-          </button>
-        </div>
-
-        <div
-          className="table-scroll"
-          tabIndex={0}
-          aria-label="Recent published figures and their provenance"
-        >
-          <table className="provenance-table">
-            <thead>
-              <tr>
-                <th style={{ width: "22%" }}>Datastream</th>
-                <th style={{ width: "16%" }}>Figure</th>
-                <th style={{ width: "20%" }}>Pull ids</th>
-                <th style={{ width: "13%" }}>Mapping version</th>
-                <th style={{ width: "17%" }}>FX as-of</th>
-                <th style={{ width: "12%" }}>Published</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr key={`${row.datastream}-${row.metric}-${i}`}>
-                  <td>
-                    <div className="datastream-cell">
-                      <ConnectorLogo provider={row.provider} alt={row.datastream} />
-                      <div>
-                        <strong>{row.datastream}</strong>
-                        <small>Published state</small>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="figure-cell">
-                      <strong>{row.metric}</strong>
-                      <small>{row.metricNote}</small>
-                    </div>
-                  </td>
-                  <td>
-                    {/* TODO(api): pull_ids from meta.provenance. */}
-                    <div className="pull-cell">
-                      {row.pullIds.slice(0, 2).map((id) => (
-                        <code className="mono" key={id}>
-                          {id}
-                        </code>
-                      ))}
-                      {row.pullIds.length > 2 ? (
-                        <span className="pull-more number">
-                          +{row.pullIds.length - 2}
-                        </span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td>
-                    {/* TODO(api): mapping_version from meta.provenance. */}
-                    <code className="mono mapping-tag">{row.mappingVersion}</code>
-                  </td>
-                  <td>
-                    {/* TODO(api): fx as-of-day rate from meta.provenance (epic 39,
-                        FX AT READ). "—" when the figure is single-currency. */}
-                    {row.fx ? (
-                      <div className="fx-cell">
-                        <strong className="number">{row.fx.asOf}</strong>
-                        <small className="mono">{row.fx.rate}</small>
-                      </div>
-                    ) : (
-                      <span className="fx-none" aria-label="Single-currency, no FX applied">
-                        —
-                      </span>
-                    )}
-                  </td>
-                  {/* TODO(api): published execution date from meta.provenance. */}
-                  <td className="number published-cell">{row.published}</td>
-                </tr>
+          <label className="provenance-filter">
+            <span className="sr-only">Filter by datastream</span>
+            <select
+              className="selector"
+              data-testid="provenance-filter"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              disabled={state !== "ready" || streamNames.length === 0}
+            >
+              <option value="all">All datastreams</option>
+              {streamNames.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
               ))}
-            </tbody>
-          </table>
+            </select>
+          </label>
         </div>
 
-        <div className="provenance-footer">
-          <span>
-            Showing <span className="number">{rows.length}</span> recent published
-            figures
-          </span>
-          {/* TODO(api): no dedicated provenance endpoint yet — reads from
-              GET /api/datastreams published state + envelope meta.provenance. */}
-          <span className="footer-note mono">meta.provenance</span>
-        </div>
+        {state === "loading" ? (
+          <p className="provenance-state" data-testid="provenance-loading">
+            Loading the publication log…
+          </p>
+        ) : null}
+
+        {state === "error" ? (
+          <div className="provenance-state error" data-testid="provenance-error">
+            <p>Couldn&apos;t load the publication log. {error}</p>
+            <button className="secondary-button" type="button" onClick={retry}>
+              Retry
+            </button>
+          </div>
+        ) : null}
+
+        {state === "ready" && rows.length === 0 ? (
+          <p className="provenance-state" data-testid="provenance-empty">
+            Nothing has been published in this project yet, so there is no lineage to
+            show.
+          </p>
+        ) : null}
+
+        {state === "ready" && rows.length > 0 ? (
+          <>
+            {unreadable > 0 ? (
+              <p className="provenance-state warning" data-testid="provenance-partial">
+                {unreadable} datastream{unreadable === 1 ? "" : "s"} could not be read —
+                their publications are missing from this list.
+              </p>
+            ) : null}
+            <div
+              className="table-scroll"
+              tabIndex={0}
+              aria-label="Recent publications and their provenance"
+            >
+              <table className="provenance-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: "24%" }}>Datastream</th>
+                    <th style={{ width: "14%" }}>Published</th>
+                    <th style={{ width: "14%" }}>Published by</th>
+                    <th style={{ width: "16%" }}>Execution</th>
+                    <th style={{ width: "16%" }}>Mapping version</th>
+                    <th style={{ width: "16%" }}>Content hash</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((row) => (
+                    <tr key={row.key}>
+                      <td>
+                        <div className="datastream-cell">
+                          <ConnectorLogo provider={row.provider} alt={row.datastreamName} />
+                          <div>
+                            <strong>{row.datastreamName}</strong>
+                            <small>
+                              {row.rowCount === null ? (
+                                "row count not recorded"
+                              ) : (
+                                <>
+                                  <span className="number">{row.rowCount}</span> rows
+                                  published
+                                </>
+                              )}
+                            </small>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="number published-cell">{fmtDate(row.publishedAt)}</td>
+                      <td>{row.publishedBy ?? "—"}</td>
+                      <td>
+                        <code className="mono" title={row.executionId ?? undefined}>
+                          {shortId(row.executionId)}
+                        </code>
+                      </td>
+                      <td>
+                        <code className="mono mapping-tag" title={row.mappingVersionId ?? undefined}>
+                          {shortId(row.mappingVersionId)}
+                        </code>
+                      </td>
+                      <td>
+                        <code className="mono" title={row.contentHash ?? undefined}>
+                          {shortId(row.contentHash)}
+                        </code>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="provenance-footer">
+              <span>
+                Showing <span className="number">{visible.length}</span> publication
+                {visible.length === 1 ? "" : "s"}
+              </span>
+              <span className="footer-note mono">datastream_publication_log</span>
+            </div>
+          </>
+        ) : null}
       </section>
     </>
   );
